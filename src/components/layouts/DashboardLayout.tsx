@@ -4,6 +4,7 @@ import { useState } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { signOut, useSession } from "next-auth/react";
+import NotificationDropdown from "../notifications/NotificationDropdown";
 
 interface NavItem {
   name: string;
@@ -17,8 +18,9 @@ const navigation: NavItem[] = [
   { name: "Attendance", href: "/attendance" },
   { name: "Payroll", href: "/payroll" },
   { name: "Profile", href: "/profile" },
-  { name: "Employees", href: "/employees", adminOnly: true },
+  { name: "Employees", href: "/dashboard/employees", adminOnly: true },
   { name: "Reports", href: "/reports", adminOnly: true },
+  { name: "Notifications", href: "/notifications" },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -34,7 +36,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Mobile sidebar */}
-      <div className={`fixed inset-0 z-40 lg:hidden ${sidebarOpen ? "block" : "hidden"}`}>
+      <div className={`fixed inset-0 flex z-40 lg:hidden ${sidebarOpen ? "" : "hidden"}`}>
         <div className="fixed inset-0 bg-gray-600 bg-opacity-75" onClick={() => setSidebarOpen(false)}></div>
         <div className="fixed inset-y-0 left-0 flex w-full max-w-xs flex-col bg-white">
           <div className="h-0 flex-1 overflow-y-auto pt-5 pb-4">
@@ -145,6 +147,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </svg>
           </button>
         </div>
+        
+        {/* Top navigation bar */}
+        <div className="sticky top-0 z-10 bg-white shadow">
+          <div className="flex h-16 items-center justify-end px-4 sm:px-6 lg:px-8">
+            <NotificationDropdown />
+            <div className="ml-4 flex items-center md:ml-6">
+              <span className="text-sm text-gray-700">
+                {session?.user?.name}
+                {isAdmin && <span className="ml-1 text-xs text-gray-500">(Admin)</span>}
+              </span>
+            </div>
+          </div>
+        </div>
+        
         <main className="flex-1">
           <div className="py-6">
             <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
