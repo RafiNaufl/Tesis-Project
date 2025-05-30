@@ -127,10 +127,8 @@ export default function PayrollManagement() {
   };
 
   const handleMarkAsPaid = async (id: string) => {
-    if (!isAdmin) return;
-    
     setProcessingId(id);
-    setError(null);
+    setError("");
     
     try {
       const response = await fetch("/api/payroll", {
@@ -144,9 +142,10 @@ export default function PayrollManagement() {
         }),
       });
       
+      const data = await response.json();
+      
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to update payroll status");
+        throw new Error(data.error || "Failed to update payroll status");
       }
       
       // Update local state
@@ -157,9 +156,11 @@ export default function PayrollManagement() {
             : record
         )
       );
+      
+      // Show success message or toast notification here if desired
     } catch (err: any) {
       console.error("Error updating payroll:", err);
-      setError(err.message || "Failed to update payroll status");
+      setError(err.message || "Failed to update payrolls");
     } finally {
       setProcessingId(null);
     }
