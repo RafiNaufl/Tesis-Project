@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useSession } from "next-auth/react";
+import { useSession, getSession } from "next-auth/react";
 
 type UserProfile = {
   id: string;
@@ -23,7 +23,7 @@ type UserProfile = {
 };
 
 export default function ProfileForm() {
-  const { data: session } = useSession();
+  const { data: session, update: updateSession } = useSession();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
@@ -48,6 +48,17 @@ export default function ProfileForm() {
     description: string;
     variant: 'default' | 'destructive';
   } | null>(null);
+
+  // Auto-hide toast after a few seconds
+  useEffect(() => {
+    if (toast?.visible) {
+      const timer = setTimeout(() => {
+        setToast(null);
+      }, 5000); // Hide after 5 seconds
+      
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -111,6 +122,27 @@ export default function ProfileForm() {
       
       const data = await response.json();
       setProfile(prev => ({ ...prev, ...data.user } as UserProfile));
+      
+      // Update the session with the new user data
+      if (updateSession) {
+        try {
+          console.log('Updating session with new data:', { name, email });
+          await updateSession({
+            ...session,
+            user: {
+              ...session?.user,
+              name,
+              email,
+            }
+          });
+          console.log('Session updated successfully');
+          
+          // Force a session refresh across all tabs
+          await getSession();
+        } catch (error) {
+          console.error('Failed to update session:', error);
+        }
+      }
       
       setToast({
         visible: true,

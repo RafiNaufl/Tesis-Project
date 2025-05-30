@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { signOut, useSession } from "next-auth/react";
@@ -29,6 +29,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const pathname = usePathname();
   const { data: session } = useSession();
   const isAdmin = session?.user?.role === "ADMIN";
+  // Add a state to track session updates
+  const [sessionKey, setSessionKey] = useState(0);
+
+  // Effect to update the key when session changes, forcing re-render
+  useEffect(() => {
+    setSessionKey(prev => prev + 1);
+  }, [session]);
 
   const filteredNavigation = navigation.filter(
     (item) => !item.adminOnly || (item.adminOnly && isAdmin)
@@ -79,7 +86,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             >
               <div className="flex items-center">
                 <div>
-                  <div className="text-base font-medium text-gray-700 group-hover:text-gray-900">
+                  <div key={`mobile-name-${sessionKey}`} className="text-base font-medium text-gray-700 group-hover:text-gray-900">
                     {session?.user?.name}
                   </div>
                   <div className="text-sm font-medium text-gray-500 group-hover:text-gray-700">
@@ -123,7 +130,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             >
               <div className="flex items-center">
                 <div>
-                  <div className="text-sm font-medium text-gray-700 group-hover:text-gray-900">
+                  <div key={`desktop-name-${sessionKey}`} className="text-sm font-medium text-gray-700 group-hover:text-gray-900">
                     {session?.user?.name}
                   </div>
                   <div className="text-xs font-medium text-gray-500 group-hover:text-gray-700">
@@ -171,7 +178,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <div className="flex items-center">
               <NotificationDropdown />
               <div className="ml-4 flex items-center md:ml-6">
-                <span className="text-sm text-gray-700">
+                <span key={`top-name-${sessionKey}`} className="text-sm text-gray-700">
                   {session?.user?.name}
                   {isAdmin && <span className="ml-1 text-xs text-gray-500">(Admin)</span>}
                 </span>

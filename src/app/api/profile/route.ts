@@ -151,6 +151,7 @@ export async function PATCH(request: NextRequest) {
     });
     
     // If user is an employee, update employee info if provided
+    let updatedEmployeeInfo = null;
     if (user.employee && (contactNumber !== undefined || address !== undefined)) {
       const employeeUpdateData: any = {};
       
@@ -162,17 +163,27 @@ export async function PATCH(request: NextRequest) {
         employeeUpdateData.address = address;
       }
       
-      await db.employee.update({
+      updatedEmployeeInfo = await db.employee.update({
         where: {
           id: user.employee.id,
         },
         data: employeeUpdateData,
+        select: {
+          contactNumber: true,
+          address: true,
+        },
       });
     }
     
     return NextResponse.json({
       message: "Profile updated successfully",
-      user: updatedUser,
+      user: {
+        ...updatedUser,
+        employee: updatedEmployeeInfo ? {
+          ...user.employee,
+          ...updatedEmployeeInfo
+        } : user.employee
+      },
     });
   } catch (error) {
     console.error("Error updating user profile:", error);
