@@ -50,7 +50,6 @@ A comprehensive employee management system that handles attendance tracking, pay
 - **ORM**: Prisma
 - **Form Handling**: React Hook Form
 - **Validation**: Zod
-- **UI Components**: Shadcn UI
 
 ## Getting Started
 
