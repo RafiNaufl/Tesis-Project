@@ -8,6 +8,7 @@ type UserProfile = {
   name: string;
   email: string;
   role: string;
+  profileImageUrl: string | null;
   createdAt: string;
   employee?: {
     id: string;
@@ -34,6 +35,9 @@ export default function ProfileForm() {
   const [email, setEmail] = useState('');
   const [contactNumber, setContactNumber] = useState('');
   const [address, setAddress] = useState('');
+  const [profileImage, setProfileImage] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
   
   // Password change states
   const [currentPassword, setCurrentPassword] = useState('');
@@ -60,6 +64,16 @@ export default function ProfileForm() {
     }
   }, [toast]);
 
+  // Add effect to initialize profile image from localStorage if available
+  useEffect(() => {
+    if (typeof window !== 'undefined' && session?.user?.id) {
+      const storedImageUrl = localStorage.getItem(`profile_image_${session.user.id}`);
+      if (storedImageUrl) {
+        setPreviewUrl(storedImageUrl);
+      }
+    }
+  }, [session?.user?.id]);
+
   useEffect(() => {
     const fetchProfile = async () => {
       try {
@@ -78,6 +92,14 @@ export default function ProfileForm() {
         setEmail(data.email || '');
         setContactNumber(data.employee?.contactNumber || '');
         setAddress(data.employee?.address || '');
+        
+        // If profile has image URL from API or localStorage, use it
+        if (data.profileImageUrl) {
+          setPreviewUrl(data.profileImageUrl);
+          if (typeof window !== 'undefined' && session?.user?.id) {
+            localStorage.setItem(`profile_image_${session.user.id}`, data.profileImageUrl);
+          }
+        }
       } catch (error) {
         console.error('Error fetching profile:', error);
         setToast({
@@ -96,12 +118,92 @@ export default function ProfileForm() {
     }
   }, [session]);
 
+  // Add effect to handle file preview
+  useEffect(() => {
+    if (!profileImage) {
+      return;
+    }
+    
+    const objectUrl = URL.createObjectURL(profileImage);
+    setPreviewUrl(objectUrl);
+    
+    // Free memory when this component is unmounted
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [profileImage]);
+  
+  // Function to handle file selection
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) {
+      setProfileImage(null);
+      return;
+    }
+    
+    const file = e.target.files[0];
+    
+    // Only allow image files
+    if (!file.type.startsWith('image/')) {
+      setToast({
+        visible: true,
+        title: 'Error',
+        description: 'Please select an image file (JPG, PNG, etc.)',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    // Check file size (limit to 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      setToast({
+        visible: true,
+        title: 'Error',
+        description: 'Image file is too large. Please select a file under 5MB.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    setProfileImage(file);
+  };
+
   const handleProfileUpdate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     
     try {
       setUpdating(true);
       
+      // If there's a profile image to upload, handle it first
+      let profileImageUrl = profile?.profileImageUrl || null;
+      
+      if (profileImage) {
+        setUploading(true);
+        
+        // Create a FormData object for the file upload
+        const formData = new FormData();
+        formData.append('file', profileImage);
+        
+        // Upload the image
+        const uploadResponse = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData,
+        });
+        
+        if (!uploadResponse.ok) {
+          const errorData = await uploadResponse.json();
+          throw new Error(errorData.error || 'Failed to upload profile image');
+        }
+        
+        const uploadData = await uploadResponse.json();
+        profileImageUrl = uploadData.url;
+        
+        // Store the image URL in localStorage
+        if (typeof window !== 'undefined' && session?.user?.id && profileImageUrl) {
+          localStorage.setItem(`profile_image_${session.user.id}`, profileImageUrl);
+        }
+        
+        setUploading(false);
+      }
+      
+      // Update the user profile with all information including the image URL
       const response = await fetch('/api/profile', {
         method: 'PATCH',
         headers: {
@@ -112,6 +214,7 @@ export default function ProfileForm() {
           email,
           contactNumber,
           address,
+          profileImageUrl,
         }),
       });
       
@@ -126,7 +229,6 @@ export default function ProfileForm() {
       // Update the session with the new user data
       if (updateSession) {
         try {
-          console.log('Updating session with new user data:', { name, email });
           // Update the session directly with new data
           await updateSession({
             ...session,
@@ -134,12 +236,12 @@ export default function ProfileForm() {
               ...session?.user,
               name,
               email,
+              image: profileImageUrl,
             }
           });
           
           // Force a complete session sync
           await getSession();
-          console.log('Session synchronized successfully');
         } catch (error) {
           console.error('Failed to synchronize session:', error);
         }
@@ -295,6 +397,25 @@ export default function ProfileForm() {
               <h3 className="text-lg font-medium leading-6 text-gray-900">Account Summary</h3>
             </div>
             <div className="px-4 py-5 sm:p-6">
+              {/* Profile Image */}
+              <div className="flex flex-col items-center mb-6">
+                <div className="w-32 h-32 rounded-full overflow-hidden bg-gray-100 mb-4">
+                  {previewUrl ? (
+                    <img 
+                      src={previewUrl} 
+                      alt="Profile" 
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-gray-200 text-gray-400">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                      </svg>
+                    </div>
+                  )}
+                </div>
+              </div>
+              
               <div className="flex flex-col space-y-4">
                 <div>
                   <h3 className="font-medium text-sm text-gray-500">Name</h3>
@@ -323,6 +444,51 @@ export default function ProfileForm() {
             </div>
             <div className="px-4 py-5 sm:p-6">
               <form onSubmit={handleProfileUpdate} className="space-y-4">
+                {/* Profile Image Upload */}
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-700">Profile Photo</label>
+                  <div className="flex items-center space-x-4">
+                    <div className="w-16 h-16 rounded-full overflow-hidden bg-gray-100">
+                      {previewUrl ? (
+                        <img 
+                          src={previewUrl} 
+                          alt="Profile Preview" 
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center bg-gray-200 text-gray-400">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                          </svg>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex flex-col">
+                      <label htmlFor="photo-upload" className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-sm font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                        Change Photo
+                      </label>
+                      <input
+                        id="photo-upload"
+                        name="photo"
+                        type="file"
+                        accept="image/*"
+                        className="sr-only"
+                        onChange={handleFileChange}
+                      />
+                      <p className="mt-1 text-xs text-gray-500">JPG, PNG, GIF up to 5MB</p>
+                      {profileImage && (
+                        <button
+                          type="button"
+                          onClick={() => setProfileImage(null)}
+                          className="mt-1 text-xs text-red-600 hover:text-red-800"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <label htmlFor="name" className="block text-sm font-medium text-gray-700">Full Name</label>
