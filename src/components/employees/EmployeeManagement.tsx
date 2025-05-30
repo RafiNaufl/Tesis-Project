@@ -180,11 +180,12 @@ export default function EmployeeManagement() {
 
   // Filter employees based on search term and department
   const filteredEmployees = employees.filter((employee) => {
-    const matchesSearchTerm = 
-      employee.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      employee.employeeId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      employee.position.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      employee.email.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearchTerm = searchTerm === "" || (
+      (employee.name?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
+      (employee.employeeId?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
+      (employee.position?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
+      (employee.email?.toLowerCase() || "").includes(searchTerm.toLowerCase())
+    );
       
     const matchesDepartment = 
       filterDepartment === "" || employee.department === filterDepartment;
