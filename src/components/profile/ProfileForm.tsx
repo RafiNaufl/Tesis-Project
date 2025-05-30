@@ -126,7 +126,8 @@ export default function ProfileForm() {
       // Update the session with the new user data
       if (updateSession) {
         try {
-          console.log('Updating session with new data:', { name, email });
+          console.log('Updating session with new user data:', { name, email });
+          // Update the session directly with new data
           await updateSession({
             ...session,
             user: {
@@ -135,12 +136,12 @@ export default function ProfileForm() {
               email,
             }
           });
-          console.log('Session updated successfully');
           
-          // Force a session refresh across all tabs
+          // Force a complete session sync
           await getSession();
+          console.log('Session synchronized successfully');
         } catch (error) {
-          console.error('Failed to update session:', error);
+          console.error('Failed to synchronize session:', error);
         }
       }
       
