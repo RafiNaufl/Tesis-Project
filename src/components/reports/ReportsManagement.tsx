@@ -25,7 +25,12 @@ export default function ReportsManagement() {
           throw new Error("Failed to fetch employees");
         }
         const data = await response.json();
-        setEmployees(data);
+        // Format the employee data to ensure name is accessible directly
+        const formattedEmployees = data.map((employee: any) => ({
+          ...employee,
+          name: employee.user?.name || employee.name || "Unknown"
+        }));
+        setEmployees(formattedEmployees);
       } catch (err) {
         console.error("Error fetching employees:", err);
       }
@@ -166,7 +171,7 @@ export default function ReportsManagement() {
                   <option value="">All Employees</option>
                   {employees.map((employee) => (
                     <option key={employee.id} value={employee.id}>
-                      {employee.name}
+                      {employee.name} ({employee.employeeId}) {employee.user?.role || employee.role || ''}
                     </option>
                   ))}
                 </select>

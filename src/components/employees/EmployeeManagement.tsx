@@ -53,6 +53,7 @@ export default function EmployeeManagement() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterDepartment, setFilterDepartment] = useState("");
+  const [filterStatus, setFilterStatus] = useState("");
   const { data: session } = useSession();
   const router = useRouter();
 
@@ -267,7 +268,7 @@ export default function EmployeeManagement() {
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
-        <div className="w-full sm:w-64">
+        <div className="w-full sm:w-40">
           <select
             className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm"
             value={filterDepartment}
@@ -279,6 +280,17 @@ export default function EmployeeManagement() {
                 {dept}
               </option>
             ))}
+          </select>
+        </div>
+        <div className="w-full sm:w-40">
+          <select
+            className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm"
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+          >
+            <option value="">All Status</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
           </select>
         </div>
       </div>
