@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { db } from "@/lib/db";
 import { authOptions } from "@/lib/auth";
+import { Prisma } from "@prisma/client";
 
 // GET: Fetch payrolls with filtering
 export async function GET(request: NextRequest) {
@@ -145,14 +146,14 @@ export async function PATCH(request: NextRequest) {
       // If status is PAID, set paidAt to current time
       result = await db.$executeRaw`
         UPDATE payrolls
-        SET status = ${status}, "paidAt" = NOW()
+        SET status = ${status}:::"PayStatus", "paidAt" = NOW()
         WHERE id IN (${ids.join(',')})
       `;
     } else {
       // For other statuses, just update the status
       result = await db.$executeRaw`
         UPDATE payrolls
-        SET status = ${status}
+        SET status = ${status}:::"PayStatus"
         WHERE id IN (${ids.join(',')})
       `;
     }
@@ -212,7 +213,7 @@ export async function DELETE(request: NextRequest) {
     // Delete the payrolls
     const result = await db.$executeRaw`
       DELETE FROM payrolls
-      WHERE id IN (${ids.join(',')})
+      WHERE id IN (${ids.map(id => `'${id}'`).join(',')})
     `;
     
     return NextResponse.json({ 
