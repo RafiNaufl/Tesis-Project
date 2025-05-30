@@ -295,8 +295,27 @@ async function main() {
     const netSalary = baseSalary + totalAllowances + overtimeAmount - totalDeductions;
     
     // Create payroll record for last month (paid)
-    await prisma.payroll.create({
-      data: {
+    await prisma.payroll.upsert({
+      where: {
+        employeeId_month_year: {
+          employeeId: employee.employee!.id,
+          month: lastMonth,
+          year: lastMonthYear
+        }
+      },
+      update: {
+        baseSalary: baseSalary,
+        totalAllowances: totalAllowances,
+        totalDeductions: totalDeductions,
+        netSalary: netSalary,
+        daysPresent: daysPresent,
+        daysAbsent: daysAbsent,
+        overtimeHours: overtimeHours,
+        overtimeAmount: overtimeAmount,
+        status: 'PAID',
+        paidAt: new Date(lastMonthYear, lastMonth, 28), // Paid on the 28th of last month
+      },
+      create: {
         employeeId: employee.employee!.id,
         month: lastMonth,
         year: lastMonthYear,
@@ -346,8 +365,26 @@ async function main() {
       const currNetSalary = (baseSalary * currMonthDaysPresent / 22) + currTotalAllowances + currMonthOvertimeAmount - currTotalDeductions;
       
       // Create payroll record for current month (pending)
-      await prisma.payroll.create({
-        data: {
+      await prisma.payroll.upsert({
+        where: {
+          employeeId_month_year: {
+            employeeId: employee.employee!.id,
+            month: currentMonth,
+            year: currentYear
+          }
+        },
+        update: {
+          baseSalary: baseSalary,
+          totalAllowances: currTotalAllowances,
+          totalDeductions: currTotalDeductions,
+          netSalary: currNetSalary,
+          daysPresent: currMonthDaysPresent,
+          daysAbsent: currMonthDaysAbsent,
+          overtimeHours: currMonthOvertimeHours,
+          overtimeAmount: currMonthOvertimeAmount,
+          status: 'PENDING',
+        },
+        create: {
           employeeId: employee.employee!.id,
           month: currentMonth,
           year: currentYear,

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
+import { NOTIFICATION_UPDATE_EVENT } from "../notifications/NotificationDropdown";
 
 type AttendanceRecord = {
   id: string;
@@ -106,6 +107,15 @@ export default function AttendanceManagement() {
       const data = await response.json();
       setTodayRecord(data);
       
+      // Tampilkan alert untuk check in
+      window.alert("✅ Check in berhasil dicatat! Selamat bekerja!");
+      
+      // Check if the response header indicates a notification update
+      if (response.headers.get('X-Notification-Update') === 'true') {
+        // Dispatch custom event to update notifications
+        window.dispatchEvent(new Event(NOTIFICATION_UPDATE_EVENT));
+      }
+      
       // Refresh attendance records
       const queryParams = new URLSearchParams({
         month: selectedMonth.toString(),
@@ -143,6 +153,15 @@ export default function AttendanceManagement() {
 
       const data = await response.json();
       setTodayRecord(data);
+      
+      // Tampilkan alert untuk check out
+      window.alert("✅ Check out berhasil dicatat! Terima kasih atas kerja keras Anda hari ini!");
+      
+      // Check if the response header indicates a notification update
+      if (response.headers.get('X-Notification-Update') === 'true') {
+        // Dispatch custom event to update notifications
+        window.dispatchEvent(new Event(NOTIFICATION_UPDATE_EVENT));
+      }
       
       // Refresh attendance records
       const queryParams = new URLSearchParams({

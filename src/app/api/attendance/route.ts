@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import prisma from "@/lib/prisma";
+import { db } from "@/lib/db";
+import { format } from "date-fns";
 
 // GET attendance records
 export async function GET(req: NextRequest) {
@@ -24,7 +25,7 @@ export async function GET(req: NextRequest) {
     // Admins can see all records, employees can only see their own
     if (session.user.role !== "ADMIN" && !employeeId) {
       // For employees, find their employee ID
-      const employee = await prisma.employee.findFirst({
+      const employee = await db.employee.findFirst({
         where: {
           userId: session.user.id,
         },
@@ -72,9 +73,16 @@ export async function POST(req: NextRequest) {
     }
 
     // Get employee
-    const employee = await prisma.employee.findFirst({
+    const employee = await db.employee.findFirst({
       where: {
         userId: session.user.id,
+      },
+      include: {
+        user: {
+          select: {
+            name: true,
+          },
+        },
       },
     });
 
@@ -103,7 +111,7 @@ export async function POST(req: NextRequest) {
     );
 
     // Check if there's already an attendance record for today
-    let attendanceRecord = await prisma.attendance.findFirst({
+    let attendanceRecord = await db.attendance.findFirst({
       where: {
         employeeId: employee.id,
         date: {
@@ -113,6 +121,7 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    let isLate = false;
     if (action === "check-in") {
       if (attendanceRecord && attendanceRecord.checkIn) {
         return NextResponse.json(
@@ -121,8 +130,12 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      // Check if the check-in time is after 9:00 AM (considered late)
+      isLate = now.getHours() >= 9 && now.getMinutes() > 0;
+      const status = isLate ? "LATE" : "PRESENT";
+      
       // Create or update the attendance record with check-in time
-      attendanceRecord = await prisma.attendance.upsert({
+      attendanceRecord = await db.attendance.upsert({
         where: {
           id: attendanceRecord?.id || "",
         },
@@ -130,13 +143,49 @@ export async function POST(req: NextRequest) {
           employeeId: employee.id,
           date: today,
           checkIn: now,
-          status: "PRESENT",
+          status: status,
         },
         update: {
           checkIn: now,
-          status: "PRESENT",
+          status: status,
         },
       });
+      
+      // Create a notification for the check-in
+      await db.notification.create({
+        data: {
+          userId: session.user.id,
+          title: isLate ? "Late Check-in Recorded" : "Attendance Confirmed",
+          message: isLate 
+            ? `You checked in at ${format(now, "h:mm a")} which is after the expected time.`
+            : `You successfully checked in at ${format(now, "h:mm a")}.`,
+          type: isLate ? "warning" : "success",
+          read: false,
+        },
+      });
+      
+      // Notify admin about late check-ins
+      if (isLate) {
+        // Find admin users
+        const admins = await db.user.findMany({
+          where: {
+            role: "ADMIN",
+          },
+        });
+        
+        // Create a notification for each admin
+        for (const admin of admins) {
+          await db.notification.create({
+            data: {
+              userId: admin.id,
+              title: "Late Check-in Alert",
+              message: `${employee.user.name} checked in late at ${format(now, "h:mm a")} on ${format(today, "MMMM d, yyyy")}.`,
+              type: "warning",
+              read: false,
+            },
+          });
+        }
+      }
     } else {
       // Check-out
       if (!attendanceRecord || !attendanceRecord.checkIn) {
@@ -154,7 +203,7 @@ export async function POST(req: NextRequest) {
       }
 
       // Update the attendance record with check-out time
-      attendanceRecord = await prisma.attendance.update({
+      attendanceRecord = await db.attendance.update({
         where: {
           id: attendanceRecord.id,
         },
@@ -162,9 +211,28 @@ export async function POST(req: NextRequest) {
           checkOut: now,
         },
       });
+      
+      // Calculate work duration in hours
+      const checkInTime = new Date(attendanceRecord.checkIn!);
+      const workDurationHours = ((now.getTime() - checkInTime.getTime()) / (1000 * 60 * 60)).toFixed(2);
+      
+      // Create a notification for the check-out
+      await db.notification.create({
+        data: {
+          userId: session.user.id,
+          title: "Check-out Confirmed",
+          message: `You successfully checked out at ${format(now, "h:mm a")}. Total work duration: ${workDurationHours} hours.`,
+          type: "success",
+          read: false,
+        },
+      });
     }
 
-    return NextResponse.json(attendanceRecord);
+    // Add this response header to trigger notification update in the frontend
+    const response = NextResponse.json(attendanceRecord);
+    response.headers.set('X-Notification-Update', 'true');
+    
+    return response;
   } catch (error) {
     console.error("Error recording attendance:", error);
     return NextResponse.json(
@@ -197,7 +265,7 @@ async function getAttendanceRecords(
     };
   }
 
-  return prisma.attendance.findMany({
+  return db.attendance.findMany({
     where,
     orderBy: {
       date: "desc",

@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { signOut, useSession } from "next-auth/react";
-import NotificationDropdown from "../notifications/NotificationDropdown";
+import NotificationDropdown, { NOTIFICATION_UPDATE_EVENT } from "../notifications/NotificationDropdown";
 
 interface NavItem {
   name: string;
@@ -12,6 +13,7 @@ interface NavItem {
   icon?: React.ReactNode;
   adminOnly?: boolean;
   title?: string;
+  badge?: boolean;
 }
 
 const navigation: NavItem[] = [
@@ -21,7 +23,7 @@ const navigation: NavItem[] = [
   { name: "Profile", href: "/profile", title: "User Profile" },
   { name: "Employees", href: "/dashboard/employees", adminOnly: true, title: "Employee Management" },
   { name: "Reports", href: "/reports", adminOnly: true, title: "Reports Management" },
-  { name: "Notifications", href: "/notifications", title: "Notifications" },
+  { name: "Notifications", href: "/notifications", title: "Notifications", badge: true },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -29,16 +31,67 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const pathname = usePathname();
   const { data: session } = useSession();
   const isAdmin = session?.user?.role === "ADMIN";
+  const [hasNewNotifications, setHasNewNotifications] = useState(false);
+  const notificationCheckRef = useRef<NodeJS.Timeout | null>(null);
   
   // Track user name for efficient re-rendering
   const [userName, setUserName] = useState<string | undefined>(session?.user?.name);
+  const [profileImage, setProfileImage] = useState<string | null>(null);
   
-  // Update the user name when the session changes
+  // Update the user data when the session changes
   useEffect(() => {
     if (session?.user?.name !== userName) {
       setUserName(session?.user?.name);
     }
+    
+    // Set profile image from session or localStorage
+    if (session?.user?.image) {
+      setProfileImage(session.user.image);
+    } else if (typeof window !== 'undefined' && session?.user?.id) {
+      const storedImage = localStorage.getItem(`profile_image_${session.user.id}`);
+      if (storedImage) {
+        setProfileImage(storedImage);
+      }
+    }
   }, [session, userName]);
+
+  // Setup notification tracking
+  useEffect(() => {
+    if (!session) return;
+
+    // Check initial notifications
+    const checkNotifications = async () => {
+      try {
+        const response = await fetch("/api/notifications/unread-count");
+        if (response.ok) {
+          const { count } = await response.json();
+          setHasNewNotifications(count > 0);
+        }
+      } catch (error) {
+        console.error("Error checking notifications:", error);
+      }
+    };
+
+    checkNotifications();
+
+    // Set up periodic checks for new notifications
+    notificationCheckRef.current = setInterval(checkNotifications, 15000);
+
+    // Listen for notification updates
+    const handleNotificationUpdate = () => {
+      setHasNewNotifications(true);
+      checkNotifications();
+    };
+
+    window.addEventListener(NOTIFICATION_UPDATE_EVENT, handleNotificationUpdate);
+
+    return () => {
+      if (notificationCheckRef.current) {
+        clearInterval(notificationCheckRef.current);
+      }
+      window.removeEventListener(NOTIFICATION_UPDATE_EVENT, handleNotificationUpdate);
+    };
+  }, [session]);
 
   const filteredNavigation = navigation.filter(
     (item) => !item.adminOnly || (item.adminOnly && isAdmin)
@@ -54,6 +107,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     
     return false;
   };
+
+  // Default avatar if no profile image is available
+  const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iIzZiNzI4MCIgd2lkdGg9IjI0IiBoZWlnaHQ9IjI0Ij48cGF0aCBkPSJNMTIgMkM2LjQ4IDIgMiA2LjQ4IDIgMTJzNC40OCAxMCAxMCAxMCAxMC00LjQ4IDEwLTEwUzE3LjUyIDIgMTIgMnptMCAzYzEuNjYgMCAzIDEuMzQgMyAzcy0xLjM0IDMtMyAzLTMtMS4zNC0zLTMgMS4zNC0zIDMtM3ptMCAxNC4yYy0yLjUgMC00LjcxLTEuMjgtNi0zLjIyLjAzLTEuOTkgNC0zLjA4IDYtMy4wOCAxLjk5IDAgNS45NyAxLjA5IDYgMy4wOC0xLjI5IDEuOTQtMy41IDMuMjItNiAzLjIyeiIvPjwvc3ZnPg==';
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -74,10 +130,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     isActive(item.href)
                       ? "bg-gray-100 text-gray-900"
                       : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-                  } group flex items-center rounded-md px-2 py-2 text-base font-medium`}
+                  } group flex items-center rounded-md px-2 py-2 text-base font-medium relative`}
                   title={item.title}
+                  onClick={() => {
+                    if (item.href === "/notifications") {
+                      setHasNewNotifications(false);
+                    }
+                  }}
                 >
                   {item.name}
+                  {item.badge && hasNewNotifications && !isActive(item.href) && (
+                    <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-red-600 animate-pulse" />
+                  )}
                 </Link>
               ))}
             </nav>
@@ -88,12 +152,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               className="group block w-full flex-shrink-0"
             >
               <div className="flex items-center">
-                <div>
+                <div className="relative h-10 w-10 flex-shrink-0 rounded-full overflow-hidden">
+                  <Image
+                    src={profileImage || defaultAvatar}
+                    alt={userName || 'User'}
+                    fill
+                    className="object-cover"
+                  />
+                </div>
+                <div className="ml-3">
                   <div className="text-base font-medium text-gray-700 group-hover:text-gray-900">
                     {userName}
                   </div>
                   <div className="text-sm font-medium text-gray-500 group-hover:text-gray-700">
-                    Sign out
+                    Keluar
                   </div>
                 </div>
               </div>
@@ -118,10 +190,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     isActive(item.href)
                       ? "bg-gray-100 text-gray-900"
                       : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-                  } group flex items-center rounded-md px-2 py-2 text-sm font-medium`}
+                  } group flex items-center rounded-md px-2 py-2 text-sm font-medium relative`}
                   title={item.title}
+                  onClick={() => {
+                    if (item.href === "/notifications") {
+                      setHasNewNotifications(false);
+                    }
+                  }}
                 >
                   {item.name}
+                  {item.badge && hasNewNotifications && !isActive(item.href) && (
+                    <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-red-600 animate-pulse" />
+                  )}
                 </Link>
               ))}
             </nav>
@@ -132,12 +212,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               className="group block w-full flex-shrink-0"
             >
               <div className="flex items-center">
-                <div>
+                <div className="relative h-8 w-8 flex-shrink-0 rounded-full overflow-hidden">
+                  <Image
+                    src={profileImage || defaultAvatar}
+                    alt={userName || 'User'}
+                    fill
+                    className="object-cover"
+                  />
+                </div>
+                <div className="ml-3">
                   <div className="text-sm font-medium text-gray-700 group-hover:text-gray-900">
                     {userName}
                   </div>
                   <div className="text-xs font-medium text-gray-500 group-hover:text-gray-700">
-                    Sign out
+                    Keluar
                   </div>
                 </div>
               </div>
@@ -179,12 +267,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               {filteredNavigation.find(item => isActive(item.href))?.title || "EMS"}
             </div>
             <div className="flex items-center">
-              <NotificationDropdown />
+              <NotificationDropdown onNotificationUpdate={() => setHasNewNotifications(true)} />
               <div className="ml-4 flex items-center md:ml-6">
-                <span className="text-sm text-gray-700">
-                  {userName}
-                  {isAdmin && <span className="ml-1 text-xs text-gray-500">(Admin)</span>}
-                </span>
+                <div className="flex items-center space-x-3">
+                  <div className="relative h-8 w-8 flex-shrink-0 rounded-full overflow-hidden">
+                    <Image
+                      src={profileImage || defaultAvatar}
+                      alt={userName || 'User'}
+                      fill
+                      className="object-cover"
+                    />
+                  </div>
+                  <span className="text-sm text-gray-700">
+                    {userName}
+                    {isAdmin && <span className="ml-1 text-xs text-gray-500">(Admin)</span>}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
