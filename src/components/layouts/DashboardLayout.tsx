@@ -33,6 +33,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     (item) => !item.adminOnly || (item.adminOnly && isAdmin)
   );
 
+  // Helper function to check if a path matches the current pathname
+  const isActive = (path: string) => {
+    // For exact match
+    if (pathname === path) return true;
+    
+    // For nested routes (e.g. /dashboard/employees should highlight "Employees")
+    if (path !== '/dashboard' && pathname?.startsWith(path)) return true;
+    
+    return false;
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Mobile sidebar */}
@@ -49,7 +60,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   key={item.name}
                   href={item.href}
                   className={`${
-                    pathname === item.href
+                    isActive(item.href)
                       ? "bg-gray-100 text-gray-900"
                       : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
                   } group flex items-center rounded-md px-2 py-2 text-base font-medium`}
@@ -92,7 +103,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   key={item.name}
                   href={item.href}
                   className={`${
-                    pathname === item.href
+                    isActive(item.href)
                       ? "bg-gray-100 text-gray-900"
                       : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
                   } group flex items-center rounded-md px-2 py-2 text-sm font-medium`}

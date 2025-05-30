@@ -9,6 +9,14 @@ type DashboardStats = {
   totalSalaryExpense: number;
 };
 
+type ActivityItem = {
+  id: string;
+  employeeName: string;
+  action: string;
+  time: string;
+  status: string;
+};
+
 export default function AdminDashboard() {
   const [stats, setStats] = useState<DashboardStats>({
     totalEmployees: 0,
@@ -16,17 +24,55 @@ export default function AdminDashboard() {
     pendingPayrolls: 0,
     totalSalaryExpense: 0,
   });
+  const [recentActivities, setRecentActivities] = useState<ActivityItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // In a real app, you would fetch this data from your API
   useEffect(() => {
-    // Mock data for demo purposes
-    const mockStats = {
-      totalEmployees: 24,
-      presentToday: 18,
-      pendingPayrolls: 5,
-      totalSalaryExpense: 45000,
+    const fetchDashboardData = async () => {
+      setIsLoading(true);
+      try {
+        // Fetch dashboard statistics
+        const statsResponse = await fetch('/api/reports/summary');
+        if (!statsResponse.ok) throw new Error('Failed to fetch dashboard stats');
+        const statsData = await statsResponse.json();
+        
+        // Fetch recent attendance activity
+        const activityResponse = await fetch('/api/attendance?limit=5');
+        if (!activityResponse.ok) throw new Error('Failed to fetch recent activities');
+        const activityData = await activityResponse.json();
+        
+        // Format the data for our components
+        setStats({
+          totalEmployees: statsData.payroll.employeeCount || 0,
+          presentToday: statsData.attendance.presentCount || 0,
+          pendingPayrolls: statsData.payroll.pendingCount || 0,
+          totalSalaryExpense: statsData.payroll.totalNetSalary || 0,
+        });
+        
+        // Format attendance records as activities
+        const activities = activityData.map((item: any) => ({
+          id: item.id,
+          employeeName: item.employee?.user?.name || "Unknown Employee",
+          action: item.status === "PRESENT" ? "checked in" : 
+                 item.status === "ABSENT" ? "is absent" : 
+                 item.status === "LATE" ? "checked in late" : "is on half day",
+          time: new Date(item.checkIn || item.date).toLocaleString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+          }),
+          status: item.status
+        }));
+        
+        setRecentActivities(activities);
+      } catch (error) {
+        console.error("Error fetching dashboard data:", error);
+      } finally {
+        setIsLoading(false);
+      }
     };
-    setStats(mockStats);
+
+    fetchDashboardData();
   }, []);
 
   return (
@@ -65,7 +111,7 @@ export default function AdminDashboard() {
                   </dt>
                   <dd>
                     <div className="text-lg font-medium text-gray-900">
-                      {stats.totalEmployees}
+                      {isLoading ? "Loading..." : stats.totalEmployees}
                     </div>
                   </dd>
                 </dl>
@@ -100,7 +146,7 @@ export default function AdminDashboard() {
                   </dt>
                   <dd>
                     <div className="text-lg font-medium text-gray-900">
-                      {stats.presentToday}
+                      {isLoading ? "Loading..." : stats.presentToday}
                     </div>
                   </dd>
                 </dl>
@@ -135,7 +181,7 @@ export default function AdminDashboard() {
                   </dt>
                   <dd>
                     <div className="text-lg font-medium text-gray-900">
-                      {stats.pendingPayrolls}
+                      {isLoading ? "Loading..." : stats.pendingPayrolls}
                     </div>
                   </dd>
                 </dl>
@@ -170,7 +216,7 @@ export default function AdminDashboard() {
                   </dt>
                   <dd>
                     <div className="text-lg font-medium text-gray-900">
-                      ${stats.totalSalaryExpense.toLocaleString()}
+                      {isLoading ? "Loading..." : `$${stats.totalSalaryExpense.toLocaleString()}`}
                     </div>
                   </dd>
                 </dl>
@@ -187,50 +233,40 @@ export default function AdminDashboard() {
             Recent Activities
           </h3>
         </div>
-        <ul className="divide-y divide-gray-200">
-          <li>
-            <div className="px-4 py-4 sm:px-6">
-              <div className="flex items-center justify-between">
-                <p className="truncate text-sm font-medium text-indigo-600">
-                  John Doe checked in
-                </p>
-                <div className="ml-2 flex flex-shrink-0">
-                  <p className="inline-flex rounded-full bg-green-100 px-2 text-xs font-semibold leading-5 text-green-800">
-                    Today, 9:03 AM
-                  </p>
+        {isLoading ? (
+          <div className="px-4 py-5 sm:p-6 text-center">Loading recent activities...</div>
+        ) : (
+          <ul className="divide-y divide-gray-200">
+            {recentActivities.length > 0 ? (
+              recentActivities.map((activity) => (
+                <li key={activity.id}>
+                  <div className="px-4 py-4 sm:px-6">
+                    <div className="flex items-center justify-between">
+                      <p className="truncate text-sm font-medium text-indigo-600">
+                        {activity.employeeName} {activity.action}
+                      </p>
+                      <div className="ml-2 flex flex-shrink-0">
+                        <p className={`inline-flex rounded-full px-2 text-xs font-semibold leading-5 
+                          ${activity.status === "PRESENT" ? "bg-green-100 text-green-800" :
+                            activity.status === "ABSENT" ? "bg-red-100 text-red-800" :
+                            activity.status === "LATE" ? "bg-yellow-100 text-yellow-800" : 
+                            "bg-gray-100 text-gray-800"}`}>
+                          {activity.time}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </li>
+              ))
+            ) : (
+              <li>
+                <div className="px-4 py-4 sm:px-6 text-center">
+                  No recent activities found
                 </div>
-              </div>
-            </div>
-          </li>
-          <li>
-            <div className="px-4 py-4 sm:px-6">
-              <div className="flex items-center justify-between">
-                <p className="truncate text-sm font-medium text-indigo-600">
-                  Jane Smith checked in
-                </p>
-                <div className="ml-2 flex flex-shrink-0">
-                  <p className="inline-flex rounded-full bg-green-100 px-2 text-xs font-semibold leading-5 text-green-800">
-                    Today, 9:15 AM
-                  </p>
-                </div>
-              </div>
-            </div>
-          </li>
-          <li>
-            <div className="px-4 py-4 sm:px-6">
-              <div className="flex items-center justify-between">
-                <p className="truncate text-sm font-medium text-indigo-600">
-                  Robert Johnson is absent
-                </p>
-                <div className="ml-2 flex flex-shrink-0">
-                  <p className="inline-flex rounded-full bg-red-100 px-2 text-xs font-semibold leading-5 text-red-800">
-                    Today
-                  </p>
-                </div>
-              </div>
-            </div>
-          </li>
-        </ul>
+              </li>
+            )}
+          </ul>
+        )}
       </div>
     </div>
   );

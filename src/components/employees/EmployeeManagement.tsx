@@ -9,14 +9,18 @@ import { useSession } from "next-auth/react";
 type Employee = {
   id: string;
   employeeId: string;
-  name: string;
+  name?: string;
   position: string;
   department: string;
   isActive: boolean;
-  email: string;
+  email?: string;
   basicSalary?: number;
   contactNumber?: string;
   address?: string;
+  user?: {
+    name: string;
+    email: string;
+  };
 };
 
 type EmployeeFormValues = {
@@ -64,7 +68,15 @@ export default function EmployeeManagement() {
         }
         
         const data = await response.json();
-        setEmployees(data);
+        
+        // Format the employee data to ensure name and email are accessible directly
+        const formattedEmployees = data.map((employee: any) => ({
+          ...employee,
+          name: employee.user?.name,
+          email: employee.user?.email
+        }));
+        
+        setEmployees(formattedEmployees);
       } catch (error) {
         console.error("Error fetching employees:", error);
       } finally {
@@ -149,7 +161,15 @@ export default function EmployeeManagement() {
       }
       
       const newEmployee = await response.json();
-      setEmployees([...employees, newEmployee]);
+      
+      // Ensure the employee object has the correct structure
+      const formattedEmployee = {
+        ...newEmployee,
+        name: newEmployee.user?.name,
+        email: newEmployee.user?.email
+      };
+      
+      setEmployees([...employees, formattedEmployee]);
     } catch (error) {
       console.error("Error adding employee:", error);
     }
@@ -170,8 +190,18 @@ export default function EmployeeManagement() {
       }
       
       const updatedEmployee = await response.json();
+      
+      // Update employees array with the updated employee data
       setEmployees(
-        employees.map((emp) => (emp.id === id ? updatedEmployee : emp))
+        employees.map((emp) => 
+          emp.id === id 
+            ? {
+                ...updatedEmployee,
+                name: data.name,
+                email: data.email
+              }
+            : emp
+        )
       );
     } catch (error) {
       console.error("Error updating employee:", error);
@@ -181,10 +211,10 @@ export default function EmployeeManagement() {
   // Filter employees based on search term and department
   const filteredEmployees = employees.filter((employee) => {
     const matchesSearchTerm = searchTerm === "" || (
-      (employee.name?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
+      ((employee.user?.name || employee.name || "").toLowerCase()).includes(searchTerm.toLowerCase()) ||
       (employee.employeeId?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
       (employee.position?.toLowerCase() || "").includes(searchTerm.toLowerCase()) ||
-      (employee.email?.toLowerCase() || "").includes(searchTerm.toLowerCase())
+      ((employee.user?.email || employee.email || "").toLowerCase()).includes(searchTerm.toLowerCase())
     );
       
     const matchesDepartment = 
@@ -209,7 +239,7 @@ export default function EmployeeManagement() {
           <button
             type="button"
             onClick={handleAddEmployee}
-            className="block rounded-md bg-indigo-600 px-3 py-2 text-center text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
+            className="block rounded-md bg-indigo-600 px-3 py-2 text-center text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 transition-colors duration-200"
           >
             <span className="flex items-center">
               <svg xmlns="http://www.w3.org/2000/svg" className="mr-1.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -231,7 +261,7 @@ export default function EmployeeManagement() {
           </div>
           <input
             type="text"
-            className="block w-full rounded-md border-gray-300 pl-10 focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+            className="block w-full rounded-md border border-gray-300 bg-white pl-10 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm"
             placeholder="Search employees..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -239,7 +269,7 @@ export default function EmployeeManagement() {
         </div>
         <div className="w-full sm:w-64">
           <select
-            className="block w-full rounded-md border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+            className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm"
             value={filterDepartment}
             onChange={(e) => setFilterDepartment(e.target.value)}
           >
@@ -315,8 +345,8 @@ export default function EmployeeManagement() {
                             {employee.employeeId}
                           </td>
                           <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                            <div className="font-medium text-gray-900">{employee.name}</div>
-                            <div className="text-gray-500">{employee.email}</div>
+                            <div className="font-medium text-gray-900">{employee.user?.name || employee.name}</div>
+                            <div className="text-gray-500">{employee.user?.email || employee.email}</div>
                           </td>
                           <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                             {employee.position}

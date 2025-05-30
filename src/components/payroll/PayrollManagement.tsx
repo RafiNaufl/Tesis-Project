@@ -16,15 +16,12 @@ type PayrollRecord = {
   overtimeHours: number;
   overtimeAmount: number;
   status: "PENDING" | "PAID" | "CANCELLED";
-  createdAt: Date;
-  paidAt: Date | null;
-  employee: {
-    id: string;
-    employeeId: string;
-    user: {
-      name: string;
-    };
-  };
+  createdAt: string;
+  paidAt: string | null;
+  employeeName: string;
+  empId: string;
+  position?: string;
+  department?: string;
 };
 
 export default function PayrollManagement() {
@@ -34,79 +31,38 @@ export default function PayrollManagement() {
   const [error, setError] = useState<string | null>(null);
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+  const [generatingPayroll, setGeneratingPayroll] = useState(false);
+  const [processingId, setProcessingId] = useState<string | null>(null);
   const isAdmin = session?.user?.role === "ADMIN";
 
-  // Mock data for now - in a real app, you would fetch this from your API
   useEffect(() => {
     const fetchPayroll = async () => {
+      if (!session) return;
+      
       setIsLoading(true);
       setError(null);
       
       try {
-        // Simulate API call with mock data
-        setTimeout(() => {
-          const mockPayrollData: PayrollRecord[] = [
-            {
-              id: "1",
-              month: selectedMonth,
-              year: selectedYear,
-              baseSalary: 5000,
-              totalAllowances: 500,
-              totalDeductions: 800,
-              netSalary: 4700,
-              daysPresent: 22,
-              daysAbsent: 1,
-              overtimeHours: 5,
-              overtimeAmount: 250,
-              status: "PAID",
-              createdAt: new Date(),
-              paidAt: new Date(),
-              employee: {
-                id: "1",
-                employeeId: "EMP001",
-                user: {
-                  name: "John Doe",
-                },
-              },
-            },
-            {
-              id: "2",
-              month: selectedMonth,
-              year: selectedYear,
-              baseSalary: 6000,
-              totalAllowances: 600,
-              totalDeductions: 1000,
-              netSalary: 5600,
-              daysPresent: 20,
-              daysAbsent: 3,
-              overtimeHours: 0,
-              overtimeAmount: 0,
-              status: "PENDING",
-              createdAt: new Date(),
-              paidAt: null,
-              employee: {
-                id: "2",
-                employeeId: "EMP002",
-                user: {
-                  name: "Jane Smith",
-                },
-              },
-            },
-          ];
-          
-          setPayrollRecords(mockPayrollData);
-          setIsLoading(false);
-        }, 1000);
+        // Fetch payroll data from API
+        const response = await fetch(
+          `/api/payroll?month=${selectedMonth}&year=${selectedYear}`
+        );
+        
+        if (!response.ok) {
+          throw new Error("Failed to fetch payroll records");
+        }
+        
+        const data = await response.json();
+        setPayrollRecords(data);
       } catch (err) {
         console.error("Error fetching payroll:", err);
         setError("Failed to load payroll records");
+      } finally {
         setIsLoading(false);
       }
     };
 
-    if (session) {
-      fetchPayroll();
-    }
+    fetchPayroll();
   }, [session, selectedMonth, selectedYear]);
 
   const formatCurrency = (amount: number): string => {
@@ -116,7 +72,7 @@ export default function PayrollManagement() {
     }).format(amount);
   };
 
-  const formatDate = (date: Date | null): string => {
+  const formatDate = (date: string | null): string => {
     if (!date) return "-";
     return new Date(date).toLocaleDateString();
   };
@@ -127,20 +83,86 @@ export default function PayrollManagement() {
     return date.toLocaleString('default', { month: 'long' });
   };
 
-  const handleGeneratePayroll = () => {
-    // In a real app, this would call an API to generate payroll
-    alert("This would generate payroll for the selected month and year");
+  const handleGeneratePayroll = async () => {
+    if (!isAdmin) return;
+    
+    setGeneratingPayroll(true);
+    setError(null);
+    
+    try {
+      const response = await fetch("/api/payroll/generate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          month: selectedMonth,
+          year: selectedYear,
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to generate payroll");
+      }
+      
+      // Refresh payroll data
+      const refreshResponse = await fetch(
+        `/api/payroll?month=${selectedMonth}&year=${selectedYear}`
+      );
+      
+      if (!refreshResponse.ok) {
+        throw new Error("Failed to refresh payroll data");
+      }
+      
+      const refreshData = await refreshResponse.json();
+      setPayrollRecords(refreshData);
+      
+    } catch (err: any) {
+      console.error("Error generating payroll:", err);
+      setError(err.message || "Failed to generate payroll");
+    } finally {
+      setGeneratingPayroll(false);
+    }
   };
 
-  const handleMarkAsPaid = (id: string) => {
-    // In a real app, this would call an API to mark a payroll as paid
-    setPayrollRecords(
-      payrollRecords.map((record) =>
-        record.id === id
-          ? { ...record, status: "PAID", paidAt: new Date() }
-          : record
-      )
-    );
+  const handleMarkAsPaid = async (id: string) => {
+    if (!isAdmin) return;
+    
+    setProcessingId(id);
+    setError(null);
+    
+    try {
+      const response = await fetch("/api/payroll", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          ids: [id],
+          status: "PAID",
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to update payroll status");
+      }
+      
+      // Update local state
+      setPayrollRecords(
+        payrollRecords.map((record) =>
+          record.id === id
+            ? { ...record, status: "PAID", paidAt: new Date().toISOString() }
+            : record
+        )
+      );
+    } catch (err: any) {
+      console.error("Error updating payroll:", err);
+      setError(err.message || "Failed to update payroll status");
+    } finally {
+      setProcessingId(null);
+    }
   };
 
   const months = Array.from({ length: 12 }, (_, i) => i + 1);
@@ -195,97 +217,115 @@ export default function PayrollManagement() {
             {isAdmin && (
               <button
                 onClick={handleGeneratePayroll}
-                className="inline-flex items-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                disabled={generatingPayroll}
+                className="inline-flex items-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50"
               >
-                Generate Payroll
+                {generatingPayroll ? "Processing..." : "Generate Payroll"}
               </button>
             )}
           </div>
         </div>
+
+        {error && (
+          <div className="mt-4 rounded-md bg-red-50 p-4">
+            <div className="flex">
+              <div className="flex-shrink-0">
+                <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="ml-3">
+                <p className="text-sm text-red-700">{error}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="mt-4 flex flex-col">
           <div className="-my-2 -mx-4 overflow-x-auto sm:-mx-6 lg:-mx-8">
             <div className="inline-block min-w-full py-2 align-middle md:px-6 lg:px-8">
               <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
-                <table className="min-w-full divide-y divide-gray-300">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      {isAdmin && (
+                {isLoading ? (
+                  <div className="flex justify-center items-center h-24 bg-white">
+                    <p className="text-gray-500">Loading payroll records...</p>
+                  </div>
+                ) : payrollRecords.length === 0 ? (
+                  <div className="flex justify-center items-center h-24 bg-white">
+                    <p className="text-gray-500">No payroll records found for this period</p>
+                  </div>
+                ) : (
+                  <table className="min-w-full divide-y divide-gray-300">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        {isAdmin && (
+                          <th
+                            scope="col"
+                            className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6"
+                          >
+                            Employee
+                          </th>
+                        )}
                         <th
                           scope="col"
-                          className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6"
+                          className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
                         >
-                          Employee
+                          Period
                         </th>
-                      )}
-                      <th
-                        scope="col"
-                        className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
-                      >
-                        Period
-                      </th>
-                      <th
-                        scope="col"
-                        className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
-                      >
-                        Base Salary
-                      </th>
-                      <th
-                        scope="col"
-                        className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
-                      >
-                        Allowances
-                      </th>
-                      <th
-                        scope="col"
-                        className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
-                      >
-                        Deductions
-                      </th>
-                      <th
-                        scope="col"
-                        className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
-                      >
-                        Net Salary
-                      </th>
-                      <th
-                        scope="col"
-                        className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
-                      >
-                        Status
-                      </th>
-                      <th
-                        scope="col"
-                        className="relative py-3.5 pl-3 pr-4 sm:pr-6"
-                      >
-                        <span className="sr-only">Actions</span>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200 bg-white">
-                    {isLoading ? (
-                      <tr>
-                        <td
-                          colSpan={isAdmin ? 8 : 7}
-                          className="whitespace-nowrap py-4 px-3 text-sm text-gray-500 text-center"
+                        <th
+                          scope="col"
+                          className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
                         >
-                          Loading...
-                        </td>
-                      </tr>
-                    ) : payrollRecords.length === 0 ? (
-                      <tr>
-                        <td
-                          colSpan={isAdmin ? 8 : 7}
-                          className="whitespace-nowrap py-4 px-3 text-sm text-gray-500 text-center"
+                          Base Salary
+                        </th>
+                        <th
+                          scope="col"
+                          className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
                         >
-                          No payroll records found
-                        </td>
+                          Allowances
+                        </th>
+                        <th
+                          scope="col"
+                          className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
+                        >
+                          Deductions
+                        </th>
+                        <th
+                          scope="col"
+                          className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
+                        >
+                          Net Salary
+                        </th>
+                        <th
+                          scope="col"
+                          className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
+                        >
+                          Status
+                        </th>
+                        <th
+                          scope="col"
+                          className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
+                        >
+                          Paid On
+                        </th>
+                        {isAdmin && (
+                          <th
+                            scope="col"
+                            className="relative py-3.5 pl-3 pr-4 sm:pr-6"
+                          >
+                            <span className="sr-only">Actions</span>
+                          </th>
+                        )}
                       </tr>
-                    ) : (
-                      payrollRecords.map((record) => (
+                    </thead>
+                    <tbody className="divide-y divide-gray-200 bg-white">
+                      {payrollRecords.map((record) => (
                         <tr key={record.id}>
                           {isAdmin && (
                             <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6">
-                              {record.employee.user.name}
+                              {record.employeeName}
+                              <div className="text-xs text-gray-500">
+                                {record.empId}
+                              </div>
                             </td>
                           )}
                           <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
@@ -310,143 +350,38 @@ export default function PayrollManagement() {
                                   ? "bg-green-100 text-green-800"
                                   : record.status === "PENDING"
                                   ? "bg-yellow-100 text-yellow-800"
-                                  : "bg-red-100 text-red-800"
+                                  : "bg-gray-100 text-gray-800"
                               }`}
                             >
                               {record.status}
                             </span>
                           </td>
-                          <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
-                            {isAdmin && record.status === "PENDING" ? (
-                              <button
-                                onClick={() => handleMarkAsPaid(record.id)}
-                                className="text-indigo-600 hover:text-indigo-900 mr-4"
-                              >
-                                Mark as Paid
-                              </button>
-                            ) : (
-                              <button
-                                className="text-indigo-600 hover:text-indigo-900"
-                              >
-                                View Details
-                              </button>
-                            )}
+                          <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                            {formatDate(record.paidAt)}
                           </td>
+                          {isAdmin && (
+                            <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
+                              {record.status === "PENDING" && (
+                                <button
+                                  onClick={() => handleMarkAsPaid(record.id)}
+                                  disabled={processingId === record.id}
+                                  className="text-indigo-600 hover:text-indigo-900 disabled:opacity-50"
+                                >
+                                  {processingId === record.id ? "Processing..." : "Mark as Paid"}
+                                </button>
+                              )}
+                            </td>
+                          )}
                         </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </div>
             </div>
           </div>
         </div>
       </div>
-
-      {!isAdmin && (
-        <div className="mt-8">
-          <div className="overflow-hidden bg-white shadow sm:rounded-lg">
-            <div className="px-4 py-5 sm:px-6">
-              <h3 className="text-lg font-medium leading-6 text-gray-900">
-                Payroll Summary
-              </h3>
-              <p className="mt-1 max-w-2xl text-sm text-gray-500">
-                Summary of your payroll information for {getMonthName(selectedMonth)} {selectedYear}
-              </p>
-            </div>
-            <div className="border-t border-gray-200 px-4 py-5 sm:p-0">
-              <dl className="sm:divide-y sm:divide-gray-200">
-                <div className="py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:py-5 sm:px-6">
-                  <dt className="text-sm font-medium text-gray-500">Base Salary</dt>
-                  <dd className="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
-                    {payrollRecords.length > 0 
-                      ? formatCurrency(payrollRecords[0].baseSalary) 
-                      : "-"}
-                  </dd>
-                </div>
-                <div className="py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:py-5 sm:px-6">
-                  <dt className="text-sm font-medium text-gray-500">Days Present</dt>
-                  <dd className="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
-                    {payrollRecords.length > 0 ? payrollRecords[0].daysPresent : "-"}
-                  </dd>
-                </div>
-                <div className="py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:py-5 sm:px-6">
-                  <dt className="text-sm font-medium text-gray-500">Days Absent</dt>
-                  <dd className="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
-                    {payrollRecords.length > 0 ? payrollRecords[0].daysAbsent : "-"}
-                  </dd>
-                </div>
-                <div className="py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:py-5 sm:px-6">
-                  <dt className="text-sm font-medium text-gray-500">Overtime Hours</dt>
-                  <dd className="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
-                    {payrollRecords.length > 0 ? payrollRecords[0].overtimeHours : "-"}
-                  </dd>
-                </div>
-                <div className="py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:py-5 sm:px-6">
-                  <dt className="text-sm font-medium text-gray-500">Overtime Amount</dt>
-                  <dd className="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
-                    {payrollRecords.length > 0 
-                      ? formatCurrency(payrollRecords[0].overtimeAmount) 
-                      : "-"}
-                  </dd>
-                </div>
-                <div className="py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:py-5 sm:px-6">
-                  <dt className="text-sm font-medium text-gray-500">Total Allowances</dt>
-                  <dd className="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
-                    {payrollRecords.length > 0 
-                      ? formatCurrency(payrollRecords[0].totalAllowances) 
-                      : "-"}
-                  </dd>
-                </div>
-                <div className="py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:py-5 sm:px-6">
-                  <dt className="text-sm font-medium text-gray-500">Total Deductions</dt>
-                  <dd className="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
-                    {payrollRecords.length > 0 
-                      ? formatCurrency(payrollRecords[0].totalDeductions) 
-                      : "-"}
-                  </dd>
-                </div>
-                <div className="py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:py-5 sm:px-6">
-                  <dt className="text-sm font-medium text-gray-500">Net Salary</dt>
-                  <dd className="mt-1 text-sm font-semibold text-gray-900 sm:col-span-2 sm:mt-0">
-                    {payrollRecords.length > 0 
-                      ? formatCurrency(payrollRecords[0].netSalary) 
-                      : "-"}
-                  </dd>
-                </div>
-                <div className="py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:py-5 sm:px-6">
-                  <dt className="text-sm font-medium text-gray-500">Payment Status</dt>
-                  <dd className="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
-                    {payrollRecords.length > 0 ? (
-                      <span
-                        className={`inline-flex rounded-full px-2 text-xs font-semibold leading-5 ${
-                          payrollRecords[0].status === "PAID"
-                            ? "bg-green-100 text-green-800"
-                            : payrollRecords[0].status === "PENDING"
-                            ? "bg-yellow-100 text-yellow-800"
-                            : "bg-red-100 text-red-800"
-                        }`}
-                      >
-                        {payrollRecords[0].status}
-                      </span>
-                    ) : (
-                      "-"
-                    )}
-                  </dd>
-                </div>
-                <div className="py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:py-5 sm:px-6">
-                  <dt className="text-sm font-medium text-gray-500">Payment Date</dt>
-                  <dd className="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">
-                    {payrollRecords.length > 0 && payrollRecords[0].paidAt
-                      ? formatDate(payrollRecords[0].paidAt)
-                      : "Pending"}
-                  </dd>
-                </div>
-              </dl>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 } 
