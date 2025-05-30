@@ -11,16 +11,17 @@ interface NavItem {
   href: string;
   icon?: React.ReactNode;
   adminOnly?: boolean;
+  title?: string;
 }
 
 const navigation: NavItem[] = [
-  { name: "Dashboard", href: "/dashboard" },
-  { name: "Attendance", href: "/attendance" },
-  { name: "Payroll", href: "/payroll" },
-  { name: "Profile", href: "/profile" },
-  { name: "Employees", href: "/dashboard/employees", adminOnly: true },
-  { name: "Reports", href: "/reports", adminOnly: true },
-  { name: "Notifications", href: "/notifications" },
+  { name: "Dashboard", href: "/dashboard", title: "Dashboard Overview" },
+  { name: "Attendance", href: "/attendance", title: "Attendance Management" },
+  { name: "Payroll", href: "/payroll", title: "Payroll Management" },
+  { name: "Profile", href: "/profile", title: "User Profile" },
+  { name: "Employees", href: "/dashboard/employees", adminOnly: true, title: "Employee Management" },
+  { name: "Reports", href: "/reports", adminOnly: true, title: "Reports Management" },
+  { name: "Notifications", href: "/notifications", title: "Notifications" },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -64,6 +65,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                       ? "bg-gray-100 text-gray-900"
                       : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
                   } group flex items-center rounded-md px-2 py-2 text-base font-medium`}
+                  title={item.title}
                 >
                   {item.name}
                 </Link>
@@ -107,6 +109,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                       ? "bg-gray-100 text-gray-900"
                       : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
                   } group flex items-center rounded-md px-2 py-2 text-sm font-medium`}
+                  title={item.title}
                 >
                   {item.name}
                 </Link>
@@ -161,13 +164,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         
         {/* Top navigation bar */}
         <div className="sticky top-0 z-10 bg-white shadow">
-          <div className="flex h-16 items-center justify-end px-4 sm:px-6 lg:px-8">
-            <NotificationDropdown />
-            <div className="ml-4 flex items-center md:ml-6">
-              <span className="text-sm text-gray-700">
-                {session?.user?.name}
-                {isAdmin && <span className="ml-1 text-xs text-gray-500">(Admin)</span>}
-              </span>
+          <div className="flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8">
+            <div className="text-lg font-semibold text-gray-800">
+              {filteredNavigation.find(item => isActive(item.href))?.title || "EMS"}
+            </div>
+            <div className="flex items-center">
+              <NotificationDropdown />
+              <div className="ml-4 flex items-center md:ml-6">
+                <span className="text-sm text-gray-700">
+                  {session?.user?.name}
+                  {isAdmin && <span className="ml-1 text-xs text-gray-500">(Admin)</span>}
+                </span>
+              </div>
             </div>
           </div>
         </div>

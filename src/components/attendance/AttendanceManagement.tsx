@@ -30,6 +30,17 @@ export default function AttendanceManagement() {
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const isAdmin = session?.user?.role === "ADMIN";
+  
+  // Edit modal state
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingRecord, setEditingRecord] = useState<AttendanceRecord | null>(null);
+  const [editFormData, setEditFormData] = useState({
+    checkIn: "",
+    checkOut: "",
+    status: "",
+    notes: ""
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Fetch attendance records
   useEffect(() => {
@@ -171,6 +182,88 @@ export default function AttendanceManagement() {
     const date = new Date();
     date.setMonth(month - 1);
     return date.toLocaleString('default', { month: 'long' });
+  };
+
+  // Format date for input fields
+  const formatDateForInput = (date: Date | null): string => {
+    if (!date) return '';
+    const d = new Date(date);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const hours = String(d.getHours()).padStart(2, '0');
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+  };
+
+  // Handle opening the edit modal for a record
+  const handleEditClick = (record: AttendanceRecord) => {
+    setEditingRecord(record);
+    setEditFormData({
+      checkIn: record.checkIn ? formatDateForInput(record.checkIn) : '',
+      checkOut: record.checkOut ? formatDateForInput(record.checkOut) : '',
+      status: record.status,
+      notes: record.notes || ''
+    });
+    setIsEditModalOpen(true);
+  };
+
+  // Handle form input changes
+  const handleEditFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    setEditFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  // Handle form submission
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!editingRecord) return;
+    
+    setIsSubmitting(true);
+    setError(null);
+    
+    try {
+      const response = await fetch(`/api/attendance/${editingRecord.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          checkIn: editFormData.checkIn ? new Date(editFormData.checkIn).toISOString() : null,
+          checkOut: editFormData.checkOut ? new Date(editFormData.checkOut).toISOString() : null,
+          status: editFormData.status,
+          notes: editFormData.notes
+        })
+      });
+      
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to update attendance record');
+      }
+      
+      // Refresh attendance records
+      const queryParams = new URLSearchParams({
+        month: selectedMonth.toString(),
+        year: selectedYear.toString(),
+      });
+      const refreshResponse = await fetch(`/api/attendance?${queryParams}`);
+      if (refreshResponse.ok) {
+        const refreshData = await refreshResponse.json();
+        setAttendanceRecords(refreshData);
+      }
+      
+      // Close the modal
+      setIsEditModalOpen(false);
+    } catch (err: any) {
+      console.error('Error updating attendance record:', err);
+      setError(err.message || 'Failed to update attendance record');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const months = Array.from({ length: 12 }, (_, i) => i + 1);
@@ -419,6 +512,7 @@ export default function AttendanceManagement() {
                           {isAdmin && (
                             <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
                               <button
+                                onClick={() => handleEditClick(record)}
                                 className="text-indigo-600 hover:text-indigo-900"
                               >
                                 Edit
@@ -435,6 +529,180 @@ export default function AttendanceManagement() {
           </div>
         </div>
       </div>
+
+      {/* Edit Modal */}
+      {isEditModalOpen && editingRecord && (
+        <div className="fixed inset-0 z-[100] overflow-y-auto">
+          <div className="flex min-h-screen items-center justify-center px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+            {/* Background overlay */}
+            <div
+              className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
+              aria-hidden="true"
+              onClick={() => setIsEditModalOpen(false)}
+            ></div>
+
+            {/* Modal positioning */}
+            <span
+              className="hidden sm:inline-block sm:h-screen sm:align-middle"
+              aria-hidden="true"
+            >
+              &#8203;
+            </span>
+
+            {/* Modal content */}
+            <div className="relative inline-block transform overflow-hidden rounded-lg bg-white text-left align-bottom shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:align-middle">
+              {/* Modal header */}
+              <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                <div className="sm:flex sm:items-start">
+                  <div className="mt-3 w-full text-center sm:mt-0 sm:text-left">
+                    <div className="flex items-center justify-between">
+                      <h3
+                        className="text-lg font-medium leading-6 text-gray-900"
+                        id="modal-title"
+                      >
+                        Edit Attendance Record
+                      </h3>
+                      <button
+                        type="button"
+                        className="rounded-md bg-white text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                        onClick={() => setIsEditModalOpen(false)}
+                      >
+                        <span className="sr-only">Close</span>
+                        <svg
+                          className="h-6 w-6"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          strokeWidth="1.5"
+                          stroke="currentColor"
+                          aria-hidden="true"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M6 18L18 6M6 6l12 12"
+                          />
+                        </svg>
+                      </button>
+                    </div>
+
+                    <div className="mt-2">
+                      <p className="text-sm text-gray-500">
+                        {editingRecord.employee.user.name} - {formatDate(editingRecord.date)}
+                      </p>
+                    </div>
+
+                    <div className="mt-4">
+                      <form onSubmit={handleEditSubmit}>
+                        <div className="grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-2">
+                          <div>
+                            <label htmlFor="checkIn" className="block text-sm font-medium text-gray-700">
+                              Check In Time
+                            </label>
+                            <div className="mt-1">
+                              <input
+                                type="datetime-local"
+                                name="checkIn"
+                                id="checkIn"
+                                value={editFormData.checkIn}
+                                onChange={handleEditFormChange}
+                                className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm"
+                              />
+                            </div>
+                          </div>
+                          
+                          <div>
+                            <label htmlFor="checkOut" className="block text-sm font-medium text-gray-700">
+                              Check Out Time
+                            </label>
+                            <div className="mt-1">
+                              <input
+                                type="datetime-local"
+                                name="checkOut"
+                                id="checkOut"
+                                value={editFormData.checkOut}
+                                onChange={handleEditFormChange}
+                                className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm"
+                              />
+                            </div>
+                          </div>
+                          
+                          <div>
+                            <label htmlFor="status" className="block text-sm font-medium text-gray-700">
+                              Status
+                            </label>
+                            <div className="mt-1">
+                              <select
+                                name="status"
+                                id="status"
+                                value={editFormData.status}
+                                onChange={handleEditFormChange}
+                                className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm"
+                              >
+                                <option value="PRESENT">PRESENT</option>
+                                <option value="ABSENT">ABSENT</option>
+                                <option value="LATE">LATE</option>
+                                <option value="HALFDAY">HALFDAY</option>
+                              </select>
+                            </div>
+                          </div>
+                          
+                          <div className="sm:col-span-2">
+                            <label htmlFor="notes" className="block text-sm font-medium text-gray-700">
+                              Notes
+                            </label>
+                            <div className="mt-1">
+                              <textarea
+                                name="notes"
+                                id="notes"
+                                rows={3}
+                                value={editFormData.notes}
+                                onChange={handleEditFormChange}
+                                className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {error && (
+                          <div className="mt-4 rounded-md bg-red-50 p-4">
+                            <div className="flex">
+                              <div className="flex-shrink-0">
+                                <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                                </svg>
+                              </div>
+                              <div className="ml-3">
+                                <p className="text-sm text-red-700">{error}</p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="mt-6 sm:mt-8 sm:flex sm:flex-row-reverse">
+                          <button
+                            type="submit"
+                            disabled={isSubmitting}
+                            className="inline-flex w-full justify-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-base font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:bg-indigo-300 disabled:cursor-not-allowed sm:ml-3 sm:w-auto sm:text-sm transition-colors duration-200"
+                          >
+                            {isSubmitting ? "Saving..." : "Save Changes"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setIsEditModalOpen(false)}
+                            className="mt-3 inline-flex w-full justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-base font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 sm:mt-0 sm:w-auto sm:text-sm transition-colors duration-200"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 } 

@@ -144,23 +144,32 @@ export async function PATCH(request: NextRequest) {
     
     if (status === "PAID") {
       // If status is PAID, set paidAt to current time
-      result = await db.$executeRaw`
-        UPDATE payrolls
-        SET status = ${status}:::"PayStatus", "paidAt" = NOW()
-        WHERE id IN (${ids.join(',')})
-      `;
+      result = await db.$transaction(
+        ids.map(id => 
+          db.payroll.update({
+            where: { id },
+            data: { 
+              status: status,
+              paidAt: new Date()
+            }
+          })
+        )
+      );
     } else {
       // For other statuses, just update the status
-      result = await db.$executeRaw`
-        UPDATE payrolls
-        SET status = ${status}:::"PayStatus"
-        WHERE id IN (${ids.join(',')})
-      `;
+      result = await db.$transaction(
+        ids.map(id => 
+          db.payroll.update({
+            where: { id },
+            data: { status: status }
+          })
+        )
+      );
     }
     
     return NextResponse.json({ 
       success: true, 
-      message: `${result} payrolls updated successfully` 
+      message: `${result.length} payrolls updated successfully` 
     });
   } catch (error) {
     console.error("Error updating payrolls:", error);
