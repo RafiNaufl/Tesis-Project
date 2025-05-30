@@ -6,9 +6,10 @@ import { db } from "@/lib/db";
 // GET a single notification
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: { id: string } }
 ) {
   try {
+    const { id } = context.params;
     const session = await getServerSession(authOptions);
     
     if (!session) {
@@ -20,7 +21,7 @@ export async function GET(
     
     const notification = await db.notification.findUnique({
       where: {
-        id: params.id,
+        id,
       },
     });
     
@@ -52,9 +53,10 @@ export async function GET(
 // PATCH: Update a notification (mark as read)
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: { id: string } }
 ) {
   try {
+    const { id } = context.params;
     const session = await getServerSession(authOptions);
     
     if (!session) {
@@ -69,7 +71,7 @@ export async function PATCH(
     // Find the notification first
     const notification = await db.notification.findUnique({
       where: {
-        id: params.id,
+        id,
       },
     });
     
@@ -91,7 +93,7 @@ export async function PATCH(
     // Update the notification
     const updatedNotification = await db.notification.update({
       where: {
-        id: params.id,
+        id,
       },
       data: {
         read: body.read,
@@ -111,9 +113,10 @@ export async function PATCH(
 // DELETE: Delete a notification
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: { id: string } }
 ) {
   try {
+    const { id } = context.params;
     const session = await getServerSession(authOptions);
     
     if (!session) {
@@ -126,7 +129,7 @@ export async function DELETE(
     // Find the notification first
     const notification = await db.notification.findUnique({
       where: {
-        id: params.id,
+        id,
       },
     });
     
@@ -148,7 +151,7 @@ export async function DELETE(
     // Delete the notification
     await db.notification.delete({
       where: {
-        id: params.id,
+        id,
       },
     });
     
