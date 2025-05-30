@@ -6,10 +6,11 @@ import { db } from "@/lib/db";
 // GET a single notification
 export async function GET(
   request: NextRequest,
-  context: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = context.params;
+    // Await the params first
+    const { id } = await context.params;
     const session = await getServerSession(authOptions);
     
     if (!session) {
@@ -53,10 +54,11 @@ export async function GET(
 // PATCH: Update a notification (mark as read)
 export async function PATCH(
   request: NextRequest,
-  context: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = context.params;
+    // Await the params first
+    const { id } = await context.params;
     const session = await getServerSession(authOptions);
     
     if (!session) {
@@ -113,10 +115,11 @@ export async function PATCH(
 // DELETE: Delete a notification
 export async function DELETE(
   request: NextRequest,
-  context: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = context.params;
+    // Await the params first
+    const { id } = await context.params;
     const session = await getServerSession(authOptions);
     
     if (!session) {
