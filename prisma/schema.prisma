@@ -20,6 +20,7 @@ model User {
   name            String
   email           String         @unique
   hashedPassword  String
+  profileImageUrl String?        // Added field for profile image
   role            Role           @default(EMPLOYEE)
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt

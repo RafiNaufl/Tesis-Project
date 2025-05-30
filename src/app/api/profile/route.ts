@@ -26,6 +26,7 @@ export async function GET(request: NextRequest) {
         name: true,
         email: true,
         role: true,
+        profileImageUrl: true, // Include profileImageUrl field
         createdAt: true,
         employee: {
           select: {
@@ -73,7 +74,15 @@ export async function PATCH(request: NextRequest) {
     }
     
     const body = await request.json();
-    const { name, email, currentPassword, newPassword, contactNumber, address } = body;
+    const { 
+      name, 
+      email, 
+      currentPassword, 
+      newPassword, 
+      contactNumber, 
+      address, 
+      profileImageUrl 
+    } = body;
     
     // Get the current user
     const user = await db.user.findUnique({
@@ -119,6 +128,11 @@ export async function PATCH(request: NextRequest) {
       updateData.email = email;
     }
     
+    // Update profileImageUrl if provided
+    if (profileImageUrl !== undefined) {
+      updateData.profileImageUrl = profileImageUrl;
+    }
+    
     // Update password if both current and new passwords are provided
     if (currentPassword && newPassword) {
       // Verify current password
@@ -147,6 +161,7 @@ export async function PATCH(request: NextRequest) {
         name: true,
         email: true,
         role: true,
+        profileImageUrl: true, // Include profileImageUrl in response
       },
     });
     
