@@ -143,6 +143,21 @@ export async function PATCH(request: NextRequest) {
     let result;
     
     if (status === "PAID") {
+      // Dapatkan data payroll dengan informasi karyawan sebelum update
+      const payrollsData = await db.payroll.findMany({
+        where: { 
+          id: { in: ids },
+          status: { not: "PAID" } // Hanya yang belum dibayar
+        },
+        include: {
+          employee: {
+            include: {
+              user: true
+            }
+          }
+        }
+      });
+      
       // If status is PAID, set paidAt to current time
       result = await db.$transaction(
         ids.map(id => 
@@ -155,6 +170,30 @@ export async function PATCH(request: NextRequest) {
           })
         )
       );
+      
+      // Buat notifikasi untuk setiap karyawan yang gajinya dibayarkan
+      const notificationPromises = payrollsData.map(payroll => {
+        const formattedDate = new Intl.DateTimeFormat('id-ID', {
+          year: 'numeric',
+          month: 'long'
+        }).format(new Date(payroll.year, payroll.month - 1));
+        
+        return db.notification.create({
+          data: {
+            userId: payroll.employee.userId,
+            title: "Gaji Telah Dibayarkan",
+            message: `Gaji Anda untuk periode ${formattedDate} telah dibayarkan. Jumlah: ${new Intl.NumberFormat('id-ID', {
+              style: 'currency',
+              currency: 'IDR',
+              minimumFractionDigits: 0
+            }).format(payroll.netSalary)}`,
+            type: "success",
+          }
+        });
+      });
+      
+      // Jalankan pembuatan notifikasi
+      await Promise.all(notificationPromises);
     } else {
       // For other statuses, just update the status
       result = await db.$transaction(
@@ -169,7 +208,8 @@ export async function PATCH(request: NextRequest) {
     
     return NextResponse.json({ 
       success: true, 
-      message: `${result.length} payrolls updated successfully` 
+      message: `${result.length} payrolls updated successfully`,
+      notificationsSent: status === "PAID" ? result.length : 0
     });
   } catch (error) {
     console.error("Error updating payrolls:", error);

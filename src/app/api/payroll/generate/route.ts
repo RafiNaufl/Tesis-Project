@@ -188,6 +188,26 @@ export async function POST(request: NextRequest) {
           },
         });
         
+        // Kirim notifikasi ke karyawan bahwa slip gaji baru telah dibuat
+        try {
+          const formattedDate = new Intl.DateTimeFormat('id-ID', {
+            year: 'numeric',
+            month: 'long'
+          }).format(new Date(payrollYear, payrollMonth - 1));
+          
+          await db.notification.create({
+            data: {
+              userId: employee.userId,
+              title: "Slip Gaji Baru Tersedia",
+              message: `Slip gaji Anda untuk periode ${formattedDate} telah tersedia. Silahkan periksa halaman Penggajian.`,
+              type: "info",
+            }
+          });
+        } catch (notifError) {
+          console.error(`Error creating notification for employee ${employee.employeeId}:`, notifError);
+          // Tidak menghentikan proses jika notifikasi gagal
+        }
+        
         results.push({
           employeeId: employee.employeeId,
           name: employee.user.name,
@@ -213,6 +233,7 @@ export async function POST(request: NextRequest) {
       failed: errors.length,
       results,
       errors,
+      notificationsSent: results.length
     });
   } catch (error) {
     console.error("Error generating payroll:", error);

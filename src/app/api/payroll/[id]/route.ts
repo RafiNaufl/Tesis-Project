@@ -200,7 +200,46 @@ export async function PATCH(
         id: params.id,
       },
       data: updateData,
+      include: {
+        employee: true
+      }
     });
+    
+    // Kirim notifikasi jika status berubah menjadi PAID
+    if (body.status === "PAID" && payroll.status !== "PAID") {
+      try {
+        // Ambil informasi karyawan untuk notifikasi
+        const employee = await db.employee.findUnique({
+          where: { id: updatedPayroll.employeeId }
+        });
+        
+        if (employee) {
+          const formattedDate = new Intl.DateTimeFormat('id-ID', {
+            year: 'numeric',
+            month: 'long'
+          }).format(new Date(updatedPayroll.year, updatedPayroll.month - 1));
+          
+          const formattedAmount = new Intl.NumberFormat('id-ID', {
+            style: 'currency',
+            currency: 'IDR',
+            minimumFractionDigits: 0
+          }).format(updatedPayroll.netSalary);
+          
+          // Buat notifikasi untuk karyawan
+          await db.notification.create({
+            data: {
+              userId: employee.userId,
+              title: "Gaji Telah Dibayarkan",
+              message: `Gaji Anda untuk periode ${formattedDate} telah dibayarkan. Jumlah: ${formattedAmount}`,
+              type: "success",
+            }
+          });
+        }
+      } catch (notifError) {
+        console.error("Error creating notification:", notifError);
+        // Tidak perlu menghentikan proses jika notifikasi gagal
+      }
+    }
     
     return NextResponse.json(updatedPayroll);
   } catch (error) {
