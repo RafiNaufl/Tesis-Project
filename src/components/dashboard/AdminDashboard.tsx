@@ -72,29 +72,61 @@ export default function AdminDashboard() {
       const cacheBuster = `timestamp=${Date.now()}&random=${Math.random()}`;
       
       // Fetch dashboard statistics
-      const statsResponse = await fetch(`/api/reports/summary?${cacheBuster}`, {
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache',
-          'Expires': '0'
-        }
-      });
-      if (!statsResponse.ok) throw new Error('Gagal mengambil statistik dashboard');
-      const statsData = await statsResponse.json();
+      let statsData = {
+        payroll: { employeeCount: 0, pendingCount: 0, totalNetSalary: 0 },
+        attendance: { presentToday: 0 }
+      };
       
-      // Log data statistik untuk debugging
-      console.log("Dashboard stats data:", statsData);
+      try {
+        const statsResponse = await fetch(`/api/reports/summary?${cacheBuster}`, {
+          headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+          },
+          // Tambahkan timeout untuk mencegah permintaan tertunda terlalu lama
+          signal: AbortSignal.timeout(5000) // 5 detik timeout
+        });
+        
+        if (!statsResponse.ok) {
+          console.error(`Error response from /api/reports/summary: ${statsResponse.status} ${statsResponse.statusText}`);
+          // Tetap lanjutkan eksekusi, gunakan data default
+        } else {
+          statsData = await statsResponse.json();
+          // Log data statistik untuk debugging
+          console.log("Dashboard stats data:", statsData);
+        }
+      } catch (statsError) {
+        console.error("Error fetching stats:", statsError);
+        // Tetap lanjutkan eksekusi, gunakan data default
+      }
       
       // Fetch recent attendance activity dengan limit lebih besar untuk memastikan mendapatkan data terbaru
-      const activityResponse = await fetch(`/api/attendance?limit=10&${cacheBuster}`, {
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache',
-          'Expires': '0'
+      let activityData: any = { attendances: [] };
+      
+      try {
+        const activityResponse = await fetch(`/api/attendance?limit=10&${cacheBuster}`, {
+          headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+          },
+          // Tambahkan timeout untuk mencegah permintaan tertunda terlalu lama
+          signal: AbortSignal.timeout(5000) // 5 detik timeout
+        });
+        
+        if (!activityResponse.ok) {
+          console.error(`Error response from /api/attendance: ${activityResponse.status} ${activityResponse.statusText}`);
+          // Tetap lanjutkan eksekusi, gunakan data default
+        } else {
+          activityData = await activityResponse.json();
+          // Log response untuk debugging
+          console.log("Attendance data response:", activityData);
         }
-      });
-      if (!activityResponse.ok) throw new Error('Gagal mengambil aktivitas terbaru');
-      const activityData = await activityResponse.json();
+      } catch (activityError) {
+        console.error("Error fetching activities:", activityError);
+        // Tetap lanjutkan eksekusi, gunakan data default
+      }
       
       // Format the data for our components
       setStats({
@@ -107,14 +139,18 @@ export default function AdminDashboard() {
       // Normalize activity data
       let attendanceRecords = [];
       
-      // Log response untuk debugging
-      console.log("Attendance data response:", activityData);
-      
       // Handle different response formats
       if (Array.isArray(activityData)) {
         attendanceRecords = activityData;
       } else if (activityData.attendances && Array.isArray(activityData.attendances)) {
         attendanceRecords = activityData.attendances;
+      }
+      
+      // Jika tidak ada data kehadiran, tetapkan aktivitas kosong
+      if (!attendanceRecords || attendanceRecords.length === 0) {
+        setRecentActivities([]);
+        lastFetchTimeRef.current = Date.now();
+        return;
       }
       
       // Format attendance records as activities with unique IDs
@@ -156,6 +192,14 @@ export default function AdminDashboard() {
       lastFetchTimeRef.current = Date.now();
     } catch (error) {
       console.error("Error fetching dashboard data:", error);
+      // Set data kosong untuk menghindari error UI
+      setStats({
+        totalEmployees: 0,
+        presentToday: 0,
+        pendingPayrolls: 0,
+        totalSalaryExpense: 0,
+      });
+      setRecentActivities([]);
     } finally {
       if (showLoading) {
         setIsLoading(false);
