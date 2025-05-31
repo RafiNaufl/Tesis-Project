@@ -60,7 +60,7 @@ export default function AttendanceManagement() {
         });
 
         if (!response.ok) {
-          throw new Error("Failed to fetch attendance records");
+          throw new Error("Gagal mengambil data kehadiran");
         }
 
         const data = await response.json();
@@ -104,7 +104,7 @@ export default function AttendanceManagement() {
         setTodayRecord(todayAttendance || null);
       } catch (err) {
         console.error("Error fetching attendance:", err);
-        setError("Failed to load attendance records");
+        setError("Gagal memuat data kehadiran");
       } finally {
         setIsLoading(false);
       }
@@ -129,14 +129,14 @@ export default function AttendanceManagement() {
 
       if (!response.ok) {
         const data = await response.json();
-        throw new Error(data.error || "Failed to check in");
+        throw new Error(data.error || "Gagal melakukan absen masuk");
       }
 
       const data = await response.json();
       setTodayRecord(data);
       
       // Tampilkan alert untuk check in
-      window.alert("✅ Check in berhasil dicatat! Selamat bekerja!");
+      window.alert("✅ Absen masuk berhasil dicatat! Selamat bekerja!");
       
       // Check if the response header indicates a notification update
       if (response.headers.get('X-Notification-Update') === 'true') {
@@ -156,7 +156,7 @@ export default function AttendanceManagement() {
       }
     } catch (err: any) {
       console.error("Error checking in:", err);
-      setError(err.message || "Failed to check in");
+      setError(err.message || "Gagal melakukan absen masuk");
     } finally {
       setIsCheckingIn(false);
     }
@@ -176,14 +176,14 @@ export default function AttendanceManagement() {
 
       if (!response.ok) {
         const data = await response.json();
-        throw new Error(data.error || "Failed to check out");
+        throw new Error(data.error || "Gagal melakukan absen keluar");
       }
 
       const data = await response.json();
       setTodayRecord(data);
       
       // Tampilkan alert untuk check out
-      window.alert("✅ Check out berhasil dicatat! Terima kasih atas kerja keras Anda hari ini!");
+      window.alert("✅ Absen keluar berhasil dicatat! Terima kasih atas kerja keras Anda hari ini!");
       
       // Check if the response header indicates a notification update
       if (response.headers.get('X-Notification-Update') === 'true') {
@@ -203,7 +203,7 @@ export default function AttendanceManagement() {
       }
     } catch (err: any) {
       console.error("Error checking out:", err);
-      setError(err.message || "Failed to check out");
+      setError(err.message || "Gagal melakukan absen keluar");
     } finally {
       setIsCheckingOut(false);
     }

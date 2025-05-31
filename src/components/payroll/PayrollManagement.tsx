@@ -49,14 +49,14 @@ export default function PayrollManagement() {
         );
         
         if (!response.ok) {
-          throw new Error("Failed to fetch payroll records");
+          throw new Error("Gagal mengambil data penggajian");
         }
         
         const data = await response.json();
         setPayrollRecords(data);
       } catch (err) {
         console.error("Error fetching payroll:", err);
-        setError("Failed to load payroll records");
+        setError("Gagal memuat data penggajian");
       } finally {
         setIsLoading(false);
       }
@@ -66,21 +66,22 @@ export default function PayrollManagement() {
   }, [session, selectedMonth, selectedYear]);
 
   const formatCurrency = (amount: number): string => {
-    return new Intl.NumberFormat("en-US", {
+    return new Intl.NumberFormat("id-ID", {
       style: "currency",
-      currency: "USD",
+      currency: "IDR",
+      minimumFractionDigits: 0,
     }).format(amount);
   };
 
   const formatDate = (date: string | null): string => {
     if (!date) return "-";
-    return new Date(date).toLocaleDateString();
+    return new Date(date).toLocaleDateString('id-ID');
   };
 
   const getMonthName = (month: number): string => {
     const date = new Date();
     date.setMonth(month - 1);
-    return date.toLocaleString('default', { month: 'long' });
+    return date.toLocaleString('id-ID', { month: 'long' });
   };
 
   const handleGeneratePayroll = async () => {
@@ -103,7 +104,7 @@ export default function PayrollManagement() {
       
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to generate payroll");
+        throw new Error(errorData.error || "Gagal membuat penggajian");
       }
       
       // Refresh payroll data
@@ -112,7 +113,7 @@ export default function PayrollManagement() {
       );
       
       if (!refreshResponse.ok) {
-        throw new Error("Failed to refresh payroll data");
+        throw new Error("Gagal menyegarkan data penggajian");
       }
       
       const refreshData = await refreshResponse.json();
@@ -120,7 +121,7 @@ export default function PayrollManagement() {
       
     } catch (err: any) {
       console.error("Error generating payroll:", err);
-      setError(err.message || "Failed to generate payroll");
+      setError(err.message || "Gagal membuat penggajian");
     } finally {
       setGeneratingPayroll(false);
     }
@@ -145,7 +146,7 @@ export default function PayrollManagement() {
       const data = await response.json();
       
       if (!response.ok) {
-        throw new Error(data.error || "Failed to update payroll status");
+        throw new Error(data.error || "Gagal memperbarui status penggajian");
       }
       
       // Update local state
@@ -160,7 +161,7 @@ export default function PayrollManagement() {
       // Show success message or toast notification here if desired
     } catch (err: any) {
       console.error("Error updating payroll:", err);
-      setError(err.message || "Failed to update payrolls");
+      setError(err.message || "Gagal memperbarui penggajian");
     } finally {
       setProcessingId(null);
     }
@@ -172,11 +173,11 @@ export default function PayrollManagement() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-gray-900">Payroll</h1>
+        <h1 className="text-2xl font-semibold text-gray-900">Penggajian</h1>
         <p className="mt-1 text-sm text-gray-500">
           {isAdmin
-            ? "Manage employee payroll"
-            : "View your payroll information"}
+            ? "Kelola penggajian karyawan"
+            : "Lihat informasi penggajian Anda"}
         </p>
       </div>
 
@@ -184,12 +185,12 @@ export default function PayrollManagement() {
         <div className="sm:flex sm:items-center">
           <div className="sm:flex-auto">
             <h2 className="text-xl font-semibold text-gray-900">
-              Payroll Records
+              Data Penggajian
             </h2>
             <p className="mt-2 text-sm text-gray-700">
               {isAdmin
-                ? "View and manage employee payroll records"
-                : "View your payroll records"}
+                ? "Lihat dan kelola data penggajian karyawan"
+                : "Lihat data penggajian Anda"}
             </p>
           </div>
           <div className="mt-4 sm:mt-0 sm:ml-16 sm:flex-none space-x-2">
@@ -221,7 +222,7 @@ export default function PayrollManagement() {
                 disabled={generatingPayroll}
                 className="inline-flex items-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50"
               >
-                {generatingPayroll ? "Processing..." : "Generate Payroll"}
+                {generatingPayroll ? "Memproses..." : "Buat Penggajian"}
               </button>
             )}
           </div>
@@ -248,11 +249,11 @@ export default function PayrollManagement() {
               <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
                 {isLoading ? (
                   <div className="flex justify-center items-center h-24 bg-white">
-                    <p className="text-gray-500">Loading payroll records...</p>
+                    <p className="text-gray-500">Memuat data penggajian...</p>
                   </div>
                 ) : payrollRecords.length === 0 ? (
                   <div className="flex justify-center items-center h-24 bg-white">
-                    <p className="text-gray-500">No payroll records found for this period</p>
+                    <p className="text-gray-500">Tidak ada data penggajian untuk periode ini</p>
                   </div>
                 ) : (
                   <table className="min-w-full divide-y divide-gray-300">
@@ -263,38 +264,38 @@ export default function PayrollManagement() {
                             scope="col"
                             className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6"
                           >
-                            Employee
+                            Karyawan
                           </th>
                         )}
                         <th
                           scope="col"
                           className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
                         >
-                          Period
+                          Periode
                         </th>
                         <th
                           scope="col"
                           className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
                         >
-                          Base Salary
+                          Gaji Pokok
                         </th>
                         <th
                           scope="col"
                           className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
                         >
-                          Allowances
+                          Tunjangan
                         </th>
                         <th
                           scope="col"
                           className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
                         >
-                          Deductions
+                          Potongan
                         </th>
                         <th
                           scope="col"
                           className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
                         >
-                          Net Salary
+                          Gaji Bersih
                         </th>
                         <th
                           scope="col"
@@ -306,14 +307,14 @@ export default function PayrollManagement() {
                           scope="col"
                           className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
                         >
-                          Paid On
+                          Tanggal Bayar
                         </th>
                         {isAdmin && (
                           <th
                             scope="col"
                             className="relative py-3.5 pl-3 pr-4 sm:pr-6"
                           >
-                            <span className="sr-only">Actions</span>
+                            <span className="sr-only">Tindakan</span>
                           </th>
                         )}
                       </tr>
@@ -354,7 +355,9 @@ export default function PayrollManagement() {
                                   : "bg-gray-100 text-gray-800"
                               }`}
                             >
-                              {record.status}
+                              {record.status === "PAID" ? "DIBAYAR" : 
+                               record.status === "PENDING" ? "TERTUNDA" : 
+                               record.status === "CANCELLED" ? "DIBATALKAN" : record.status}
                             </span>
                           </td>
                           <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
@@ -368,7 +371,7 @@ export default function PayrollManagement() {
                                   disabled={processingId === record.id}
                                   className="text-indigo-600 hover:text-indigo-900 disabled:opacity-50"
                                 >
-                                  {processingId === record.id ? "Processing..." : "Mark as Paid"}
+                                  {processingId === record.id ? "Memproses..." : "Tandai Dibayar"}
                                 </button>
                               )}
                             </td>

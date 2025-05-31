@@ -63,19 +63,19 @@ export default function AdminDashboard() {
         // Format attendance records as activities with unique IDs
         const activities = attendanceRecords.map((item: any, index: number) => ({
           id: item.id || `activity-${index}`,
-          employeeName: item.employee?.user?.name || "Unknown Employee",
-          action: item.status === "PRESENT" ? "checked in" : 
-                 item.status === "ABSENT" ? "is absent" : 
-                 item.status === "LATE" ? "checked in late" : 
-                 item.status === "LEAVE" ? "is on leave" : "is on half day",
-          time: item.checkIn ? new Date(item.checkIn).toLocaleString([], {
+          employeeName: item.employee?.user?.name || "Karyawan Tidak Diketahui",
+          action: item.status === "PRESENT" ? "telah absen masuk" : 
+                 item.status === "ABSENT" ? "tidak hadir" : 
+                 item.status === "LATE" ? "terlambat masuk" : 
+                 item.status === "LEAVE" ? "sedang cuti" : "masuk setengah hari",
+          time: item.checkIn ? new Date(item.checkIn).toLocaleString('id-ID', {
             hour: '2-digit',
             minute: '2-digit',
-            hour12: true
-          }) : new Date(item.date).toLocaleString([], {
+            hour12: false
+          }) : new Date(item.date).toLocaleString('id-ID', {
             hour: '2-digit',
             minute: '2-digit',
-            hour12: true
+            hour12: false
           }),
           status: item.status
         }));
@@ -281,11 +281,11 @@ export default function AdminDashboard() {
       <div className="overflow-hidden bg-white shadow sm:rounded-md">
         <div className="px-4 py-5 sm:px-6">
           <h3 className="text-lg font-medium leading-6 text-gray-900">
-            Recent Activities
+            Aktivitas Terbaru
           </h3>
         </div>
         {isLoading ? (
-          <div className="px-4 py-5 sm:p-6 text-center">Loading recent activities...</div>
+          <div className="px-4 py-5 sm:p-6 text-center">Memuat aktivitas terbaru...</div>
         ) : (
           <ul className="divide-y divide-gray-200">
             {recentActivities.length > 0 ? (
@@ -313,7 +313,7 @@ export default function AdminDashboard() {
             ) : (
               <li>
                 <div className="px-4 py-4 sm:px-6 text-center">
-                  No recent activities found
+                  Tidak ada aktivitas terbaru
                 </div>
               </li>
             )}
