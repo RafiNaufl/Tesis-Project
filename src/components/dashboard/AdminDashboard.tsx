@@ -43,20 +43,35 @@ export default function AdminDashboard() {
         
         // Format the data for our components
         setStats({
-          totalEmployees: statsData.payroll.employeeCount || 0,
-          presentToday: statsData.attendance.presentCount || 0,
-          pendingPayrolls: statsData.payroll.pendingCount || 0,
-          totalSalaryExpense: statsData.payroll.totalNetSalary || 0,
+          totalEmployees: statsData.payroll?.employeeCount || 0,
+          presentToday: statsData.attendance?.presentCount || 0,
+          pendingPayrolls: statsData.payroll?.pendingCount || 0,
+          totalSalaryExpense: statsData.payroll?.totalNetSalary || 0,
         });
         
-        // Format attendance records as activities
-        const activities = activityData.map((item: any) => ({
-          id: item.id,
+        // Normalize activity data
+        let attendanceRecords = [];
+        
+        // Handle different response formats
+        if (Array.isArray(activityData)) {
+          attendanceRecords = activityData;
+        } else if (activityData.attendances && Array.isArray(activityData.attendances)) {
+          attendanceRecords = activityData.attendances;
+        }
+        
+        // Format attendance records as activities with unique IDs
+        const activities = attendanceRecords.map((item: any, index: number) => ({
+          id: item.id || `activity-${index}`,
           employeeName: item.employee?.user?.name || "Unknown Employee",
           action: item.status === "PRESENT" ? "checked in" : 
                  item.status === "ABSENT" ? "is absent" : 
-                 item.status === "LATE" ? "checked in late" : "is on half day",
-          time: new Date(item.checkIn || item.date).toLocaleString([], {
+                 item.status === "LATE" ? "checked in late" : 
+                 item.status === "LEAVE" ? "is on leave" : "is on half day",
+          time: item.checkIn ? new Date(item.checkIn).toLocaleString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+          }) : new Date(item.date).toLocaleString([], {
             hour: '2-digit',
             minute: '2-digit',
             hour12: true
@@ -239,7 +254,7 @@ export default function AdminDashboard() {
           <ul className="divide-y divide-gray-200">
             {recentActivities.length > 0 ? (
               recentActivities.map((activity) => (
-                <li key={activity.id}>
+                <li key={activity.id || `activity-${activity.employeeName}-${activity.time}`}>
                   <div className="px-4 py-4 sm:px-6">
                     <div className="flex items-center justify-between">
                       <p className="truncate text-sm font-medium text-indigo-600">
@@ -250,6 +265,7 @@ export default function AdminDashboard() {
                           ${activity.status === "PRESENT" ? "bg-green-100 text-green-800" :
                             activity.status === "ABSENT" ? "bg-red-100 text-red-800" :
                             activity.status === "LATE" ? "bg-yellow-100 text-yellow-800" : 
+                            activity.status === "LEAVE" ? "bg-blue-100 text-blue-800" :
                             "bg-gray-100 text-gray-800"}`}>
                           {activity.time}
                         </p>

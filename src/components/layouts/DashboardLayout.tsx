@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { signOut, useSession } from "next-auth/react";
-import NotificationDropdown, { NOTIFICATION_UPDATE_EVENT } from "../notifications/NotificationDropdown";
+import NotificationDropdown from "../notifications/NotificationDropdown";
 
 interface NavItem {
   name: string;
@@ -13,17 +13,16 @@ interface NavItem {
   icon?: React.ReactNode;
   adminOnly?: boolean;
   title?: string;
-  badge?: boolean;
 }
 
 const navigation: NavItem[] = [
-  { name: "Dashboard", href: "/dashboard", title: "Dashboard Overview" },
-  { name: "Attendance", href: "/attendance", title: "Attendance Management" },
-  { name: "Payroll", href: "/payroll", title: "Payroll Management" },
-  { name: "Profile", href: "/profile", title: "User Profile" },
-  { name: "Employees", href: "/dashboard/employees", adminOnly: true, title: "Employee Management" },
-  { name: "Reports", href: "/reports", adminOnly: true, title: "Reports Management" },
-  { name: "Notifications", href: "/notifications", title: "Notifications", badge: true },
+  { name: "Dashboard", href: "/dashboard", title: "Ringkasan Dashboard" },
+  { name: "Absensi", href: "/attendance", title: "Manajemen Absensi" },
+  { name: "Penggajian", href: "/payroll", title: "Manajemen Penggajian" },
+  { name: "Profil", href: "/profile", title: "Profil Pengguna" },
+  { name: "Karyawan", href: "/dashboard/employees", adminOnly: true, title: "Manajemen Karyawan" },
+  { name: "Laporan", href: "/reports", adminOnly: true, title: "Manajemen Laporan" },
+  { name: "Notifikasi", href: "/notifications", title: "Notifikasi" },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -31,8 +30,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const pathname = usePathname();
   const { data: session } = useSession();
   const isAdmin = session?.user?.role === "ADMIN";
-  const [hasNewNotifications, setHasNewNotifications] = useState(false);
-  const notificationCheckRef = useRef<NodeJS.Timeout | null>(null);
   
   // Track user name for efficient re-rendering
   const [userName, setUserName] = useState<string | undefined>(session?.user?.name);
@@ -54,44 +51,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       }
     }
   }, [session, userName]);
-
-  // Setup notification tracking
-  useEffect(() => {
-    if (!session) return;
-
-    // Check initial notifications
-    const checkNotifications = async () => {
-      try {
-        const response = await fetch("/api/notifications/unread-count");
-        if (response.ok) {
-          const { count } = await response.json();
-          setHasNewNotifications(count > 0);
-        }
-      } catch (error) {
-        console.error("Error checking notifications:", error);
-      }
-    };
-
-    checkNotifications();
-
-    // Set up periodic checks for new notifications
-    notificationCheckRef.current = setInterval(checkNotifications, 15000);
-
-    // Listen for notification updates
-    const handleNotificationUpdate = () => {
-      setHasNewNotifications(true);
-      checkNotifications();
-    };
-
-    window.addEventListener(NOTIFICATION_UPDATE_EVENT, handleNotificationUpdate);
-
-    return () => {
-      if (notificationCheckRef.current) {
-        clearInterval(notificationCheckRef.current);
-      }
-      window.removeEventListener(NOTIFICATION_UPDATE_EVENT, handleNotificationUpdate);
-    };
-  }, [session]);
 
   const filteredNavigation = navigation.filter(
     (item) => !item.adminOnly || (item.adminOnly && isAdmin)
@@ -130,18 +89,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     isActive(item.href)
                       ? "bg-gray-100 text-gray-900"
                       : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-                  } group flex items-center rounded-md px-2 py-2 text-base font-medium relative`}
+                  } group flex items-center rounded-md px-2 py-2 text-base font-medium`}
                   title={item.title}
-                  onClick={() => {
-                    if (item.href === "/notifications") {
-                      setHasNewNotifications(false);
-                    }
-                  }}
                 >
                   {item.name}
-                  {item.badge && hasNewNotifications && !isActive(item.href) && (
-                    <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-red-600 animate-pulse" />
-                  )}
                 </Link>
               ))}
             </nav>
@@ -155,7 +106,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <div className="relative h-10 w-10 flex-shrink-0 rounded-full overflow-hidden">
                   <Image
                     src={profileImage || defaultAvatar}
-                    alt={userName || 'User'}
+                    alt={userName || 'Pengguna'}
                     fill
                     className="object-cover"
                   />
@@ -190,18 +141,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     isActive(item.href)
                       ? "bg-gray-100 text-gray-900"
                       : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-                  } group flex items-center rounded-md px-2 py-2 text-sm font-medium relative`}
+                  } group flex items-center rounded-md px-2 py-2 text-sm font-medium`}
                   title={item.title}
-                  onClick={() => {
-                    if (item.href === "/notifications") {
-                      setHasNewNotifications(false);
-                    }
-                  }}
                 >
                   {item.name}
-                  {item.badge && hasNewNotifications && !isActive(item.href) && (
-                    <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-red-600 animate-pulse" />
-                  )}
                 </Link>
               ))}
             </nav>
@@ -215,7 +158,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <div className="relative h-8 w-8 flex-shrink-0 rounded-full overflow-hidden">
                   <Image
                     src={profileImage || defaultAvatar}
-                    alt={userName || 'User'}
+                    alt={userName || 'Pengguna'}
                     fill
                     className="object-cover"
                   />
@@ -242,7 +185,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             className="-ml-0.5 -mt-0.5 inline-flex h-12 w-12 items-center justify-center rounded-md text-gray-500 hover:text-gray-900 focus:outline-none"
             onClick={() => setSidebarOpen(true)}
           >
-            <span className="sr-only">Open sidebar</span>
+            <span className="sr-only">Buka sidebar</span>
             <svg
               className="h-6 w-6"
               fill="none"
@@ -267,13 +210,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               {filteredNavigation.find(item => isActive(item.href))?.title || "EMS"}
             </div>
             <div className="flex items-center">
-              <NotificationDropdown onNotificationUpdate={() => setHasNewNotifications(true)} />
+              <NotificationDropdown />
               <div className="ml-4 flex items-center md:ml-6">
                 <div className="flex items-center space-x-3">
                   <div className="relative h-8 w-8 flex-shrink-0 rounded-full overflow-hidden">
                     <Image
                       src={profileImage || defaultAvatar}
-                      alt={userName || 'User'}
+                      alt={userName || 'Pengguna'}
                       fill
                       className="object-cover"
                     />

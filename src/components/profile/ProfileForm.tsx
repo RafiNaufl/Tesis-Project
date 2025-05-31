@@ -78,16 +78,37 @@ export default function ProfileForm() {
     const fetchProfile = async () => {
       try {
         setLoading(true);
-        const response = await fetch('/api/profile');
+        
+        if (!session?.user?.id) {
+          // Jika belum ada session, tunggu sampai session tersedia
+          return;
+        }
+        
+        // Pastikan menggunakan URL API yang benar dengan port yang sedang berjalan
+        const baseUrl = window.location.origin;
+        const response = await fetch(`${baseUrl}/api/profile`, {
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        });
         
         if (!response.ok) {
-          throw new Error('Failed to fetch profile');
+          const errorData = await response.json();
+          console.error('Profile API error:', errorData);
+          throw new Error(errorData.error || 'Failed to fetch profile');
         }
         
         const data = await response.json();
+        
+        // Pastikan data yang diterima valid
+        if (!data || !data.id) {
+          throw new Error('Invalid profile data received');
+        }
+        
         setProfile(data);
         
-        // Initialize form values
+        // Initialize form values with fallback ke empty string jika properti tidak ada
         setName(data.name || '');
         setEmail(data.email || '');
         setContactNumber(data.employee?.contactNumber || '');
@@ -105,9 +126,15 @@ export default function ProfileForm() {
         setToast({
           visible: true,
           title: 'Error',
-          description: 'Failed to load profile information.',
+          description: 'Failed to load profile information. Please try refreshing the page.',
           variant: 'destructive',
         });
+        
+        // Set minimal profile data based on session if available
+        if (session?.user) {
+          setName(session.user.name || '');
+          setEmail(session.user.email || '');
+        }
       } finally {
         setLoading(false);
       }
@@ -171,6 +198,9 @@ export default function ProfileForm() {
     try {
       setUpdating(true);
       
+      // Get base URL
+      const baseUrl = window.location.origin;
+      
       // If there's a profile image to upload, handle it first
       let profileImageUrl = profile?.profileImageUrl || null;
       
@@ -182,9 +212,10 @@ export default function ProfileForm() {
         formData.append('file', profileImage);
         
         // Upload the image
-        const uploadResponse = await fetch('/api/upload', {
+        const uploadResponse = await fetch(`${baseUrl}/api/upload`, {
           method: 'POST',
           body: formData,
+          credentials: 'include',
         });
         
         if (!uploadResponse.ok) {
@@ -204,11 +235,12 @@ export default function ProfileForm() {
       }
       
       // Update the user profile with all information including the image URL
-      const response = await fetch('/api/profile', {
+      const response = await fetch(`${baseUrl}/api/profile`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify({
           name,
           email,
@@ -279,11 +311,15 @@ export default function ProfileForm() {
     try {
       setUpdating(true);
       
-      const response = await fetch('/api/profile', {
+      // Get base URL
+      const baseUrl = window.location.origin;
+      
+      const response = await fetch(`${baseUrl}/api/profile`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify({
           currentPassword,
           newPassword,

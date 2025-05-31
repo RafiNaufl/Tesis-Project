@@ -62,6 +62,7 @@ model Employee {
   payrolls       Payroll[]
   deductions     Deduction[]
   allowances     Allowance[]
+  leaveRequests  Leave[]      // Added relationship to Leave model
 
   @@map("employees")
 }
@@ -91,6 +92,9 @@ model Attendance {
   checkOut    DateTime?
   status      Status    @default(ABSENT)
   notes       String?
+  isLate      Boolean   @default(false)   // Flag for late check-in
+  lateMinutes Int       @default(0)      // Minutes late if check-in is after 8:30 AM
+  overtime    Int       @default(0)      // Minutes of overtime if check-out is after 4:30 PM
   
   // Relationships
   employee    Employee  @relation(fields: [employeeId], references: [id])
@@ -111,8 +115,10 @@ model Payroll {
   netSalary        Float
   daysPresent      Int
   daysAbsent       Int
+  daysLate         Int         @default(0)  // Count of late days
   overtimeHours    Float       @default(0)
   overtimeAmount   Float       @default(0)
+  lateDeduction    Float       @default(0)  // Amount deducted for late arrivals
   status           PayStatus   @default(PENDING)
   createdAt        DateTime    @default(now())
   paidAt           DateTime?
@@ -126,16 +132,17 @@ model Payroll {
 
 // Deduction model
 model Deduction {
-  id         String   @id @default(cuid())
+  id         String       @id @default(cuid())
   employeeId String
   month      Int
   year       Int
   reason     String
   amount     Float
-  date       DateTime @default(now())
+  date       DateTime     @default(now())
+  type       DeductionType @default(OTHER)
   
   // Relationships
-  employee   Employee @relation(fields: [employeeId], references: [id])
+  employee   Employee     @relation(fields: [employeeId], references: [id])
 
   @@map("deductions")
 }
@@ -156,6 +163,25 @@ model Allowance {
   @@map("allowances")
 }
 
+// Leave model for managing employee leave requests
+model Leave {
+  id            String      @id @default(cuid())
+  employeeId    String
+  startDate     DateTime
+  endDate       DateTime
+  reason        String
+  type          LeaveType
+  status        LeaveStatus @default(PENDING)
+  approvedBy    String?     // ID of admin who approved/rejected
+  approvedAt    DateTime?
+  createdAt     DateTime    @default(now())
+  
+  // Relationships
+  employee      Employee    @relation(fields: [employeeId], references: [id])
+
+  @@map("leaves")
+}
+
 // Enums
 enum Role {
   ADMIN
@@ -167,10 +193,31 @@ enum Status {
   ABSENT
   LATE
   HALFDAY
+  LEAVE     // Added LEAVE status
 }
 
 enum PayStatus {
   PENDING
   PAID
   CANCELLED
+}
+
+enum LeaveType {
+  SICK
+  VACATION
+  PERSONAL
+  OTHER
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum DeductionType {
+  LATE
+  ABSENCE
+  TAX
+  OTHER
 }

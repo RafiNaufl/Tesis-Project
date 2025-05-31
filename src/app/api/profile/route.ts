@@ -11,8 +11,15 @@ export async function GET(request: NextRequest) {
     
     if (!session) {
       return NextResponse.json(
-        { error: "Unauthorized" },
+        { error: "Unauthorized. Please sign in to access your profile." },
         { status: 401 }
+      );
+    }
+    
+    if (!session.user || !session.user.id) {
+      return NextResponse.json(
+        { error: "Invalid session. Missing user information." },
+        { status: 400 }
       );
     }
     
@@ -46,7 +53,7 @@ export async function GET(request: NextRequest) {
     
     if (!user) {
       return NextResponse.json(
-        { error: "User not found" },
+        { error: "User not found. User record may have been deleted." },
         { status: 404 }
       );
     }
@@ -55,7 +62,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("Error fetching user profile:", error);
     return NextResponse.json(
-      { error: "Failed to fetch user profile" },
+      { error: "Failed to fetch user profile due to a server error. Please try again later." },
       { status: 500 }
     );
   }

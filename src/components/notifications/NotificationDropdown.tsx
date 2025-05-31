@@ -18,11 +18,7 @@ type Notification = {
 // Create a custom event name for notification updates
 export const NOTIFICATION_UPDATE_EVENT = 'notification-update';
 
-interface NotificationDropdownProps {
-  onNotificationUpdate?: () => void;
-}
-
-export default function NotificationDropdown({ onNotificationUpdate }: NotificationDropdownProps) {
+export default function NotificationDropdown() {
   const { data: session } = useSession();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState<number>(0);
@@ -31,7 +27,7 @@ export default function NotificationDropdown({ onNotificationUpdate }: Notificat
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const lastFetchTimeRef = useRef<number>(0);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const POLLING_INTERVAL = 5000; // Interval polling 1 detik, lebih cepat dari sebelumnya
+  const POLLING_INTERVAL = 1000; // Interval polling 10 detik, lebih cepat dari 30 detik
 
   // Memoize the fetchNotifications function to avoid recreating it on every render
   const fetchNotifications = useCallback(async (showLoading = true) => {
@@ -52,11 +48,6 @@ export default function NotificationDropdown({ onNotificationUpdate }: Notificat
       setNotifications(data.notifications);
       setUnreadCount(data.unreadCount);
       lastFetchTimeRef.current = Date.now();
-      
-      // Panggil callback onNotificationUpdate jika ada notifikasi baru dan callback tersedia
-      if (data.unreadCount > 0 && onNotificationUpdate) {
-        onNotificationUpdate();
-      }
     } catch (error) {
       console.error("Error fetching notifications:", error);
     } finally {
@@ -66,7 +57,7 @@ export default function NotificationDropdown({ onNotificationUpdate }: Notificat
         setIsRefreshing(false);
       }
     }
-  }, [session, onNotificationUpdate]);
+  }, [session]);
 
   // Check for new notifications if user has been inactive
   const checkForNewNotifications = useCallback(() => {
@@ -86,7 +77,7 @@ export default function NotificationDropdown({ onNotificationUpdate }: Notificat
       fetchNotifications();
       lastFetchTimeRef.current = Date.now();
       
-      // Set up polling for notifications - check every 1 second
+      // Set up polling for notifications - check every 10 seconds
       pollingIntervalRef.current = setInterval(() => {
         fetchNotifications(false);
       }, POLLING_INTERVAL);
@@ -94,10 +85,6 @@ export default function NotificationDropdown({ onNotificationUpdate }: Notificat
       // Set up global event listener for attendance actions
       const handleNotificationUpdate = () => {
         fetchNotifications(false);
-        // Panggil callback onNotificationUpdate jika tersedia
-        if (onNotificationUpdate) {
-          onNotificationUpdate();
-        }
       };
       
       // Register the event listener
@@ -124,7 +111,7 @@ export default function NotificationDropdown({ onNotificationUpdate }: Notificat
         });
       };
     }
-  }, [session, fetchNotifications, checkForNewNotifications, onNotificationUpdate]);
+  }, [session, fetchNotifications, checkForNewNotifications]);
 
   // Add a focus/visibility change event listener to refresh on tab focus
   useEffect(() => {
