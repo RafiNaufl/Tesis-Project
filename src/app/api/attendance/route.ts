@@ -210,13 +210,35 @@ export async function POST(req: NextRequest) {
     try {
       // Validasi berdasarkan aturan kehadiran dan jam kerja
       if (action === "check-in") {
+        // Cek apakah ini pengajuan ulang setelah ditolak
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const existingAttendance = await prisma.attendance.findFirst({
+          where: {
+            employeeId: employee.id,
+            date: {
+              gte: today,
+              lt: new Date(today.getTime() + 24 * 60 * 60 * 1000),
+            },
+          },
+        });
+        
+        const isPengajuanUlang = existingAttendance && 
+                               existingAttendance.checkIn && 
+                               ((existingAttendance.notes && existingAttendance.notes.includes("Di Tolak")) || 
+                                (existingAttendance.approvedAt !== null && 
+                                 (existingAttendance.isSundayWorkApproved === false || 
+                                  existingAttendance.isOvertimeApproved === false)));
+        
         // Cek apakah hari Minggu
         if (workdayType === WorkdayType.SUNDAY) {
           // Notifikasi admin bahwa ada karyawan bekerja di hari Minggu
           await createLateCheckInAdminNotification(
             employee.id,
             employee.user.name,
-            "Bekerja pada hari Minggu (memerlukan persetujuan admin)",
+            isPengajuanUlang ? 
+              "Pengajuan ulang: Bekerja pada hari Minggu (memerlukan persetujuan admin)" : 
+              "Bekerja pada hari Minggu (memerlukan persetujuan admin)",
             now
           );
         }
@@ -227,7 +249,9 @@ export async function POST(req: NextRequest) {
           await createOvertimeAdminNotification(
             employee.id,
             employee.user.name,
-            "Check-in pada jam lembur (memerlukan persetujuan admin)",
+            isPengajuanUlang ? 
+              "Pengajuan ulang: Check-in pada jam lembur (memerlukan persetujuan admin)" : 
+              "Check-in pada jam lembur (memerlukan persetujuan admin)",
             now
           );
         }
@@ -237,7 +261,9 @@ export async function POST(req: NextRequest) {
         
         // Notifikasi karyawan
         let message = "";
-        if (workdayType === WorkdayType.SUNDAY) {
+        if (isPengajuanUlang) {
+          message = "Pengajuan ulang check-in berhasil dicatat. Menunggu persetujuan admin.";
+        } else if (workdayType === WorkdayType.SUNDAY) {
           message = "Absen masuk berhasil dicatat. Bekerja pada hari Minggu memerlukan persetujuan admin.";
         } else if (isOvertimeCheckIn(now, now)) {
           message = "Absen masuk berhasil dicatat. Check-in pada jam lembur memerlukan persetujuan admin.";

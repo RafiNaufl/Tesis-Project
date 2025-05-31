@@ -79,9 +79,17 @@ export const recordCheckIn = async (employeeId: string) => {
     },
   });
 
-  // Jika sudah ada catatan dengan check-in, tolak permintaan
+  // Jika sudah ada catatan dengan check-in, cek apakah pengajuan sebelumnya ditolak
   if (existingAttendance && existingAttendance.checkIn) {
-    throw new Error("Anda sudah melakukan check-in hari ini");
+    // Jika catatan sebelumnya menunjukkan penolakan, izinkan check-in kembali
+    const notesDitolak = existingAttendance.notes && existingAttendance.notes.includes("Di Tolak");
+    const sudahDitolak = (existingAttendance.isSundayWorkApproved === false && existingAttendance.approvedAt !== null) ||
+                          (existingAttendance.isOvertimeApproved === false && existingAttendance.approvedAt !== null);
+    
+    if (!notesDitolak && !sudahDitolak) {
+      throw new Error("Anda sudah melakukan check-in hari ini");
+    }
+    // Jika sudah ditolak, lanjutkan dengan proses check-in baru
   }
 
   // Cek apakah karyawan memiliki izin cuti yang disetujui untuk hari ini
@@ -99,7 +107,15 @@ export const recordCheckIn = async (employeeId: string) => {
     if (existingAttendance) {
       return prisma.attendance.update({
         where: { id: existingAttendance.id },
-        data: { status: Status.LEAVE, notes: `Approved leave: ${approvedLeave.type}` },
+        data: { 
+          status: Status.LEAVE, 
+          notes: `Approved leave: ${approvedLeave.type}`,
+          // Reset status persetujuan sebelumnya jika ada
+          approvedAt: null,
+          approvedBy: null,
+          isOvertimeApproved: false,
+          isSundayWorkApproved: false 
+        },
       });
     } else {
       return prisma.attendance.create({
@@ -139,7 +155,13 @@ export const recordCheckIn = async (employeeId: string) => {
         isLate,
         lateMinutes,
         isSundayWork,
-        // Catatan: kita tidak mengubah isOvertimeApproved dan isSundayWorkApproved di sini
+        // Reset status persetujuan sebelumnya
+        approvedAt: null,
+        approvedBy: null,
+        isOvertimeApproved: false,
+        isSundayWorkApproved: false,
+        // Hapus catatan penolakan sebelumnya jika ada
+        notes: existingAttendance.notes?.includes("Di Tolak") ? "" : existingAttendance.notes,
       },
     });
   } else {
@@ -267,6 +289,14 @@ export const rejectOvertime = async (attendanceId: string, adminId: string) => {
 
   // Cek apakah ini hari Minggu
   const isSundayWorkday = isSunday(new Date(attendance.date));
+  
+  // Tambahkan catatan penolakan
+  let notes = attendance.notes || "";
+  if (notes) {
+    notes += " (Di Tolak)";
+  } else {
+    notes = "(Di Tolak)";
+  }
 
   // Update status persetujuan
   return prisma.attendance.update({
@@ -275,6 +305,7 @@ export const rejectOvertime = async (attendanceId: string, adminId: string) => {
       isOvertimeApproved: false,
       isSundayWorkApproved: false,
       overtime: 0, // Reset overtime karena ditolak
+      notes, // Tambahkan catatan penolakan
       approvedBy: adminId,
       approvedAt: new Date(),
       // Jika hari Minggu dan ditolak, update status menjadi ABSENT
