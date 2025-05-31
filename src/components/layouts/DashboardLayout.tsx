@@ -18,6 +18,7 @@ interface NavItem {
 const navigation: NavItem[] = [
   { name: "Dashboard", href: "/dashboard", title: "Ringkasan Dashboard" },
   { name: "Absensi", href: "/attendance", title: "Manajemen Absensi" },
+  { name: "Cuti", href: "/leave", title: "Manajemen Cuti" },
   { name: "Penggajian", href: "/payroll", title: "Manajemen Penggajian" },
   { name: "Profil", href: "/profile", title: "Profil Pengguna" },
   { name: "Karyawan", href: "/dashboard/employees", adminOnly: true, title: "Manajemen Karyawan" },

@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { approveLeaveRequest, rejectLeaveRequest } from "@/lib/leave";
+import { db } from "@/lib/db";
 
 // Mendapatkan detail permohonan cuti berdasarkan ID
 export async function GET(
@@ -66,40 +67,131 @@ export async function GET(
 
 // Memperbarui status permohonan cuti (menyetujui atau menolak)
 export async function PATCH(
-  request: NextRequest,
+  req: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session || session.user.role !== "ADMIN") {
-      return NextResponse.json(
-        { error: "Hanya admin yang dapat menyetujui atau menolak permohonan cuti" },
-        { status: 403 }
-      );
+    const session = await getServerSession();
+    
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-
-    const leaveId = params.id;
-    const data = await request.json();
-    const { action } = data;
-
-    if (action !== "approve" && action !== "reject") {
+    
+    // Check if user is admin
+    const user = await db.user.findUnique({
+      where: { email: session.user.email! },
+    });
+    
+    if (user?.role !== "ADMIN") {
+      return NextResponse.json({ error: "Akses ditolak" }, { status: 403 });
+    }
+    
+    const body = await req.json();
+    const { status } = body;
+    
+    if (!status || !["APPROVED", "REJECTED"].includes(status)) {
       return NextResponse.json(
-        { error: "Tindakan tidak valid, gunakan 'approve' atau 'reject'" },
+        { error: "Status tidak valid" },
         { status: 400 }
       );
     }
-
-    let result;
-    if (action === "approve") {
-      result = await approveLeaveRequest(leaveId, session.user.id);
-    } else {
-      result = await rejectLeaveRequest(leaveId, session.user.id);
+    
+    // Get leave request
+    const leave = await db.leave.findUnique({
+      where: { id: params.id },
+      include: {
+        employee: {
+          include: {
+            user: true,
+          },
+        },
+      },
+    });
+    
+    if (!leave) {
+      return NextResponse.json(
+        { error: "Permohonan cuti tidak ditemukan" },
+        { status: 404 }
+      );
     }
-
-    return NextResponse.json(result);
-  } catch (error: any) {
+    
+    if (leave.status !== "PENDING") {
+      return NextResponse.json(
+        { error: "Permohonan cuti ini sudah diproses sebelumnya" },
+        { status: 400 }
+      );
+    }
+    
+    // Update leave status
+    const updatedLeave = await db.leave.update({
+      where: { id: params.id },
+      data: {
+        status,
+        approvedBy: user.id,
+        approvedAt: new Date(),
+      },
+    });
+    
+    // If approved, mark attendance as LEAVE for the leave days
+    if (status === "APPROVED") {
+      // Get all dates between start and end date
+      const startDate = new Date(leave.startDate);
+      const endDate = new Date(leave.endDate);
+      const dateArray = [];
+      let currentDate = new Date(startDate);
+      
+      while (currentDate <= endDate) {
+        dateArray.push(new Date(currentDate));
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+      
+      // Update or create attendance records
+      for (const date of dateArray) {
+        const formattedDate = new Date(
+          date.getFullYear(),
+          date.getMonth(),
+          date.getDate()
+        );
+        
+        await db.attendance.upsert({
+          where: {
+            employeeId_date: {
+              employeeId: leave.employeeId,
+              date: formattedDate,
+            },
+          },
+          update: {
+            status: "LEAVE",
+            notes: `Cuti ${leave.type}: ${leave.reason}`,
+          },
+          create: {
+            employeeId: leave.employeeId,
+            date: formattedDate,
+            status: "LEAVE",
+            notes: `Cuti ${leave.type}: ${leave.reason}`,
+          },
+        });
+      }
+    }
+    
+    // Create notification for employee
+    await db.notification.create({
+      data: {
+        userId: leave.employee.userId,
+        title: status === "APPROVED" ? "Permohonan Cuti Disetujui" : "Permohonan Cuti Ditolak",
+        message:
+          status === "APPROVED"
+            ? `Permohonan cuti Anda dari ${leave.startDate.toLocaleDateString()} hingga ${leave.endDate.toLocaleDateString()} telah disetujui.`
+            : `Permohonan cuti Anda dari ${leave.startDate.toLocaleDateString()} hingga ${leave.endDate.toLocaleDateString()} telah ditolak.`,
+        type: status === "APPROVED" ? "success" : "error",
+      },
+    });
+    
+    return NextResponse.json(updatedLeave);
+  } catch (error) {
+    console.error("Error updating leave request:", error);
     return NextResponse.json(
-      { error: error.message },
+      { error: "Terjadi kesalahan saat memproses permohonan cuti" },
       { status: 500 }
     );
   }

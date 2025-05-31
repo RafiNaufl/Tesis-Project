@@ -1,103 +1,149 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
-import { createLeaveRequest, getEmployeeLeaveRequests, getPendingLeaveRequests } from "@/lib/leave";
-import { LeaveType } from "@/generated/prisma";
+import { db } from "@/lib/db";
+import { differenceInDays } from "date-fns";
 
 // GET /api/leave - Mendapatkan daftar cuti
-export async function GET(request: NextRequest) {
+export async function GET(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session) {
-      return NextResponse.json(
-        { error: "Tidak diizinkan" },
-        { status: 401 }
-      );
+    const session = await getServerSession();
+    
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-
-    const userId = session.user.id;
-    const employee = await prisma.employee.findUnique({
-      where: { userId },
+    
+    const user = await db.user.findUnique({
+      where: { email: session.user.email! },
+      include: { employee: true },
     });
-
-    if (!employee) {
-      return NextResponse.json(
-        { error: "Data karyawan tidak ditemukan" },
-        { status: 404 }
-      );
+    
+    if (!user?.employee) {
+      return NextResponse.json({ error: "Karyawan tidak ditemukan" }, { status: 404 });
     }
-
-    // Jika admin, kembalikan semua permohonan cuti yang tertunda
-    if (session.user.role === "ADMIN") {
-      const pendingLeaves = await getPendingLeaveRequests();
-      return NextResponse.json(pendingLeaves);
-    }
-
-    // Jika karyawan biasa, kembalikan hanya permohonan cuti mereka
-    const leaves = await getEmployeeLeaveRequests(employee.id);
+    
+    const leaves = await db.leave.findMany({
+      where: {
+        employeeId: user.employee.id,
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+      include: {
+        employee: {
+          include: {
+            user: {
+              select: {
+                name: true,
+              },
+            },
+          },
+        },
+      },
+    });
+    
     return NextResponse.json(leaves);
-  } catch (error: any) {
+  } catch (error) {
+    console.error("Error getting leave requests:", error);
     return NextResponse.json(
-      { error: error.message },
+      { error: "Terjadi kesalahan saat memuat data cuti" },
       { status: 500 }
     );
   }
 }
 
 // POST /api/leave - Membuat permohonan cuti baru
-export async function POST(request: NextRequest) {
+export async function POST(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session) {
+    const session = await getServerSession();
+    
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    
+    const body = await req.json();
+    const { startDate, endDate, type, reason } = body;
+    
+    // Validate input data
+    if (!startDate || !endDate || !type || !reason) {
       return NextResponse.json(
-        { error: "Tidak diizinkan" },
-        { status: 401 }
+        { error: "Semua bidang wajib diisi" },
+        { status: 400 }
       );
     }
-
-    const userId = session.user.id;
-    const employee = await prisma.employee.findUnique({
-      where: { userId },
+    
+    const user = await db.user.findUnique({
+      where: { email: session.user.email! },
+      include: { employee: true },
     });
-
-    if (!employee) {
+    
+    if (!user?.employee) {
       return NextResponse.json(
-        { error: "Data karyawan tidak ditemukan" },
+        { error: "Karyawan tidak ditemukan" },
         { status: 404 }
       );
     }
-
-    const data = await request.json();
-    const { startDate, endDate, reason, type } = data;
-
-    if (!startDate || !endDate || !reason || !type) {
+    
+    // Check if there are overlapping leave requests
+    const overlappingLeaves = await db.leave.findMany({
+      where: {
+        employeeId: user.employee.id,
+        status: { in: ["PENDING", "APPROVED"] },
+        OR: [
+          {
+            // Requested start date falls within an existing leave
+            startDate: { lte: new Date(startDate) },
+            endDate: { gte: new Date(startDate) },
+          },
+          {
+            // Requested end date falls within an existing leave
+            startDate: { lte: new Date(endDate) },
+            endDate: { gte: new Date(endDate) },
+          },
+          {
+            // Existing leave falls within the requested dates
+            startDate: { gte: new Date(startDate) },
+            endDate: { lte: new Date(endDate) },
+          },
+        ],
+      },
+    });
+    
+    if (overlappingLeaves.length > 0) {
       return NextResponse.json(
-        { error: "Data tidak lengkap" },
+        { error: "Terdapat permohonan cuti yang tumpang tindih dengan tanggal yang dipilih" },
         { status: 400 }
       );
     }
-
-    // Validasi tipe cuti
-    if (!Object.values(LeaveType).includes(type as LeaveType)) {
-      return NextResponse.json(
-        { error: "Tipe cuti tidak valid" },
-        { status: 400 }
-      );
-    }
-
-    const leave = await createLeaveRequest(
-      employee.id,
-      new Date(startDate),
-      new Date(endDate),
-      reason,
-      type as LeaveType
-    );
-
-    return NextResponse.json(leave, { status: 201 });
-  } catch (error: any) {
+    
+    // Calculate leave duration
+    const duration = differenceInDays(new Date(endDate), new Date(startDate)) + 1;
+    
+    // Create leave request
+    const leaveRequest = await db.leave.create({
+      data: {
+        employeeId: user.employee.id,
+        startDate: new Date(startDate),
+        endDate: new Date(endDate),
+        type,
+        reason,
+      },
+    });
+    
+    // Create notification for admin
+    await db.notification.create({
+      data: {
+        userId: user.id,
+        title: "Permohonan Cuti Baru",
+        message: `${user.name} mengajukan cuti ${duration} hari (${new Date(startDate).toLocaleDateString()} - ${new Date(endDate).toLocaleDateString()})`,
+        type: "info",
+      },
+    });
+    
+    return NextResponse.json(leaveRequest);
+  } catch (error) {
+    console.error("Error creating leave request:", error);
     return NextResponse.json(
-      { error: error.message },
+      { error: "Terjadi kesalahan saat memproses permohonan cuti" },
       { status: 500 }
     );
   }
