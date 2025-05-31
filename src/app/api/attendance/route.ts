@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { format } from "date-fns";
+import { format, getDay } from "date-fns";
 import { recordCheckIn, recordCheckOut, getMonthlyAttendanceReport } from "@/lib/attendance";
 import { Status } from "@/generated/prisma";
 import { 
@@ -12,6 +12,12 @@ import {
   createOvertimeAdminNotification,
   addNotificationUpdateHeader
 } from "@/lib/notification";
+import {
+  getWorkdayType,
+  WorkdayType,
+  isOvertimeCheckIn,
+  isOvertimeCheckOut
+} from "@/lib/attendanceRules";
 
 // Tipe untuk data attendance
 interface AttendanceData {
@@ -198,99 +204,198 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
     const { action } = body; // action should be "check-in" or "check-out"
-
-    if (action !== "check-in" && action !== "check-out") {
-      return NextResponse.json(
-        { error: "Tindakan tidak valid. Harus 'check-in' atau 'check-out'" },
-        { status: 400 }
-      );
-    }
-
-    let attendanceRecord: AttendanceData;
     const now = new Date();
+    const workdayType = getWorkdayType(now);
+    
+    try {
+      // Validasi berdasarkan aturan kehadiran dan jam kerja
+      if (action === "check-in") {
+        // Cek apakah hari Minggu
+        if (workdayType === WorkdayType.SUNDAY) {
+          // Notifikasi admin bahwa ada karyawan bekerja di hari Minggu
+          await createLateCheckInAdminNotification(
+            employee.id,
+            employee.user.name,
+            "Bekerja pada hari Minggu (perlu persetujuan)",
+            now
+          );
+        }
+        
+        // Cek apakah check-in adalah lembur
+        if (isOvertimeCheckIn(now, now)) {
+          // Notifikasi admin untuk persetujuan lembur
+          await createOvertimeAdminNotification(
+            employee.id,
+            employee.user.name,
+            "Check-in pada jam lembur",
+            now
+          );
+        }
 
-    if (action === "check-in") {
-      // Cek apakah sudah ada catatan kehadiran untuk hari ini
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const existingAttendance = await prisma.attendance.findFirst({
-        where: {
-          employeeId: employee.id,
-          date: {
-            gte: today,
-            lt: new Date(today.getTime() + 24 * 60 * 60 * 1000),
+        // Proses check-in
+        const attendance = await recordCheckIn(employee.id);
+        
+        // Notifikasi karyawan
+        let message = "";
+        if (workdayType === WorkdayType.SUNDAY) {
+          message = "Absen masuk berhasil dicatat. Bekerja pada hari Minggu memerlukan persetujuan admin.";
+        } else if (isOvertimeCheckIn(now, now)) {
+          message = "Absen masuk berhasil dicatat. Check-in pada jam lembur memerlukan persetujuan admin.";
+        } else if (attendance.isLate) {
+          message = `Anda terlambat ${attendance.lateMinutes} menit.`;
+        } else {
+          message = "Absen masuk berhasil dicatat.";
+        }
+        
+        await createCheckInNotification(employee.id, message);
+        
+        // Jika terlambat, notifikasi admin
+        if (attendance.isLate) {
+          await createLateCheckInAdminNotification(
+            employee.id,
+            employee.user.name,
+            `Terlambat ${attendance.lateMinutes} menit`,
+            attendance.checkIn as Date
+          );
+        }
+        
+        // Kirim respons dengan header notifikasi
+        const response = NextResponse.json(attendance);
+        addNotificationUpdateHeader(response);
+        return response;
+      } else if (action === "check-out") {
+        // Cek apakah karyawan melakukan check-in terlebih dahulu
+        const todayStart = new Date(now);
+        todayStart.setHours(0, 0, 0, 0);
+        const todayEnd = new Date(now);
+        todayEnd.setHours(23, 59, 59, 999);
+        
+        const todayAttendance = await prisma.attendance.findFirst({
+          where: {
+            employeeId: employee.id,
+            date: {
+              gte: todayStart,
+              lte: todayEnd,
+            },
           },
-          checkIn: {
-            not: null,
-          },
-        },
-      });
-
-      if (existingAttendance?.checkIn) {
+        });
+        
+        if (!todayAttendance || !todayAttendance.checkIn) {
+          return NextResponse.json(
+            { error: "Anda belum melakukan check-in hari ini" },
+            { status: 400 }
+          );
+        }
+        
+        // Cek apakah checkout menghasilkan lembur
+        if (isOvertimeCheckOut(now, now)) {
+          // Notifikasi admin untuk persetujuan lembur
+          await createOvertimeAdminNotification(
+            employee.id,
+            employee.user.name,
+            "Check-out pada jam lembur",
+            now
+          );
+        }
+        
+        // Proses check-out
+        const attendance = await recordCheckOut(employee.id);
+        
+        // Notifikasi karyawan
+        let message = "Absen keluar berhasil dicatat.";
+        if (isOvertimeCheckOut(now, now)) {
+          const overtimeHours = Math.floor(attendance.overtime / 60);
+          const overtimeMinutes = attendance.overtime % 60;
+          message = `Absen keluar berhasil dicatat. Anda lembur ${overtimeHours} jam ${overtimeMinutes} menit (memerlukan persetujuan admin).`;
+        } else if (attendance.overtime > 0) {
+          const overtimeHours = Math.floor(attendance.overtime / 60);
+          const overtimeMinutes = attendance.overtime % 60;
+          message += ` Anda lembur ${overtimeHours} jam ${overtimeMinutes} menit.`;
+        }
+        
+        await createCheckOutNotification(employee.id, message);
+        
+        // Kirim respons dengan header notifikasi
+        const response = NextResponse.json(attendance);
+        addNotificationUpdateHeader(response);
+        return response;
+      } else {
         return NextResponse.json(
-          { error: "Anda sudah melakukan check-in hari ini" },
+          { error: "Tindakan tidak valid. Gunakan 'check-in' atau 'check-out'." },
           { status: 400 }
         );
       }
-
-      // Lakukan check-in
-      let checkInRecord = await recordCheckIn(employee.id);
-      attendanceRecord = formatAttendanceResponse(checkInRecord) as AttendanceData;
-
-      // Buat notifikasi untuk karyawan menggunakan layanan notifikasi
-      const isLate = attendanceRecord.status === "LATE";
-      await createCheckInNotification(session.user.id, isLate, now);
-
-      // Beri tahu admin tentang keterlambatan menggunakan layanan notifikasi
-      if (isLate) {
-        await createLateCheckInAdminNotification(employee.user.name, now);
-      }
-    } else {
-      // Check-out
-      try {
-        let checkOutRecord = await recordCheckOut(employee.id);
-        attendanceRecord = formatAttendanceResponse(checkOutRecord) as AttendanceData;
-
-        // Hitung durasi kerja dalam jam
-        const checkInTime = attendanceRecord.checkIn;
-        if (!checkInTime) {
-          throw new Error("Data check-in tidak ditemukan");
-        }
-
-        const workDurationHours = (now.getTime() - checkInTime.getTime()) / (1000 * 60 * 60);
-
-        // Cek apakah ada lembur
-        const hasOvertime = attendanceRecord.overtime > 0;
-        const overtimeMinutes = attendanceRecord.overtime;
-        const overtimeHours = overtimeMinutes / 60;
-
-        // Buat notifikasi untuk check-out menggunakan layanan notifikasi
-        await createCheckOutNotification(
-          session.user.id, 
-          workDurationHours, 
-          hasOvertime, 
-          overtimeHours, 
-          now
-        );
-
-        // Notifikasi untuk admin jika ada lembur menggunakan layanan notifikasi
-        if (hasOvertime) {
-          await createOvertimeAdminNotification(employee.user.name, overtimeHours);
-        }
-      } catch (error: any) {
+    } catch (error: any) {
+      // Tangani error khusus double absen
+      if (error.message === "Anda sudah melakukan check-in hari ini" || 
+          error.message === "Anda sudah melakukan check-out hari ini") {
         return NextResponse.json(
           { error: error.message },
           { status: 400 }
         );
       }
+      // Lanjutkan error ke handler utama
+      throw error;
     }
-
-    // Tambahkan header respons untuk memicu pembaruan notifikasi di frontend
-    const response = NextResponse.json(attendanceRecord);
-    return addNotificationUpdateHeader(response);
   } catch (error: any) {
     console.error("Error recording attendance:", error);
     return NextResponse.json(
       { error: `Gagal mencatat kehadiran: ${error.message}` },
+      { status: 500 }
+    );
+  }
+}
+
+// PUT untuk memperbarui data attendance (hanya untuk admin)
+export async function PUT(req: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+
+    if (!session || session.user.role !== "ADMIN") {
+      return NextResponse.json(
+        { error: "Anda tidak memiliki izin untuk melakukan tindakan ini" },
+        { status: 403 }
+      );
+    }
+
+    const body = await req.json();
+    const { id, checkIn, checkOut, status, notes } = body;
+
+    if (!id) {
+      return NextResponse.json(
+        { error: "ID kehadiran diperlukan" },
+        { status: 400 }
+      );
+    }
+
+    // Validasi status
+    if (status && !Object.values(Status).includes(status as Status)) {
+      return NextResponse.json(
+        { error: "Status tidak valid" },
+        { status: 400 }
+      );
+    }
+
+    // Parse dates
+    let checkInDate = checkIn ? new Date(checkIn) : undefined;
+    let checkOutDate = checkOut ? new Date(checkOut) : undefined;
+
+    // Update attendance record
+    const updatedAttendance = await prisma.attendance.update({
+      where: { id },
+      data: {
+        checkIn: checkInDate,
+        checkOut: checkOutDate,
+        status: status as Status,
+        notes,
+      },
+    });
+
+    return NextResponse.json(updatedAttendance);
+  } catch (error: any) {
+    console.error("Error updating attendance:", error);
+    return NextResponse.json(
+      { error: `Gagal memperbarui kehadiran: ${error.message}` },
       { status: 500 }
     );
   }

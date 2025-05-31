@@ -85,16 +85,21 @@ model Notification {
 
 // Attendance model
 model Attendance {
-  id          String    @id @default(cuid())
-  employeeId  String
-  date        DateTime  @default(now())
-  checkIn     DateTime?
-  checkOut    DateTime?
-  status      Status    @default(ABSENT)
-  notes       String?
-  isLate      Boolean   @default(false)   // Flag for late check-in
-  lateMinutes Int       @default(0)      // Minutes late if check-in is after 8:30 AM
-  overtime    Int       @default(0)      // Minutes of overtime if check-out is after 4:30 PM
+  id                 String    @id @default(cuid())
+  employeeId         String
+  date               DateTime  @default(now())
+  checkIn            DateTime?
+  checkOut           DateTime?
+  status             Status    @default(ABSENT)
+  notes              String?
+  isLate             Boolean   @default(false)   // Flag for late check-in
+  lateMinutes        Int       @default(0)      // Minutes late if check-in is after 8:30 AM
+  overtime           Int       @default(0)      // Minutes of overtime if check-out is after 4:30 PM
+  isOvertimeApproved Boolean   @default(false)  // Apakah lembur disetujui oleh admin
+  isSundayWork       Boolean   @default(false)  // Flag untuk kerja di hari Minggu
+  isSundayWorkApproved Boolean @default(false)  // Apakah kerja hari Minggu disetujui admin
+  approvedBy         String?                     // ID admin yang menyetujui
+  approvedAt         DateTime?                   // Waktu persetujuan
   
   // Relationships
   employee    Employee  @relation(fields: [employeeId], references: [id])

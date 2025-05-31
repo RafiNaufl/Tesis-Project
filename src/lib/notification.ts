@@ -192,130 +192,86 @@ export const createPayslipGeneratedNotification = async (
 };
 
 /**
- * Membuat notifikasi kehadiran (check-in)
- * @param userId ID pengguna karyawan
- * @param isLate Apakah check-in terlambat
- * @param time Waktu check-in
+ * Membuat notifikasi check-in baru
+ * @param employeeId ID karyawan
+ * @param message Pesan notifikasi
  * @returns Objek notifikasi yang dibuat
  */
 export const createCheckInNotification = async (
-  userId: string,
-  isLate: boolean,
-  time: Date
+  employeeId: string,
+  message: string
 ) => {
-  try {
-    const formattedTime = time.toLocaleTimeString('id-ID', {
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-    
-    const title = isLate ? "Check-in Terlambat" : "Check-in Berhasil";
-    const message = isLate
-      ? `Anda check-in pada ${formattedTime} yang terlambat dari waktu yang diharapkan (08:00).`
-      : `Anda berhasil check-in pada ${formattedTime}.`;
-    
-    return createNotification(userId, title, message, isLate ? "warning" : "success");
-  } catch (error) {
-    console.error("Error creating check-in notification:", error);
-    throw new Error(`Gagal membuat notifikasi check-in: ${error}`);
-  }
+  return createEmployeeNotification(employeeId, "Check-in Berhasil", message, "success");
 };
 
 /**
- * Membuat notifikasi kehadiran (check-out)
- * @param userId ID pengguna karyawan
- * @param workDurationHours Durasi kerja dalam jam
- * @param hasOvertime Apakah ada lembur
- * @param overtimeHours Jam lembur
- * @param time Waktu check-out
+ * Membuat notifikasi check-out baru
+ * @param employeeId ID karyawan
+ * @param message Pesan notifikasi
  * @returns Objek notifikasi yang dibuat
  */
 export const createCheckOutNotification = async (
-  userId: string,
-  workDurationHours: number,
-  hasOvertime: boolean,
-  overtimeHours: number,
-  time: Date
+  employeeId: string,
+  message: string
 ) => {
-  try {
-    const formattedTime = time.toLocaleTimeString('id-ID', {
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-    
-    const title = "Check-out Berhasil";
-    const message = hasOvertime
-      ? `Anda berhasil check-out pada ${formattedTime}. Total durasi kerja: ${workDurationHours.toFixed(2)} jam, termasuk lembur ${overtimeHours.toFixed(2)} jam.`
-      : `Anda berhasil check-out pada ${formattedTime}. Total durasi kerja: ${workDurationHours.toFixed(2)} jam.`;
-    
-    return createNotification(userId, title, message, "success");
-  } catch (error) {
-    console.error("Error creating check-out notification:", error);
-    throw new Error(`Gagal membuat notifikasi check-out: ${error}`);
-  }
+  return createEmployeeNotification(employeeId, "Check-out Berhasil", message, "success");
 };
 
 /**
- * Membuat notifikasi admin untuk keterlambatan karyawan
+ * Membuat notifikasi keterlambatan karyawan untuk admin
+ * @param employeeId ID karyawan
  * @param employeeName Nama karyawan
- * @param time Waktu check-in
- * @param date Tanggal check-in
+ * @param reason Alasan/keterangan tambahan
+ * @param time Waktu kejadian
  * @returns Array notifikasi yang dibuat
  */
 export const createLateCheckInAdminNotification = async (
+  employeeId: string,
   employeeName: string,
-  time: Date,
-  date: Date = new Date()
+  reason: string,
+  time: Date
 ) => {
-  try {
-    const formattedTime = time.toLocaleTimeString('id-ID', {
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-    
-    const formattedDate = date.toLocaleDateString('id-ID', {
-      day: '2-digit',
-      month: 'long',
-      year: 'numeric'
-    });
-    
-    const title = "Peringatan Keterlambatan";
-    const message = `${employeeName} terlambat check-in pada ${formattedTime} tanggal ${formattedDate}.`;
-    
+  const formattedTime = time.toLocaleTimeString('id-ID', {
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+  
+  // Cek apakah notifikasi tentang bekerja di hari Minggu
+  if (reason.includes("hari Minggu")) {
+    const title = `Memerlukan Persetujuan: ${employeeName}`;
+    const message = `${employeeName} melakukan check-in pada ${formattedTime}. ${reason}`;
     return createAdminNotifications(title, message, "warning");
-  } catch (error) {
-    console.error("Error creating late check-in admin notification:", error);
-    throw new Error(`Gagal membuat notifikasi keterlambatan untuk admin: ${error}`);
+  } else {
+    // Notifikasi keterlambatan biasa
+    const title = `Karyawan Terlambat: ${employeeName}`;
+    const message = `${employeeName} melakukan check-in pada ${formattedTime}. ${reason}`;
+    return createAdminNotifications(title, message, "warning");
   }
 };
 
 /**
- * Membuat notifikasi admin untuk lembur karyawan
+ * Membuat notifikasi lembur karyawan untuk admin
+ * @param employeeId ID karyawan
  * @param employeeName Nama karyawan
- * @param overtimeHours Jam lembur
- * @param date Tanggal lembur
+ * @param reason Alasan/keterangan tambahan
+ * @param time Waktu kejadian
  * @returns Array notifikasi yang dibuat
  */
 export const createOvertimeAdminNotification = async (
+  employeeId: string,
   employeeName: string,
-  overtimeHours: number,
-  date: Date = new Date()
+  reason: string,
+  time: Date
 ) => {
-  try {
-    const formattedDate = date.toLocaleDateString('id-ID', {
-      day: '2-digit',
-      month: 'long',
-      year: 'numeric'
-    });
-    
-    const title = "Laporan Lembur";
-    const message = `${employeeName} melakukan lembur selama ${overtimeHours.toFixed(2)} jam pada tanggal ${formattedDate}.`;
-    
-    return createAdminNotifications(title, message, "info");
-  } catch (error) {
-    console.error("Error creating overtime admin notification:", error);
-    throw new Error(`Gagal membuat notifikasi lembur untuk admin: ${error}`);
-  }
+  const formattedTime = time.toLocaleTimeString('id-ID', {
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+  
+  const title = `Memerlukan Persetujuan: ${employeeName}`;
+  const message = `${employeeName} sedang lembur pada ${formattedTime}. ${reason} (perlu persetujuan)`;
+  
+  return createAdminNotifications(title, message, "warning");
 };
 
 /**

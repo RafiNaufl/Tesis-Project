@@ -18,6 +18,21 @@ type AttendanceStats = {
   halfday: number;
 };
 
+// Tambahkan interface untuk todayRecord yang lebih lengkap
+type TodayAttendanceRecord = {
+  id: string;
+  date: Date;
+  checkIn: Date | null;
+  checkOut: Date | null;
+  status: "PRESENT" | "ABSENT" | "LATE" | "HALFDAY";
+  isLate: boolean;
+  lateMinutes: number;
+  overtime: number;
+  isOvertimeApproved: boolean;
+  isSundayWork: boolean;
+  isSundayWorkApproved: boolean;
+};
+
 export default function EmployeeDashboard() {
   const { data: session } = useSession();
   const [isCheckedIn, setIsCheckedIn] = useState(false);
@@ -29,90 +44,110 @@ export default function EmployeeDashboard() {
     halfday: 0,
   });
   const [recentAttendance, setRecentAttendance] = useState<AttendanceRecord[]>([]);
+  const [todayRecord, setTodayRecord] = useState<TodayAttendanceRecord | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch attendance data
-  useEffect(() => {
-    const fetchAttendanceData = async () => {
-      if (!session) return;
-      
-      setIsLoading(true);
-      setError(null);
-      
-      try {
-        // Get current month for filtering
-        const currentDate = new Date();
-        const currentMonth = currentDate.getMonth() + 1;
-        const currentYear = currentDate.getFullYear();
-        
-        // Get attendance stats for current month
-        const statsResponse = await fetch(`/api/attendance?month=${currentMonth}&year=${currentYear}`);
-        if (!statsResponse.ok) throw new Error('Gagal mengambil data statistik kehadiran');
-        const data = await statsResponse.json();
-        
-        // Pastikan data yang diterima sesuai format yang diharapkan
-        const attendanceData = data.attendances || [];
-        
-        // Pastikan attendanceData adalah array sebelum menggunakan filter
-        if (!Array.isArray(attendanceData)) {
-          console.error("Data kehadiran bukan array:", attendanceData);
-          throw new Error("Format data kehadiran tidak valid");
-        }
-        
-        // Calculate stats from attendance data
-        const stats = {
-          present: attendanceData.filter((item: any) => item.status === 'PRESENT').length,
-          absent: attendanceData.filter((item: any) => item.status === 'ABSENT').length,
-          late: attendanceData.filter((item: any) => item.status === 'LATE').length,
-          halfday: attendanceData.filter((item: any) => item.status === 'HALFDAY').length,
-        };
-        setAttendanceStats(stats);
-        
-        // Format recent attendance for display
-        const recentRecords = attendanceData.slice(0, 5).map((item: any) => ({
-          id: item.id,
-          date: new Date(item.date).toLocaleDateString(),
-          checkIn: item.checkIn ? new Date(item.checkIn).toLocaleTimeString([], {
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: true
-          }) : '-',
-          checkOut: item.checkOut ? new Date(item.checkOut).toLocaleTimeString([], {
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: true
-          }) : '-',
-          status: item.status
-        }));
-        setRecentAttendance(recentRecords);
-        
-        // Check if already checked in today
-        const today = new Date().toISOString().split('T')[0];
-        const todayRecord = attendanceData.find((item: any) => 
-          new Date(item.date).toISOString().split('T')[0] === today
-        );
-        
-        if (todayRecord) {
-          setIsCheckedIn(!!todayRecord.checkIn && !todayRecord.checkOut);
-          if (todayRecord.checkIn) {
-            setCheckInTime(new Date(todayRecord.checkIn).toLocaleTimeString([], {
-              hour: '2-digit',
-              minute: '2-digit',
-              hour12: true
-            }));
-          }
-        }
-      } catch (error) {
-        console.error("Error fetching attendance data:", error);
-        setError("Gagal memuat data kehadiran");
-      } finally {
-        setIsLoading(false);
-      }
-    };
+  // Fungsi untuk format waktu
+  const formatTime = (date: Date | null | string): string => {
+    if (!date) return "-";
+    return new Date(date).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true
+    });
+  };
 
-    fetchAttendanceData();
+  // Fungsi untuk memuat data kehadiran
+  const fetchAttendanceData = async () => {
+    if (!session) return;
+    
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      // Get current month for filtering
+      const currentDate = new Date();
+      const currentMonth = currentDate.getMonth() + 1;
+      const currentYear = currentDate.getFullYear();
+      
+      // Get attendance stats for current month
+      const statsResponse = await fetch(`/api/attendance?month=${currentMonth}&year=${currentYear}`);
+      if (!statsResponse.ok) throw new Error('Gagal mengambil data statistik kehadiran');
+      const data = await statsResponse.json();
+      
+      // Pastikan data yang diterima sesuai format yang diharapkan
+      const attendanceData = data.attendances || [];
+      
+      // Pastikan attendanceData adalah array sebelum menggunakan filter
+      if (!Array.isArray(attendanceData)) {
+        console.error("Data kehadiran bukan array:", attendanceData);
+        throw new Error("Format data kehadiran tidak valid");
+      }
+      
+      // Calculate stats from attendance data
+      const stats = {
+        present: attendanceData.filter((item: any) => item.status === 'PRESENT').length,
+        absent: attendanceData.filter((item: any) => item.status === 'ABSENT').length,
+        late: attendanceData.filter((item: any) => item.status === 'LATE').length,
+        halfday: attendanceData.filter((item: any) => item.status === 'HALFDAY').length,
+      };
+      setAttendanceStats(stats);
+      
+      // Format recent attendance for display
+      const recentRecords = attendanceData.slice(0, 5).map((item: any) => ({
+        id: item.id,
+        date: new Date(item.date).toLocaleDateString(),
+        checkIn: item.checkIn ? new Date(item.checkIn).toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true
+        }) : '-',
+        checkOut: item.checkOut ? new Date(item.checkOut).toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true
+        }) : '-',
+        status: item.status
+      }));
+      setRecentAttendance(recentRecords);
+      
+      // Check if already checked in today
+      const today = new Date().toISOString().split('T')[0];
+      const todayRecord = attendanceData.find((item: any) => 
+        new Date(item.date).toISOString().split('T')[0] === today
+      );
+      
+      if (todayRecord) {
+        setIsCheckedIn(!!todayRecord.checkIn && !todayRecord.checkOut);
+        if (todayRecord.checkIn) {
+          setCheckInTime(new Date(todayRecord.checkIn).toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+          }));
+        }
+        
+        // Set today record for detailed display
+        setTodayRecord(todayRecord);
+      } else {
+        setTodayRecord(null);
+      }
+    } catch (error) {
+      console.error("Error fetching attendance data:", error);
+      setError("Gagal memuat data kehadiran");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Fetch attendance data on component mount
+  useEffect(() => {
+    if (session) {
+      fetchAttendanceData();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
 
   const handleCheckIn = async () => {
@@ -137,12 +172,10 @@ export default function EmployeeDashboard() {
       
       // Update state with new check-in information
       setIsCheckedIn(true);
-      const now = new Date();
-      setCheckInTime(now.toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true
-      }));
+      setTodayRecord(data);
+      
+      // Tampilkan alert untuk check in
+      window.alert("✅ Absen masuk berhasil dicatat! Selamat bekerja!");
       
       // Update recent attendance
       const updatedAttendance = [...recentAttendance];
@@ -152,34 +185,31 @@ export default function EmployeeDashboard() {
       if (existingIndex >= 0) {
         updatedAttendance[existingIndex] = {
           ...updatedAttendance[existingIndex],
-          checkIn: now.toLocaleTimeString([], {
+          checkIn: new Date().toLocaleTimeString([], {
             hour: '2-digit',
             minute: '2-digit',
             hour12: true
           }),
-          status: 'PRESENT'
+          status: data.status
         };
       } else {
         updatedAttendance.unshift({
           id: data.id,
           date: today,
-          checkIn: now.toLocaleTimeString([], {
+          checkIn: new Date().toLocaleTimeString([], {
             hour: '2-digit',
             minute: '2-digit',
             hour12: true
           }),
           checkOut: '-',
-          status: 'PRESENT'
+          status: data.status
         });
       }
       
       setRecentAttendance(updatedAttendance);
       
-      // Update stats
-      setAttendanceStats(prev => ({
-        ...prev,
-        present: prev.present + 1
-      }));
+      // Refresh attendance data to get the most up-to-date data
+      await fetchAttendanceData();
     } catch (error: any) {
       console.error("Error checking in:", error);
       setError(error.message || "Gagal melakukan absen masuk");
@@ -206,8 +236,14 @@ export default function EmployeeDashboard() {
         throw new Error(errorData.error || 'Gagal melakukan absen keluar');
       }
       
+      const data = await response.json();
+      
       // Update state with check-out information
       setIsCheckedIn(false);
+      setTodayRecord(data);
+      
+      // Tampilkan alert untuk check out
+      window.alert("✅ Absen keluar berhasil dicatat! Terima kasih atas kerja keras Anda hari ini!");
       
       // Update recent attendance
       const updatedAttendance = [...recentAttendance];
@@ -215,24 +251,198 @@ export default function EmployeeDashboard() {
       const existingIndex = updatedAttendance.findIndex(a => a.date === today);
       
       if (existingIndex >= 0) {
-        const now = new Date();
         updatedAttendance[existingIndex] = {
           ...updatedAttendance[existingIndex],
-          checkOut: now.toLocaleTimeString([], {
+          checkOut: new Date().toLocaleTimeString([], {
             hour: '2-digit',
             minute: '2-digit',
             hour12: true
-          })
+          }),
+          status: data.status
         };
         
         setRecentAttendance(updatedAttendance);
       }
+      
+      // Refresh attendance data to get the most up-to-date data
+      await fetchAttendanceData();
     } catch (error: any) {
       console.error("Error checking out:", error);
       setError(error.message || "Gagal melakukan absen keluar");
     } finally {
       setActionLoading(false);
     }
+  };
+
+  // Tampilan kehadiran hari ini
+  const renderTodayAttendance = () => {
+    if (isLoading) {
+      return (
+        <div className="rounded-md bg-gray-50 px-6 py-5 sm:flex sm:items-center sm:justify-between">
+          <div className="sm:flex sm:items-center">
+            <svg
+              className="h-8 w-8 text-gray-400"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth="1.5"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+            <div className="mt-3 sm:ml-4 sm:mt-0">
+              <p className="text-sm font-medium text-gray-900">
+                Memuat data kehadiran...
+              </p>
+              <p className="mt-1 text-sm text-gray-500">
+                {new Date().toLocaleDateString("id-ID", {
+                  weekday: "long",
+                  year: "numeric",
+                  month: "long",
+                  day: "numeric",
+                })}
+              </p>
+            </div>
+          </div>
+          <div className="mt-4 sm:ml-6 sm:mt-0 sm:flex-shrink-0">
+            <button
+              disabled={true}
+              className="inline-flex items-center rounded-md border border-transparent bg-gray-400 px-4 py-2 font-medium text-white shadow-sm sm:text-sm disabled:opacity-50"
+            >
+              Memproses...
+            </button>
+          </div>
+        </div>
+      );
+    }
+    
+    if (!todayRecord || (!todayRecord.checkIn && !todayRecord.checkOut)) {
+      return (
+        <div className="rounded-md bg-gray-50 px-6 py-5 sm:flex sm:items-center sm:justify-between">
+          <div className="sm:flex sm:items-center">
+            <svg
+              className="h-8 w-8 text-gray-400"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth="1.5"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+            <div className="mt-3 sm:ml-4 sm:mt-0">
+              <p className="text-sm font-medium text-gray-900">
+                Anda belum absen masuk hari ini
+              </p>
+              <p className="mt-1 text-sm text-gray-500">
+                {new Date().toLocaleDateString("id-ID", {
+                  weekday: "long",
+                  year: "numeric",
+                  month: "long",
+                  day: "numeric",
+                })}
+              </p>
+            </div>
+          </div>
+          <div className="mt-4 sm:ml-6 sm:mt-0 sm:flex-shrink-0">
+            <button
+              onClick={handleCheckIn}
+              disabled={actionLoading}
+              className="inline-flex items-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 sm:text-sm disabled:opacity-50"
+            >
+              {actionLoading ? "Memproses..." : "Absen Masuk"}
+            </button>
+          </div>
+        </div>
+      );
+    }
+    
+    return (
+      <div className="rounded-md bg-gray-50 px-6 py-5 sm:flex sm:items-center sm:justify-between">
+        <div className="sm:flex sm:items-center">
+          <svg
+            className="h-8 w-8 text-gray-400"
+            fill="none"
+            viewBox="0 0 24 24"
+            strokeWidth="1.5"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"
+            />
+          </svg>
+          <div className="mt-3 sm:ml-4 sm:mt-0">
+            <p className="text-sm font-medium text-gray-900">
+              Absen masuk: {formatTime(todayRecord.checkIn)}
+            </p>
+            {todayRecord.checkOut && (
+              <p className="text-sm font-medium text-gray-900">
+                Absen keluar: {formatTime(todayRecord.checkOut)}
+              </p>
+            )}
+            {todayRecord.status && (
+              <p className="text-sm font-medium mt-1">
+                <span
+                  className={`inline-flex rounded-full px-2 text-xs font-semibold leading-5 ${
+                    todayRecord.status === "PRESENT"
+                      ? "bg-green-100 text-green-800"
+                      : todayRecord.status === "ABSENT"
+                      ? "bg-red-100 text-red-800"
+                      : todayRecord.status === "LATE"
+                      ? "bg-yellow-100 text-yellow-800"
+                      : "bg-gray-100 text-gray-800"
+                  }`}
+                >
+                  {todayRecord.status}
+                </span>
+                {todayRecord.isLate && (
+                  <span className="ml-2 text-red-600 text-xs">
+                    Terlambat {todayRecord.lateMinutes} menit
+                  </span>
+                )}
+                {todayRecord.overtime > 0 && (
+                  <span className={`ml-2 text-xs ${todayRecord.isOvertimeApproved ? "text-green-600" : "text-yellow-600"}`}>
+                    Lembur {Math.floor(todayRecord.overtime / 60)}j {todayRecord.overtime % 60}m 
+                    {!todayRecord.isOvertimeApproved && " (menunggu persetujuan)"}
+                  </span>
+                )}
+              </p>
+            )}
+            <p className="mt-1 text-sm text-gray-500">
+              {new Date().toLocaleDateString("id-ID", {
+                weekday: "long",
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+              })}
+            </p>
+          </div>
+        </div>
+        <div className="mt-4 sm:ml-6 sm:mt-0 sm:flex-shrink-0">
+          {!todayRecord.checkOut ? (
+            <button
+              onClick={handleCheckOut}
+              disabled={actionLoading}
+              className="inline-flex items-center rounded-md border border-transparent bg-red-600 px-4 py-2 font-medium text-white shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 sm:text-sm disabled:opacity-50"
+            >
+              {actionLoading ? "Memproses..." : "Absen Keluar"}
+            </button>
+          ) : (
+            <span className="inline-flex items-center rounded-md bg-green-50 px-4 py-2 text-sm font-medium text-green-700">
+              Kehadiran hari ini sudah lengkap
+            </span>
+          )}
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -253,64 +463,43 @@ export default function EmployeeDashboard() {
             Kehadiran Hari Ini
           </h3>
           {error && (
-            <div className="mt-2 rounded-md bg-red-50 p-2">
-              <p className="text-sm text-red-700">{error}</p>
+            <div className={`mt-4 rounded-md ${error.includes("sudah melakukan") ? "bg-blue-50" : "bg-red-50"} p-4`}>
+              <div className="flex">
+                <div className="flex-shrink-0">
+                  {error.includes("sudah melakukan") ? (
+                    <svg
+                      className="h-5 w-5 text-blue-400"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2h-1V9a1 1 0 00-1-1z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  ) : (
+                    <svg
+                      className="h-5 w-5 text-red-400"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  )}
+                </div>
+                <div className="ml-3">
+                  <p className={`text-sm ${error.includes("sudah melakukan") ? "text-blue-700" : "text-red-700"}`}>{error}</p>
+                </div>
+              </div>
             </div>
           )}
           <div className="mt-5">
-            <div className="rounded-md bg-gray-50 px-6 py-5 sm:flex sm:items-center sm:justify-between">
-              <div className="sm:flex sm:items-center">
-                <svg
-                  className="h-8 w-8 text-gray-400"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  strokeWidth="1.5"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"
-                  />
-                </svg>
-                <div className="mt-3 sm:ml-4 sm:mt-0">
-                  <p className="text-sm font-medium text-gray-900">
-                    {isLoading 
-                      ? "Memuat data kehadiran..."
-                      : isCheckedIn
-                        ? `Sudah absen masuk pada ${checkInTime}`
-                        : "Anda belum absen masuk hari ini"}
-                  </p>
-                  <p className="mt-1 text-sm text-gray-500">
-                    {new Date().toLocaleDateString("id-ID", {
-                      weekday: "long",
-                      year: "numeric",
-                      month: "long",
-                      day: "numeric",
-                    })}
-                  </p>
-                </div>
-              </div>
-              <div className="mt-4 sm:ml-6 sm:mt-0 sm:flex-shrink-0">
-                {!isCheckedIn ? (
-                  <button
-                    onClick={handleCheckIn}
-                    disabled={isLoading || actionLoading}
-                    className="inline-flex items-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 sm:text-sm disabled:opacity-50"
-                  >
-                    {actionLoading ? "Memproses..." : "Absen Masuk"}
-                  </button>
-                ) : (
-                  <button
-                    onClick={handleCheckOut}
-                    disabled={isLoading || actionLoading}
-                    className="inline-flex items-center rounded-md border border-transparent bg-red-600 px-4 py-2 font-medium text-white shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 sm:text-sm disabled:opacity-50"
-                  >
-                    {actionLoading ? "Memproses..." : "Absen Keluar"}
-                  </button>
-                )}
-              </div>
-            </div>
+            {renderTodayAttendance()}
           </div>
         </div>
       </div>
@@ -497,20 +686,18 @@ export default function EmployeeDashboard() {
                         <span className={`inline-flex rounded-full px-2 text-xs font-semibold leading-5 
                           ${record.status === 'PRESENT' ? 'bg-green-100 text-green-800' : 
                             record.status === 'ABSENT' ? 'bg-red-100 text-red-800' :
-                            record.status === 'LATE' ? 'bg-yellow-100 text-yellow-800' : 
-                            'bg-orange-100 text-orange-800'}`}>
-                          {record.status === 'PRESENT' ? 'HADIR' :
-                           record.status === 'ABSENT' ? 'TIDAK HADIR' :
-                           record.status === 'LATE' ? 'TERLAMBAT' :
-                           record.status === 'HALFDAY' ? 'SETENGAH HARI' :
-                           record.status}
+                            record.status === 'LATE' ? 'bg-yellow-100 text-yellow-800' :
+                            'bg-gray-100 text-gray-800'}`}>
+                          {record.status}
                         </span>
                       </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={4} className="py-4 text-center text-sm text-gray-500">Tidak ada catatan kehadiran ditemukan</td>
+                    <td colSpan={4} className="py-4 px-3 text-center text-sm text-gray-500">
+                      Belum ada catatan kehadiran
+                    </td>
                   </tr>
                 )}
               </tbody>

@@ -1,31 +1,47 @@
 import { prisma } from "@/lib/prisma";
 import { Status, LeaveStatus } from "@/generated/prisma";
+import {
+  getWorkdayType,
+  WorkdayType,
+  AttendanceStatus,
+  calculateLateMinutes as calculateLateMinutesRule,
+  calculateOvertimeMinutes,
+  getAttendanceStatus as getAttendanceStatusRule,
+  calculateLatePenalty,
+  isOvertimeCheckIn,
+  isOvertimeCheckOut,
+  isWorkday,
+  isSunday,
+  generateApprovalMessage
+} from "./attendanceRules";
 
-// Waktu kerja standar
-const WORK_START_TIME = 8 * 60; // 8:00 AM dalam menit (8 * 60)
-const LATE_THRESHOLD = 8 * 60 + 30; // 8:30 AM dalam menit
-const ABSENT_THRESHOLD = 9 * 60; // 9:00 AM dalam menit
-const WORK_END_TIME = 16 * 60 + 30; // 4:30 PM dalam menit
+// Import fungsi terkait tanggal
+import { format, startOfDay, endOfDay, addDays } from "date-fns";
+
+/**
+ * Mengonversi AttendanceStatus ke Status Prisma
+ */
+const mapAttendanceStatus = (status: AttendanceStatus): Status => {
+  switch (status) {
+    case AttendanceStatus.ON_TIME:
+      return Status.PRESENT;
+    case AttendanceStatus.LATE:
+      return Status.LATE;
+    case AttendanceStatus.ABSENT:
+      return Status.ABSENT;
+    default:
+      return Status.ABSENT;
+  }
+};
 
 /**
  * Menentukan status kehadiran berdasarkan waktu check-in
  */
 export const getAttendanceStatus = (checkInTime: Date | null): Status => {
   if (!checkInTime) return Status.ABSENT;
-
-  const hours = checkInTime.getHours();
-  const minutes = checkInTime.getMinutes();
-  const checkInMinutes = hours * 60 + minutes;
-
-  if (checkInMinutes < WORK_START_TIME) {
-    return Status.PRESENT;
-  } else if (checkInMinutes < LATE_THRESHOLD) {
-    return Status.PRESENT;
-  } else if (checkInMinutes < ABSENT_THRESHOLD) {
-    return Status.LATE;
-  } else {
-    return Status.ABSENT;
-  }
+  
+  const status = getAttendanceStatusRule(checkInTime, new Date(checkInTime));
+  return mapAttendanceStatus(status);
 };
 
 /**
@@ -33,33 +49,15 @@ export const getAttendanceStatus = (checkInTime: Date | null): Status => {
  */
 export const calculateLateMinutes = (checkInTime: Date | null): number => {
   if (!checkInTime) return 0;
-
-  const hours = checkInTime.getHours();
-  const minutes = checkInTime.getMinutes();
-  const checkInMinutes = hours * 60 + minutes;
-
-  if (checkInMinutes <= WORK_START_TIME) {
-    return 0;
-  } else {
-    return checkInMinutes - WORK_START_TIME;
-  }
+  return calculateLateMinutesRule(checkInTime, new Date(checkInTime));
 };
 
 /**
  * Menghitung lembur dalam menit
  */
-export const calculateOvertime = (checkOutTime: Date | null): number => {
+export const calculateOvertime = (checkOutTime: Date | null, isOvertimeApproved: boolean = false, isSundayWorkApproved: boolean = false): number => {
   if (!checkOutTime) return 0;
-
-  const hours = checkOutTime.getHours();
-  const minutes = checkOutTime.getMinutes();
-  const checkOutMinutes = hours * 60 + minutes;
-
-  if (checkOutMinutes <= WORK_END_TIME) {
-    return 0;
-  } else {
-    return checkOutMinutes - WORK_END_TIME;
-  }
+  return calculateOvertimeMinutes(checkOutTime, new Date(checkOutTime), isOvertimeApproved, isSundayWorkApproved);
 };
 
 /**
@@ -67,7 +65,8 @@ export const calculateOvertime = (checkOutTime: Date | null): number => {
  */
 export const recordCheckIn = async (employeeId: string) => {
   const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const today = startOfDay(now);
+  const tomorrow = endOfDay(now);
 
   // Cek apakah sudah ada catatan kehadiran untuk hari ini
   const existingAttendance = await prisma.attendance.findFirst({
@@ -75,10 +74,15 @@ export const recordCheckIn = async (employeeId: string) => {
       employeeId,
       date: {
         gte: today,
-        lt: new Date(today.getTime() + 24 * 60 * 60 * 1000),
+        lt: addDays(today, 1),
       },
     },
   });
+
+  // Jika sudah ada catatan dengan check-in, tolak permintaan
+  if (existingAttendance && existingAttendance.checkIn) {
+    throw new Error("Anda sudah melakukan check-in hari ini");
+  }
 
   // Cek apakah karyawan memiliki izin cuti yang disetujui untuk hari ini
   const approvedLeave = await prisma.leave.findFirst({
@@ -109,10 +113,28 @@ export const recordCheckIn = async (employeeId: string) => {
     }
   }
 
-  // Hitung status kehadiran
-  const status = getAttendanceStatus(now);
-  const isLate = status === Status.LATE;
-  const lateMinutes = calculateLateMinutes(now);
+  // Cek apakah hari ini adalah hari kerja
+  const workdayType = getWorkdayType(now);
+  const isSundayWorkday = workdayType === WorkdayType.SUNDAY;
+  
+  // Tentukan apakah check-in ini adalah lembur
+  const isOvertimeEntry = isOvertimeCheckIn(now, now);
+  
+  // Tentukan message dan flag berdasarkan jenis hari dan waktu
+  let notes = "";
+  const isSundayWork = isSundayWorkday;
+  
+  if (isSundayWorkday) {
+    notes = generateApprovalMessage(now, true, false); // Message untuk kerja hari Minggu
+  } else if (isOvertimeEntry) {
+    notes = generateApprovalMessage(now, true, false); // Message untuk lembur check-in
+  }
+
+  // Hitung status kehadiran dan keterlambatan - jika hari Minggu dan tidak disetujui, status ABSENT
+  const attendanceStatus = getAttendanceStatusRule(now, now, false); // Belum disetujui
+  const status = mapAttendanceStatus(attendanceStatus);
+  const isLate = attendanceStatus === AttendanceStatus.LATE;
+  const lateMinutes = calculateLateMinutesRule(now, now);
 
   if (existingAttendance) {
     // Jika sudah ada catatan, perbarui
@@ -123,6 +145,9 @@ export const recordCheckIn = async (employeeId: string) => {
         status,
         isLate,
         lateMinutes,
+        notes: notes || existingAttendance.notes,
+        isSundayWork,
+        // Catatan: kita tidak mengubah isOvertimeApproved dan isSundayWorkApproved di sini
       },
     });
   } else {
@@ -135,6 +160,10 @@ export const recordCheckIn = async (employeeId: string) => {
         status,
         isLate,
         lateMinutes,
+        notes,
+        isSundayWork,
+        isOvertimeApproved: false, // Default tidak disetujui
+        isSundayWorkApproved: false, // Default tidak disetujui
       },
     });
   }
@@ -145,7 +174,7 @@ export const recordCheckIn = async (employeeId: string) => {
  */
 export const recordCheckOut = async (employeeId: string) => {
   const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const today = startOfDay(now);
 
   // Cari catatan kehadiran hari ini
   const attendance = await prisma.attendance.findFirst({
@@ -153,7 +182,7 @@ export const recordCheckOut = async (employeeId: string) => {
       employeeId,
       date: {
         gte: today,
-        lt: new Date(today.getTime() + 24 * 60 * 60 * 1000),
+        lt: addDays(today, 1),
       },
     },
   });
@@ -162,15 +191,127 @@ export const recordCheckOut = async (employeeId: string) => {
     throw new Error("No check-in record found for today");
   }
 
-  // Hitung overtime
-  const overtimeMinutes = calculateOvertime(now);
+  // Cek apakah sudah checkout sebelumnya
+  if (attendance.checkOut) {
+    throw new Error("Anda sudah melakukan check-out hari ini");
+  }
+
+  // Cek apakah hari ini adalah hari kerja
+  const workdayType = getWorkdayType(now);
+  const isSundayWorkday = workdayType === WorkdayType.SUNDAY;
+  
+  // Hitung overtime berdasarkan persetujuan yang ada
+  const isOvertimeApproved = attendance.isOvertimeApproved;
+  const isSundayWorkApproved = attendance.isSundayWorkApproved;
+  
+  // Untuk saat ini, hitung overtime tanpa memperhitungkan persetujuan
+  // Nanti admin bisa menyetujui dan overtime akan dihitung ulang
+  const overtimeMinutes = calculateOvertimeMinutes(now, today, false, false);
+  
+  // Tentukan apakah checkout ini menghasilkan lembur
+  const isOvertimeExit = isOvertimeCheckOut(now, today);
+  let notes = attendance.notes || "";
+  
+  if (isOvertimeExit && !notes.includes("lembur")) {
+    if (notes) notes += ". ";
+    notes += generateApprovalMessage(now, false, false); // Message untuk lembur checkout
+  }
 
   // Update catatan dengan check-out dan overtime
   return prisma.attendance.update({
     where: { id: attendance.id },
     data: {
       checkOut: now,
-      overtime: overtimeMinutes,
+      overtime: overtimeMinutes, // Simpan overtime meskipun belum disetujui
+      notes,
+    },
+  });
+};
+
+/**
+ * Menyetujui lembur atau kerja hari Minggu
+ */
+export const approveOvertime = async (attendanceId: string, adminId: string) => {
+  const attendance = await prisma.attendance.findUnique({
+    where: { id: attendanceId },
+  });
+
+  if (!attendance) {
+    throw new Error("Attendance record not found");
+  }
+
+  // Cek apakah ini hari Minggu
+  const isSundayWorkday = isSunday(new Date(attendance.date));
+  
+  // Cek apakah ada lembur atau bekerja di hari Minggu
+  const isOvertime = attendance.overtime > 0;
+  
+  // Pesan yang akan ditambahkan ke catatan
+  let notes = attendance.notes || "";
+  if (notes.includes("perlu persetujuan")) {
+    notes = notes.replace("perlu persetujuan", "disetujui");
+  }
+
+  // Hitung ulang overtime dengan persetujuan jika ada checkout
+  let overtimeMinutes = attendance.overtime;
+  if (attendance.checkOut) {
+    overtimeMinutes = calculateOvertimeMinutes(
+      new Date(attendance.checkOut), 
+      new Date(attendance.date), 
+      true, // Lembur disetujui
+      isSundayWorkday // Jika hari Minggu, persetujuan Sunday work
+    );
+  }
+
+  // Update status persetujuan
+  return prisma.attendance.update({
+    where: { id: attendanceId },
+    data: {
+      isOvertimeApproved: isOvertime,
+      isSundayWorkApproved: isSundayWorkday,
+      notes,
+      overtime: overtimeMinutes, // Update overtime dengan perhitungan baru
+      approvedBy: adminId,
+      approvedAt: new Date(),
+      // Jika hari Minggu dan disetujui, update status menjadi PRESENT
+      status: isSundayWorkday ? Status.PRESENT : attendance.status,
+    },
+  });
+};
+
+/**
+ * Menolak lembur atau kerja hari Minggu
+ */
+export const rejectOvertime = async (attendanceId: string, adminId: string) => {
+  const attendance = await prisma.attendance.findUnique({
+    where: { id: attendanceId },
+  });
+
+  if (!attendance) {
+    throw new Error("Attendance record not found");
+  }
+
+  // Cek apakah ini hari Minggu
+  const isSundayWorkday = isSunday(new Date(attendance.date));
+  
+  // Pesan yang akan ditambahkan ke catatan
+  let notes = attendance.notes || "";
+  if (notes.includes("perlu persetujuan")) {
+    notes = notes.replace("perlu persetujuan", "ditolak");
+  }
+
+  // Update status persetujuan
+  return prisma.attendance.update({
+    where: { id: attendanceId },
+    data: {
+      isOvertimeApproved: false,
+      isSundayWorkApproved: false,
+      notes,
+      overtime: 0, // Reset overtime karena ditolak
+      approvedBy: adminId,
+      approvedAt: new Date(),
+      // Jika hari Minggu dan ditolak, update status menjadi ABSENT
+      status: isSundayWorkday ? Status.ABSENT : attendance.status,
     },
   });
 };
@@ -195,12 +336,31 @@ export const getMonthlyAttendanceReport = async (employeeId: string, year: numbe
     },
   });
 
-  const totalDays = endDate.getDate();
+  // Menghitung jumlah hari kerja dalam bulan tersebut
+  let workdays = 0;
+  for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+    if (isWorkday(new Date(d))) {
+      workdays++;
+    }
+  }
+
+  const totalDays = workdays; // Jumlah hari kerja dalam bulan ini
   const daysPresent = attendances.filter(a => a.status === Status.PRESENT).length;
   const daysLate = attendances.filter(a => a.status === Status.LATE).length;
   const daysAbsent = attendances.filter(a => a.status === Status.ABSENT).length;
   const daysLeave = attendances.filter(a => a.status === Status.LEAVE).length;
-  const totalOvertime = attendances.reduce((total, a) => total + a.overtime, 0);
+  
+  // Hitung total overtime yang disetujui
+  const totalApprovedOvertime = attendances.reduce((total, a) => {
+    // Jika overtime disetujui atau hari Minggu disetujui, tambahkan ke total
+    if ((a.isOvertimeApproved || a.isSundayWorkApproved) && a.overtime > 0) {
+      return total + a.overtime;
+    }
+    return total;
+  }, 0);
+  
+  // Hitung total denda keterlambatan
+  const totalLatePenalty = daysLate * calculateLatePenalty(AttendanceStatus.LATE);
 
   return {
     totalDays,
@@ -208,7 +368,8 @@ export const getMonthlyAttendanceReport = async (employeeId: string, year: numbe
     daysLate,
     daysAbsent,
     daysLeave,
-    totalOvertime,
+    totalOvertime: totalApprovedOvertime, // Hanya overtime yang disetujui
+    totalLatePenalty,
     attendances,
   };
 }; 
