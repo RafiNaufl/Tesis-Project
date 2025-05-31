@@ -49,7 +49,7 @@ export default function EmployeeDashboard() {
         
         // Get attendance stats for current month
         const statsResponse = await fetch(`/api/attendance?month=${currentMonth}&year=${currentYear}`);
-        if (!statsResponse.ok) throw new Error('Failed to fetch attendance statistics');
+        if (!statsResponse.ok) throw new Error('Gagal mengambil data statistik kehadiran');
         const data = await statsResponse.json();
         
         // Pastikan data yang diterima sesuai format yang diharapkan
@@ -106,7 +106,7 @@ export default function EmployeeDashboard() {
         }
       } catch (error) {
         console.error("Error fetching attendance data:", error);
-        setError("Failed to load attendance data");
+        setError("Gagal memuat data kehadiran");
       } finally {
         setIsLoading(false);
       }
@@ -130,7 +130,7 @@ export default function EmployeeDashboard() {
       
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to check in');
+        throw new Error(errorData.error || 'Gagal melakukan absen masuk');
       }
       
       const data = await response.json();
@@ -182,7 +182,7 @@ export default function EmployeeDashboard() {
       }));
     } catch (error: any) {
       console.error("Error checking in:", error);
-      setError(error.message || "Failed to check in");
+      setError(error.message || "Gagal melakukan absen masuk");
     } finally {
       setActionLoading(false);
     }
@@ -203,7 +203,7 @@ export default function EmployeeDashboard() {
       
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to check out');
+        throw new Error(errorData.error || 'Gagal melakukan absen keluar');
       }
       
       // Update state with check-out information
@@ -229,7 +229,7 @@ export default function EmployeeDashboard() {
       }
     } catch (error: any) {
       console.error("Error checking out:", error);
-      setError(error.message || "Failed to check out");
+      setError(error.message || "Gagal melakukan absen keluar");
     } finally {
       setActionLoading(false);
     }
@@ -239,10 +239,10 @@ export default function EmployeeDashboard() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold text-gray-900">
-          Welcome, {session?.user?.name}
+          Selamat Datang, {session?.user?.name}
         </h1>
         <p className="mt-1 text-sm text-gray-500">
-          Here's your attendance overview
+          Berikut ringkasan kehadiran Anda
         </p>
       </div>
 
@@ -250,7 +250,7 @@ export default function EmployeeDashboard() {
       <div className="overflow-hidden bg-white shadow sm:rounded-lg">
         <div className="px-4 py-5 sm:p-6">
           <h3 className="text-lg font-medium leading-6 text-gray-900">
-            Today's Attendance
+            Kehadiran Hari Ini
           </h3>
           {error && (
             <div className="mt-2 rounded-md bg-red-50 p-2">
@@ -276,13 +276,13 @@ export default function EmployeeDashboard() {
                 <div className="mt-3 sm:ml-4 sm:mt-0">
                   <p className="text-sm font-medium text-gray-900">
                     {isLoading 
-                      ? "Loading attendance data..."
+                      ? "Memuat data kehadiran..."
                       : isCheckedIn
-                        ? `Checked in at ${checkInTime}`
-                        : "You haven't checked in yet"}
+                        ? `Sudah absen masuk pada ${checkInTime}`
+                        : "Anda belum absen masuk hari ini"}
                   </p>
                   <p className="mt-1 text-sm text-gray-500">
-                    {new Date().toLocaleDateString(undefined, {
+                    {new Date().toLocaleDateString("id-ID", {
                       weekday: "long",
                       year: "numeric",
                       month: "long",
@@ -298,7 +298,7 @@ export default function EmployeeDashboard() {
                     disabled={isLoading || actionLoading}
                     className="inline-flex items-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 sm:text-sm disabled:opacity-50"
                   >
-                    {actionLoading ? "Processing..." : "Check In"}
+                    {actionLoading ? "Memproses..." : "Absen Masuk"}
                   </button>
                 ) : (
                   <button
@@ -306,7 +306,7 @@ export default function EmployeeDashboard() {
                     disabled={isLoading || actionLoading}
                     className="inline-flex items-center rounded-md border border-transparent bg-red-600 px-4 py-2 font-medium text-white shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 sm:text-sm disabled:opacity-50"
                   >
-                    {actionLoading ? "Processing..." : "Check Out"}
+                    {actionLoading ? "Memproses..." : "Absen Keluar"}
                   </button>
                 )}
               </div>
@@ -341,7 +341,7 @@ export default function EmployeeDashboard() {
               <div className="ml-5 w-0 flex-1">
                 <dl>
                   <dt className="truncate text-sm font-medium text-gray-500">
-                    Present
+                    Hadir
                   </dt>
                   <dd>
                     <div className="text-lg font-medium text-gray-900">
@@ -378,7 +378,7 @@ export default function EmployeeDashboard() {
               <div className="ml-5 w-0 flex-1">
                 <dl>
                   <dt className="truncate text-sm font-medium text-gray-500">
-                    Absent
+                    Tidak Hadir
                   </dt>
                   <dd>
                     <div className="text-lg font-medium text-gray-900">
@@ -415,7 +415,7 @@ export default function EmployeeDashboard() {
               <div className="ml-5 w-0 flex-1">
                 <dl>
                   <dt className="truncate text-sm font-medium text-gray-500">
-                    Late
+                    Terlambat
                   </dt>
                   <dd>
                     <div className="text-lg font-medium text-gray-900">
@@ -452,7 +452,7 @@ export default function EmployeeDashboard() {
               <div className="ml-5 w-0 flex-1">
                 <dl>
                   <dt className="truncate text-sm font-medium text-gray-500">
-                    Half Day
+                    Setengah Hari
                   </dt>
                   <dd>
                     <div className="text-lg font-medium text-gray-900">
@@ -470,19 +470,19 @@ export default function EmployeeDashboard() {
       <div className="overflow-hidden bg-white shadow sm:rounded-md">
         <div className="px-4 py-5 sm:px-6">
           <h3 className="text-lg font-medium leading-6 text-gray-900">
-            Recent Attendance
+            Kehadiran Terbaru
           </h3>
         </div>
         {isLoading ? (
-          <div className="px-4 py-5 text-center">Loading your attendance records...</div>
+          <div className="px-4 py-5 text-center">Memuat catatan kehadiran Anda...</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-300">
               <thead className="bg-gray-50">
                 <tr>
-                  <th scope="col" className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">Date</th>
-                  <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Check In</th>
-                  <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Check Out</th>
+                  <th scope="col" className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">Tanggal</th>
+                  <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Jam Masuk</th>
+                  <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Jam Keluar</th>
                   <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Status</th>
                 </tr>
               </thead>
@@ -499,14 +499,18 @@ export default function EmployeeDashboard() {
                             record.status === 'ABSENT' ? 'bg-red-100 text-red-800' :
                             record.status === 'LATE' ? 'bg-yellow-100 text-yellow-800' : 
                             'bg-orange-100 text-orange-800'}`}>
-                          {record.status}
+                          {record.status === 'PRESENT' ? 'HADIR' :
+                           record.status === 'ABSENT' ? 'TIDAK HADIR' :
+                           record.status === 'LATE' ? 'TERLAMBAT' :
+                           record.status === 'HALFDAY' ? 'SETENGAH HARI' :
+                           record.status}
                         </span>
                       </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={4} className="py-4 text-center text-sm text-gray-500">No attendance records found</td>
+                    <td colSpan={4} className="py-4 text-center text-sm text-gray-500">Tidak ada catatan kehadiran ditemukan</td>
                   </tr>
                 )}
               </tbody>
