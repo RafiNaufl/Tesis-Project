@@ -33,6 +33,29 @@ export default function AdminDashboard() {
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const POLLING_INTERVAL = 30000; // 30 detik interval polling
 
+  // Fungsi untuk memformat tanggal dengan aman
+  const formatDateSafely = (dateInput: string | Date | null | undefined): string => {
+    if (!dateInput) return "-";
+    
+    try {
+      const date = new Date(dateInput);
+      // Periksa apakah tanggal valid
+      if (isNaN(date.getTime())) {
+        console.error("Invalid date input:", dateInput);
+        return "-";
+      }
+      
+      return date.toLocaleString('id-ID', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      });
+    } catch (error) {
+      console.error("Error formatting date:", error);
+      return "-";
+    }
+  };
+
   // Memoize fetch function to avoid recreating it on every render
   const fetchDashboardData = useCallback(async (showLoading = true) => {
     if (showLoading) {
@@ -73,6 +96,9 @@ export default function AdminDashboard() {
       // Normalize activity data
       let attendanceRecords = [];
       
+      // Log response untuk debugging
+      console.log("Attendance data response:", activityData);
+      
       // Handle different response formats
       if (Array.isArray(activityData)) {
         attendanceRecords = activityData;
@@ -81,25 +107,26 @@ export default function AdminDashboard() {
       }
       
       // Format attendance records as activities with unique IDs
-      const activities = attendanceRecords.map((item: any, index: number) => ({
-        id: item.id || `activity-${index}`,
-        employeeName: item.employee?.user?.name || "Karyawan Tidak Diketahui",
-        action: item.status === "PRESENT" ? "telah absen masuk" : 
-               item.status === "ABSENT" ? "tidak hadir" : 
-               item.status === "LATE" ? "terlambat masuk" : 
-               item.status === "LEAVE" ? "sedang cuti" : "masuk setengah hari",
-        time: item.checkIn ? new Date(item.checkIn).toLocaleString('id-ID', {
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: false
-        }) : new Date(item.date).toLocaleString('id-ID', {
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: false
-        }),
-        status: item.status
-      }));
+      const activities = attendanceRecords.map((item: any, index: number) => {
+        // Log untuk debugging
+        console.log(`Processing item ${index}:`, item);
+        
+        // Periksa dan dapatkan data kehadiran yang valid
+        const checkInTime = item.checkIn ? formatDateSafely(item.checkIn) : formatDateSafely(item.date);
+        
+        return {
+          id: item.id || `activity-${index}`,
+          employeeName: item.employee?.user?.name || (item.employee?.name || "Karyawan Tidak Diketahui"),
+          action: item.status === "PRESENT" ? "telah absen masuk" : 
+                 item.status === "ABSENT" ? "tidak hadir" : 
+                 item.status === "LATE" ? "terlambat masuk" : 
+                 item.status === "LEAVE" ? "sedang cuti" : "masuk setengah hari",
+          time: checkInTime,
+          status: item.status
+        };
+      });
       
+      console.log("Formatted activities:", activities);
       setRecentActivities(activities);
       lastFetchTimeRef.current = Date.now();
     } catch (error) {
