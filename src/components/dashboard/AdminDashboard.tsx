@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
+import { NOTIFICATION_UPDATE_EVENT } from "../notifications/NotificationDropdown";
 
 type DashboardStats = {
   totalEmployees: number;
@@ -27,69 +28,152 @@ export default function AdminDashboard() {
   });
   const [recentActivities, setRecentActivities] = useState<ActivityItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const lastFetchTimeRef = useRef<number>(0);
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const POLLING_INTERVAL = 30000; // 30 detik interval polling
 
-  useEffect(() => {
-    const fetchDashboardData = async () => {
+  // Memoize fetch function to avoid recreating it on every render
+  const fetchDashboardData = useCallback(async (showLoading = true) => {
+    if (showLoading) {
       setIsLoading(true);
-      try {
-        // Fetch dashboard statistics
-        const statsResponse = await fetch('/api/reports/summary');
-        if (!statsResponse.ok) throw new Error('Failed to fetch dashboard stats');
-        const statsData = await statsResponse.json();
-        
-        // Fetch recent attendance activity
-        const activityResponse = await fetch('/api/attendance?limit=5');
-        if (!activityResponse.ok) throw new Error('Failed to fetch recent activities');
-        const activityData = await activityResponse.json();
-        
-        // Format the data for our components
-        setStats({
-          totalEmployees: statsData.payroll?.employeeCount || 0,
-          presentToday: statsData.attendance?.presentCount || 0,
-          pendingPayrolls: statsData.payroll?.pendingCount || 0,
-          totalSalaryExpense: statsData.payroll?.totalNetSalary || 0,
-        });
-        
-        // Normalize activity data
-        let attendanceRecords = [];
-        
-        // Handle different response formats
-        if (Array.isArray(activityData)) {
-          attendanceRecords = activityData;
-        } else if (activityData.attendances && Array.isArray(activityData.attendances)) {
-          attendanceRecords = activityData.attendances;
+    } else {
+      setIsRefreshing(true);
+    }
+    
+    try {
+      // Fetch dashboard statistics
+      const statsResponse = await fetch('/api/reports/summary?' + Date.now(), {
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
         }
-        
-        // Format attendance records as activities with unique IDs
-        const activities = attendanceRecords.map((item: any, index: number) => ({
-          id: item.id || `activity-${index}`,
-          employeeName: item.employee?.user?.name || "Karyawan Tidak Diketahui",
-          action: item.status === "PRESENT" ? "telah absen masuk" : 
-                 item.status === "ABSENT" ? "tidak hadir" : 
-                 item.status === "LATE" ? "terlambat masuk" : 
-                 item.status === "LEAVE" ? "sedang cuti" : "masuk setengah hari",
-          time: item.checkIn ? new Date(item.checkIn).toLocaleString('id-ID', {
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false
-          }) : new Date(item.date).toLocaleString('id-ID', {
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false
-          }),
-          status: item.status
-        }));
-        
-        setRecentActivities(activities);
-      } catch (error) {
-        console.error("Error fetching dashboard data:", error);
-      } finally {
+      });
+      if (!statsResponse.ok) throw new Error('Gagal mengambil statistik dashboard');
+      const statsData = await statsResponse.json();
+      
+      // Fetch recent attendance activity
+      const activityResponse = await fetch('/api/attendance?limit=5&timestamp=' + Date.now(), {
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        }
+      });
+      if (!activityResponse.ok) throw new Error('Gagal mengambil aktivitas terbaru');
+      const activityData = await activityResponse.json();
+      
+      // Format the data for our components
+      setStats({
+        totalEmployees: statsData.payroll?.employeeCount || 0,
+        presentToday: statsData.attendance?.presentCount || 0,
+        pendingPayrolls: statsData.payroll?.pendingCount || 0,
+        totalSalaryExpense: statsData.payroll?.totalNetSalary || 0,
+      });
+      
+      // Normalize activity data
+      let attendanceRecords = [];
+      
+      // Handle different response formats
+      if (Array.isArray(activityData)) {
+        attendanceRecords = activityData;
+      } else if (activityData.attendances && Array.isArray(activityData.attendances)) {
+        attendanceRecords = activityData.attendances;
+      }
+      
+      // Format attendance records as activities with unique IDs
+      const activities = attendanceRecords.map((item: any, index: number) => ({
+        id: item.id || `activity-${index}`,
+        employeeName: item.employee?.user?.name || "Karyawan Tidak Diketahui",
+        action: item.status === "PRESENT" ? "telah absen masuk" : 
+               item.status === "ABSENT" ? "tidak hadir" : 
+               item.status === "LATE" ? "terlambat masuk" : 
+               item.status === "LEAVE" ? "sedang cuti" : "masuk setengah hari",
+        time: item.checkIn ? new Date(item.checkIn).toLocaleString('id-ID', {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false
+        }) : new Date(item.date).toLocaleString('id-ID', {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false
+        }),
+        status: item.status
+      }));
+      
+      setRecentActivities(activities);
+      lastFetchTimeRef.current = Date.now();
+    } catch (error) {
+      console.error("Error fetching dashboard data:", error);
+    } finally {
+      if (showLoading) {
         setIsLoading(false);
+      } else {
+        setIsRefreshing(false);
+      }
+    }
+  }, []);
+
+  // Setup polling and event listeners
+  useEffect(() => {
+    // Initial fetch
+    fetchDashboardData();
+    lastFetchTimeRef.current = Date.now();
+    
+    // Set up polling for dashboard data - check every 30 seconds
+    pollingIntervalRef.current = setInterval(() => {
+      fetchDashboardData(false);
+    }, POLLING_INTERVAL);
+    
+    // Set up global event listener for attendance actions
+    const handleActivityUpdate = () => {
+      fetchDashboardData(false);
+    };
+    
+    // Register the event listener
+    window.addEventListener(NOTIFICATION_UPDATE_EVENT, handleActivityUpdate);
+    
+    // Add event listeners for user activity to check for new data
+    const activityEvents = ['mousedown', 'keydown', 'touchstart', 'scroll'];
+    const handleUserActivity = () => {
+      const now = Date.now();
+      const timeSinceLastFetch = now - lastFetchTimeRef.current;
+      
+      // Jika sudah lebih dari interval, ambil data baru
+      if (timeSinceLastFetch > POLLING_INTERVAL) {
+        fetchDashboardData(false);
       }
     };
+    
+    activityEvents.forEach(event => {
+      window.addEventListener(event, handleUserActivity);
+    });
+    
+    // Clean up on unmount
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
+      window.removeEventListener(NOTIFICATION_UPDATE_EVENT, handleActivityUpdate);
+      activityEvents.forEach(event => {
+        window.removeEventListener(event, handleUserActivity);
+      });
+    };
+  }, [fetchDashboardData]);
 
-    fetchDashboardData();
-  }, []);
+  // Add a focus/visibility change event listener to refresh on tab focus
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchDashboardData(false);
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [fetchDashboardData]);
 
   return (
     <div className="space-y-6">
@@ -279,10 +363,13 @@ export default function AdminDashboard() {
 
       {/* Recent Activity */}
       <div className="overflow-hidden bg-white shadow sm:rounded-md">
-        <div className="px-4 py-5 sm:px-6">
+        <div className="px-4 py-5 sm:px-6 flex justify-between items-center">
           <h3 className="text-lg font-medium leading-6 text-gray-900">
             Aktivitas Terbaru
           </h3>
+          {isRefreshing && (
+            <span className="text-xs text-gray-500">Memperbarui...</span>
+          )}
         </div>
         {isLoading ? (
           <div className="px-4 py-5 sm:p-6 text-center">Memuat aktivitas terbaru...</div>
