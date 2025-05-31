@@ -124,10 +124,11 @@ export const recordCheckIn = async (employeeId: string) => {
   let notes = "";
   const isSundayWork = isSundayWorkday;
   
+  // Hanya tambahkan notes jika bekerja di hari Minggu atau lembur
   if (isSundayWorkday) {
-    notes = generateApprovalMessage(now, true, false); // Message untuk kerja hari Minggu
+    notes = "Bekerja pada hari Minggu (memerlukan persetujuan admin)";
   } else if (isOvertimeEntry) {
-    notes = generateApprovalMessage(now, true, false); // Message untuk lembur check-in
+    notes = "Check-in pada jam lembur (memerlukan persetujuan admin)";
   }
 
   // Hitung status kehadiran dan keterlambatan - jika hari Minggu dan tidak disetujui, status ABSENT
@@ -212,7 +213,8 @@ export const recordCheckOut = async (employeeId: string) => {
   const isOvertimeExit = isOvertimeCheckOut(now, today);
   let notes = attendance.notes || "";
   
-  if (isOvertimeExit && !notes.includes("lembur")) {
+  // Hanya tambahkan notes lembur jika belum ada
+  if (isOvertimeExit && !notes.includes("lembur") && !notes.includes("Lembur")) {
     if (notes) notes += ". ";
     notes += generateApprovalMessage(now, false, false); // Message untuk lembur checkout
   }
@@ -248,8 +250,10 @@ export const approveOvertime = async (attendanceId: string, adminId: string) => 
   
   // Pesan yang akan ditambahkan ke catatan
   let notes = attendance.notes || "";
-  if (notes.includes("perlu persetujuan")) {
-    notes = notes.replace("perlu persetujuan", "disetujui");
+  
+  // Ganti "memerlukan persetujuan" dengan "disetujui" jika ada
+  if (notes.includes("memerlukan persetujuan admin")) {
+    notes = notes.replace("memerlukan persetujuan admin", "disetujui admin");
   }
 
   // Hitung ulang overtime dengan persetujuan jika ada checkout
@@ -296,8 +300,10 @@ export const rejectOvertime = async (attendanceId: string, adminId: string) => {
   
   // Pesan yang akan ditambahkan ke catatan
   let notes = attendance.notes || "";
-  if (notes.includes("perlu persetujuan")) {
-    notes = notes.replace("perlu persetujuan", "ditolak");
+  
+  // Ganti "memerlukan persetujuan" dengan "ditolak" jika ada
+  if (notes.includes("memerlukan persetujuan admin")) {
+    notes = notes.replace("memerlukan persetujuan admin", "ditolak admin");
   }
 
   // Update status persetujuan

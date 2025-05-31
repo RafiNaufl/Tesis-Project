@@ -216,7 +216,7 @@ export async function POST(req: NextRequest) {
           await createLateCheckInAdminNotification(
             employee.id,
             employee.user.name,
-            "Bekerja pada hari Minggu (perlu persetujuan)",
+            "Bekerja pada hari Minggu (memerlukan persetujuan admin)",
             now
           );
         }
@@ -227,7 +227,7 @@ export async function POST(req: NextRequest) {
           await createOvertimeAdminNotification(
             employee.id,
             employee.user.name,
-            "Check-in pada jam lembur",
+            "Check-in pada jam lembur (memerlukan persetujuan admin)",
             now
           );
         }
