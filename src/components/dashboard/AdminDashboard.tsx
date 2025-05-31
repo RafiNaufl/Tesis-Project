@@ -259,10 +259,10 @@ export default function AdminDashboard() {
     fetchDashboardData();
     lastFetchTimeRef.current = Date.now();
     
-    // Set up polling for dashboard data - check every 15 seconds
-    pollingIntervalRef.current = setInterval(() => {
-      fetchDashboardData(false);
-    }, POLLING_INTERVAL);
+    // Tidak perlu polling interval lagi, hanya refresh saat halaman di-load atau refresh manual
+    // pollingIntervalRef.current = setInterval(() => {
+    //   fetchDashboardData(false);
+    // }, POLLING_INTERVAL);
     
     // Set up global event listener for attendance actions (gunakan keduanya)
     const handleActivityUpdate = () => {
@@ -280,22 +280,6 @@ export default function AdminDashboard() {
       }
     });
     
-    // Add event listeners for user activity to check for new data
-    const activityEvents = ['mousedown', 'keydown', 'touchstart', 'scroll'];
-    const handleUserActivity = () => {
-      const now = Date.now();
-      const timeSinceLastFetch = now - lastFetchTimeRef.current;
-      
-      // Jika sudah lebih dari interval, ambil data baru
-      if (timeSinceLastFetch > POLLING_INTERVAL) {
-        fetchDashboardData(false);
-      }
-    };
-    
-    activityEvents.forEach(event => {
-      window.addEventListener(event, handleUserActivity);
-    });
-    
     // Clean up on unmount
     return () => {
       if (pollingIntervalRef.current) {
@@ -304,25 +288,29 @@ export default function AdminDashboard() {
       window.removeEventListener(NOTIFICATION_UPDATE_EVENT, handleActivityUpdate);
       window.removeEventListener(ACTIVITY_UPDATE_EVENT, handleActivityUpdate);
       window.removeEventListener('storage', handleActivityUpdate);
-      activityEvents.forEach(event => {
-        window.removeEventListener(event, handleUserActivity);
-      });
+      
+      // Hapus pembersihan event listener untuk aktivitas user
+      // activityEvents.forEach(event => {
+      //   window.removeEventListener(event, handleUserActivity);
+      // });
     };
   }, [fetchDashboardData]);
 
   // Add a focus/visibility change event listener to refresh on tab focus
   useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        fetchDashboardData(false);
-      }
-    };
-    
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
+    // Hapus auto refresh saat tab menjadi aktif sesuai permintaan pengguna
+    // Perubahan ini dibuat agar data hanya di-refresh saat halaman di-refresh atau tombol refresh ditekan
+    // const handleVisibilityChange = () => {
+    //   if (document.visibilityState === 'visible') {
+    //     fetchDashboardData(false);
+    //   }
+    // };
+    // 
+    // document.addEventListener('visibilitychange', handleVisibilityChange);
+    // 
+    // return () => {
+    //   document.removeEventListener('visibilitychange', handleVisibilityChange);
+    // };
   }, [fetchDashboardData]);
 
   return (
