@@ -50,7 +50,16 @@ export default function EmployeeDashboard() {
         // Get attendance stats for current month
         const statsResponse = await fetch(`/api/attendance?month=${currentMonth}&year=${currentYear}`);
         if (!statsResponse.ok) throw new Error('Failed to fetch attendance statistics');
-        const attendanceData = await statsResponse.json();
+        const data = await statsResponse.json();
+        
+        // Pastikan data yang diterima sesuai format yang diharapkan
+        const attendanceData = data.attendances || [];
+        
+        // Pastikan attendanceData adalah array sebelum menggunakan filter
+        if (!Array.isArray(attendanceData)) {
+          console.error("Data kehadiran bukan array:", attendanceData);
+          throw new Error("Format data kehadiran tidak valid");
+        }
         
         // Calculate stats from attendance data
         const stats = {

@@ -40,16 +40,38 @@ export default function NotificationDropdown() {
         setIsRefreshing(true);
       }
 
-      const response = await fetch("/api/notifications?limit=5&timestamp=" + Date.now());
+      // Tambahkan timeout untuk fetch request
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 detik timeout
+      
+      const response = await fetch("/api/notifications?limit=5&timestamp=" + Date.now(), {
+        signal: controller.signal,
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        }
+      });
+      
+      clearTimeout(timeoutId);
+      
       if (!response.ok) {
-        throw new Error("Failed to fetch notifications");
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
+      
       const data = await response.json();
       setNotifications(data.notifications);
       setUnreadCount(data.unreadCount);
       lastFetchTimeRef.current = Date.now();
-    } catch (error) {
-      console.error("Error fetching notifications:", error);
+    } catch (error: any) {
+      // Tangani error dengan lebih spesifik
+      if (error instanceof TypeError && error.message === 'Failed to fetch') {
+        console.error("Koneksi jaringan terputus atau server tidak merespon:", error);
+      } else if (error.name === 'AbortError') {
+        console.error("Request timeout, server tidak merespon dalam waktu yang ditentukan");
+      } else {
+        console.error("Error saat mengambil notifikasi:", error);
+      }
+      // Jangan ubah state notifikasi jika terjadi error
     } finally {
       if (showLoading) {
         setIsLoading(false);
