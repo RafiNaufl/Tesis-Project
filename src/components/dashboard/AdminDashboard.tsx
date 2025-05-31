@@ -4,6 +4,9 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
 import { NOTIFICATION_UPDATE_EVENT } from "../notifications/NotificationDropdown";
 
+// Buat custom event baru khusus untuk aktivitas 
+export const ACTIVITY_UPDATE_EVENT = 'activity-update';
+
 type DashboardStats = {
   totalEmployees: number;
   presentToday: number;
@@ -31,7 +34,7 @@ export default function AdminDashboard() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const lastFetchTimeRef = useRef<number>(0);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const POLLING_INTERVAL = 30000; // 30 detik interval polling
+  const POLLING_INTERVAL = 15000; // Turunkan ke 15 detik agar lebih responsif
 
   // Fungsi untuk memformat tanggal dengan aman
   const formatDateSafely = (dateInput: string | Date | null | undefined): string => {
@@ -65,21 +68,29 @@ export default function AdminDashboard() {
     }
     
     try {
+      // Tambahkan timestamp acak untuk mencegah caching browser
+      const cacheBuster = `timestamp=${Date.now()}&random=${Math.random()}`;
+      
       // Fetch dashboard statistics
-      const statsResponse = await fetch('/api/reports/summary?' + Date.now(), {
+      const statsResponse = await fetch(`/api/reports/summary?${cacheBuster}`, {
         headers: {
-          'Cache-Control': 'no-cache',
-          'Pragma': 'no-cache'
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
         }
       });
       if (!statsResponse.ok) throw new Error('Gagal mengambil statistik dashboard');
       const statsData = await statsResponse.json();
       
-      // Fetch recent attendance activity
-      const activityResponse = await fetch('/api/attendance?limit=5&timestamp=' + Date.now(), {
+      // Log data statistik untuk debugging
+      console.log("Dashboard stats data:", statsData);
+      
+      // Fetch recent attendance activity dengan limit lebih besar untuk memastikan mendapatkan data terbaru
+      const activityResponse = await fetch(`/api/attendance?limit=10&${cacheBuster}`, {
         headers: {
-          'Cache-Control': 'no-cache',
-          'Pragma': 'no-cache'
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
         }
       });
       if (!activityResponse.ok) throw new Error('Gagal mengambil aktivitas terbaru');
@@ -88,7 +99,7 @@ export default function AdminDashboard() {
       // Format the data for our components
       setStats({
         totalEmployees: statsData.payroll?.employeeCount || 0,
-        presentToday: statsData.attendance?.presentCount || 0,
+        presentToday: statsData.attendance?.presentToday || 0,
         pendingPayrolls: statsData.payroll?.pendingCount || 0,
         totalSalaryExpense: statsData.payroll?.totalNetSalary || 0,
       });
@@ -127,7 +138,21 @@ export default function AdminDashboard() {
       });
       
       console.log("Formatted activities:", activities);
-      setRecentActivities(activities);
+      
+      // Sortir aktivitas berdasarkan waktu terbaru (jika date atau checkIn tersedia)
+      const sortedActivities = activities.sort((a: ActivityItem, b: ActivityItem) => {
+        const aItem = attendanceRecords.find((item: any) => item.id === a.id || `activity-${item.id}` === a.id);
+        const bItem = attendanceRecords.find((item: any) => item.id === b.id || `activity-${item.id}` === b.id);
+        
+        const aTime = aItem?.checkIn || aItem?.date || new Date();
+        const bTime = bItem?.checkIn || bItem?.date || new Date();
+        
+        // Sortir dari yang terbaru ke yang terlama
+        return new Date(bTime).getTime() - new Date(aTime).getTime();
+      });
+      
+      // Batasi hanya 5 aktivitas terbaru
+      setRecentActivities(sortedActivities.slice(0, 5));
       lastFetchTimeRef.current = Date.now();
     } catch (error) {
       console.error("Error fetching dashboard data:", error);
@@ -140,24 +165,40 @@ export default function AdminDashboard() {
     }
   }, []);
 
+  // Fungsi untuk memicu pembaruan aktivitas secara manual
+  const triggerActivityUpdate = useCallback(() => {
+    // Dispatch event khusus untuk aktivitas
+    window.dispatchEvent(new Event(ACTIVITY_UPDATE_EVENT));
+    // Juga segera perbarui data
+    fetchDashboardData(false);
+  }, [fetchDashboardData]);
+
   // Setup polling and event listeners
   useEffect(() => {
     // Initial fetch
     fetchDashboardData();
     lastFetchTimeRef.current = Date.now();
     
-    // Set up polling for dashboard data - check every 30 seconds
+    // Set up polling for dashboard data - check every 15 seconds
     pollingIntervalRef.current = setInterval(() => {
       fetchDashboardData(false);
     }, POLLING_INTERVAL);
     
-    // Set up global event listener for attendance actions
+    // Set up global event listener for attendance actions (gunakan keduanya)
     const handleActivityUpdate = () => {
       fetchDashboardData(false);
     };
     
-    // Register the event listener
+    // Register the event listeners - gunakan beberapa event untuk meningkatkan kemungkinan update
     window.addEventListener(NOTIFICATION_UPDATE_EVENT, handleActivityUpdate);
+    window.addEventListener(ACTIVITY_UPDATE_EVENT, handleActivityUpdate);
+    
+    // Juga dengarkan event khusus browser
+    window.addEventListener('storage', (e) => {
+      if (e.key === 'attendance-update') {
+        handleActivityUpdate();
+      }
+    });
     
     // Add event listeners for user activity to check for new data
     const activityEvents = ['mousedown', 'keydown', 'touchstart', 'scroll'];
@@ -181,6 +222,8 @@ export default function AdminDashboard() {
         clearInterval(pollingIntervalRef.current);
       }
       window.removeEventListener(NOTIFICATION_UPDATE_EVENT, handleActivityUpdate);
+      window.removeEventListener(ACTIVITY_UPDATE_EVENT, handleActivityUpdate);
+      window.removeEventListener('storage', handleActivityUpdate);
       activityEvents.forEach(event => {
         window.removeEventListener(event, handleUserActivity);
       });
@@ -204,11 +247,35 @@ export default function AdminDashboard() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-gray-900">Dashboard Admin</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          Ringkasan organisasi Anda
-        </p>
+      <div className="flex justify-between items-center">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900">Dashboard Admin</h1>
+          <p className="mt-1 text-sm text-gray-500">
+            Ringkasan organisasi Anda
+          </p>
+        </div>
+        <button 
+          onClick={() => fetchDashboardData(false)}
+          className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+          disabled={isRefreshing}
+        >
+          {isRefreshing ? (
+            <>
+              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              Memperbarui...
+            </>
+          ) : (
+            <>
+              <svg className="h-4 w-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Segarkan Data
+            </>
+          )}
+        </button>
       </div>
 
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
@@ -273,7 +340,16 @@ export default function AdminDashboard() {
                   </dt>
                   <dd>
                     <div className="text-lg font-medium text-gray-900">
-                      {isLoading ? "Memuat..." : stats.presentToday}
+                      {isLoading ? (
+                        "Memuat..."
+                      ) : (
+                        <div className="flex items-center">
+                          <span>{stats.presentToday}</span>
+                          {isRefreshing && (
+                            <span className="ml-2 h-2 w-2 rounded-full bg-green-500 animate-pulse" title="Memperbarui data"></span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </dd>
                 </dl>
@@ -308,7 +384,16 @@ export default function AdminDashboard() {
                   </dt>
                   <dd>
                     <div className="text-lg font-medium text-gray-900">
-                      {isLoading ? "Memuat..." : stats.pendingPayrolls}
+                      {isLoading ? (
+                        "Memuat..."
+                      ) : (
+                        <div className="flex items-center">
+                          <span>{stats.pendingPayrolls}</span>
+                          {isRefreshing && (
+                            <span className="ml-2 h-2 w-2 rounded-full bg-yellow-500 animate-pulse" title="Memperbarui data"></span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </dd>
                 </dl>
@@ -343,13 +428,22 @@ export default function AdminDashboard() {
                   </dt>
                   <dd>
                     <div className="text-lg font-medium text-gray-900">
-                      {isLoading
-                        ? "Memuat..."
-                        : new Intl.NumberFormat("id-ID", {
-                            style: "currency",
-                            currency: "IDR",
-                            minimumFractionDigits: 0,
-                          }).format(stats.totalSalaryExpense)}
+                      {isLoading ? (
+                        "Memuat..."
+                      ) : (
+                        <div className="flex items-center">
+                          <span>
+                            {new Intl.NumberFormat("id-ID", {
+                              style: "currency",
+                              currency: "IDR",
+                              maximumFractionDigits: 0,
+                            }).format(stats.totalSalaryExpense)}
+                          </span>
+                          {isRefreshing && (
+                            <span className="ml-2 h-2 w-2 rounded-full bg-blue-500 animate-pulse" title="Memperbarui data"></span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </dd>
                 </dl>
@@ -394,9 +488,20 @@ export default function AdminDashboard() {
           <h3 className="text-lg font-medium leading-6 text-gray-900">
             Aktivitas Terbaru
           </h3>
-          {isRefreshing && (
-            <span className="text-xs text-gray-500">Memperbarui...</span>
-          )}
+          <div className="flex items-center space-x-2">
+            {isRefreshing && (
+              <span className="text-xs text-gray-500">Memperbarui...</span>
+            )}
+            <button 
+              onClick={triggerActivityUpdate}
+              className="inline-flex items-center rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+            >
+              <svg className="h-4 w-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Perbarui
+            </button>
+          </div>
         </div>
         {isLoading ? (
           <div className="px-4 py-5 sm:p-6 text-center">Memuat aktivitas terbaru...</div>

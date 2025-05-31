@@ -104,6 +104,37 @@ export async function GET(request: NextRequest) {
     
     const payrollSummary = await db.$queryRawUnsafe(payrollQuery, ...params) as PayrollSummaryResult[];
     
+    // Dapatkan jumlah penggajian tertunda
+    const pendingPayrollQuery = `
+      SELECT 
+        COUNT(*) as "pendingCount"
+      FROM 
+        payrolls p
+      JOIN 
+        employees e ON p."employeeId" = e.id
+      WHERE 
+        p.status = 'PENDING'
+        ${month !== null && year !== null ? `AND p.month = $${params.length + 1} AND p.year = $${params.length + 2}` : ''}
+        ${department ? `AND e.department = $${params.length + (month !== null && year !== null ? 3 : 1)}` : ''}
+    `;
+    
+    // Buat salinan parameter dan tambahkan parameter tambahan jika diperlukan
+    let pendingParams = [...params];
+    if (!(month !== null && year !== null) && pendingParams.length >= 2) {
+      // Hapus bulan dan tahun jika sudah ada untuk query penggajian tertunda
+      pendingParams = pendingParams.slice(2);
+    }
+    
+    if (month !== null && year !== null) {
+      pendingParams.push(month, year);
+    }
+    
+    if (department && !pendingParams.includes(department)) {
+      pendingParams.push(department);
+    }
+    
+    const pendingPayroll = await db.$queryRawUnsafe(pendingPayrollQuery, ...pendingParams);
+    
     // Get department-wise breakdown
     const departmentQuery = `
       SELECT 
@@ -125,7 +156,7 @@ export async function GET(request: NextRequest) {
     
     const departmentBreakdown = await db.$queryRawUnsafe(departmentQuery, ...params) as DepartmentBreakdownResult[];
     
-    // Get employee attendance statistics
+    // Get employee attendance statistics for all data
     const attendanceParams = [...params]; // Create a copy of params for attendance query
     
     let attendanceMonthYearCondition = "";
@@ -177,6 +208,31 @@ export async function GET(request: NextRequest) {
     
     const attendanceSummary = await db.$queryRawUnsafe(attendanceQuery, ...attendanceParams) as AttendanceSummaryResult[];
     
+    // Get today's attendance data specifically for present today count
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayStr = today.toISOString().split('T')[0];
+    
+    const todayAttendanceQuery = `
+      SELECT 
+        COUNT(*) as "presentToday"
+      FROM 
+        attendances a
+      JOIN 
+        employees e ON a."employeeId" = e.id
+      WHERE 
+        DATE(a.date) = $1
+        AND (a.status = 'PRESENT' OR a.status = 'LATE' OR a.status = 'HALFDAY')
+        ${department ? `AND e.department = $2` : ''}
+    `;
+    
+    const todayParams = [todayStr];
+    if (department) {
+      todayParams.push(department);
+    }
+    
+    const todayAttendance = await db.$queryRawUnsafe(todayAttendanceQuery, ...todayParams);
+    
     // Format the response
     const result = {
       period: {
@@ -191,7 +247,8 @@ export async function GET(request: NextRequest) {
         totalNetSalary: Number(payrollSummary[0]?.totalnetsalary || 0),
         totalOvertimeAmount: Number(payrollSummary[0]?.totalovertimeamount || 0),
         employeeCount: Number(payrollSummary[0]?.employeeCount || 0),
-        averageSalary: Number(payrollSummary[0]?.averagesalary || 0)
+        averageSalary: Number(payrollSummary[0]?.averagesalary || 0),
+        pendingCount: Number(pendingPayroll[0]?.pendingCount || 0)
       },
       departments: departmentBreakdown.map((dept) => ({
         name: dept.department,
@@ -204,7 +261,8 @@ export async function GET(request: NextRequest) {
         presentCount: Number(attendanceSummary[0]?.presentCount || 0),
         absentCount: Number(attendanceSummary[0]?.absentCount || 0),
         lateCount: Number(attendanceSummary[0]?.lateCount || 0),
-        halfdayCount: Number(attendanceSummary[0]?.halfdayCount || 0)
+        halfdayCount: Number(attendanceSummary[0]?.halfdayCount || 0),
+        presentToday: Number(todayAttendance[0]?.presentToday || 0)
       }
     };
     
