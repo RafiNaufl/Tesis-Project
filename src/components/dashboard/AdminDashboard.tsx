@@ -32,8 +32,11 @@ export default function AdminDashboard() {
   const [recentActivities, setRecentActivities] = useState<ActivityItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const lastFetchTimeRef = useRef<number>(0);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const retryCountRef = useRef<number>(0);
+  const MAX_RETRIES = 3;
   const POLLING_INTERVAL = 15000; // Turunkan ke 15 detik agar lebih responsif
 
   // Fungsi untuk memformat tanggal dengan aman
@@ -60,19 +63,27 @@ export default function AdminDashboard() {
   };
 
   // Memoize fetch function to avoid recreating it on every render
-  const fetchDashboardData = useCallback(async (showLoading = true) => {
+  const fetchDashboardData = useCallback(async (showLoading = true, isRetry = false) => {
     if (showLoading) {
       setIsLoading(true);
-    } else {
+    } else if (!isRetry) {
       setIsRefreshing(true);
     }
+    
+    // Reset error message on each fetch attempt
+    setErrorMessage(null);
     
     try {
       // Tambahkan timestamp acak untuk mencegah caching browser
       const cacheBuster = `timestamp=${Date.now()}&random=${Math.random()}`;
       
       // Fetch dashboard statistics
-      let statsData = {
+      let statsData: {
+        payroll: { employeeCount: number; pendingCount: number; totalNetSalary: number; };
+        attendance: { presentToday: number; };
+        error?: string;
+        message?: string;
+      } = {
         payroll: { employeeCount: 0, pendingCount: 0, totalNetSalary: 0 },
         attendance: { presentToday: 0 }
       };
@@ -90,15 +101,37 @@ export default function AdminDashboard() {
         
         if (!statsResponse.ok) {
           console.error(`Error response from /api/reports/summary: ${statsResponse.status} ${statsResponse.statusText}`);
-          // Tetap lanjutkan eksekusi, gunakan data default
-        } else {
-          statsData = await statsResponse.json();
-          // Log data statistik untuk debugging
-          console.log("Dashboard stats data:", statsData);
+          throw new Error(`Status: ${statsResponse.status}. ${statsResponse.statusText}`);
         }
-      } catch (statsError) {
+        
+        statsData = await statsResponse.json();
+        
+        // Jika ada pesan error di respons, tampilkan
+        if (statsData.error) {
+          throw new Error(statsData.error);
+        }
+        
+        // Log data statistik untuk debugging
+        console.log("Dashboard stats data:", statsData);
+        
+        // Reset retry counter jika berhasil
+        retryCountRef.current = 0;
+      } catch (statsError: any) {
         console.error("Error fetching stats:", statsError);
-        // Tetap lanjutkan eksekusi, gunakan data default
+        
+        // Jika masih dalam batas retry, coba lagi secara otomatis
+        if (retryCountRef.current < MAX_RETRIES && !isRetry) {
+          retryCountRef.current++;
+          console.log(`Retrying fetch (${retryCountRef.current}/${MAX_RETRIES})...`);
+          
+          // Jeda sebentar sebelum retry
+          setTimeout(() => {
+            fetchDashboardData(false, true);
+          }, 1000);
+        } else if (retryCountRef.current >= MAX_RETRIES) {
+          // Tampilkan pesan error jika sudah mencapai batas retry
+          setErrorMessage(`Gagal memuat data: ${statsError.message || 'Koneksi ke server bermasalah'}`);
+        }
       }
       
       // Fetch recent attendance activity dengan limit lebih besar untuk memastikan mendapatkan data terbaru
@@ -190,7 +223,7 @@ export default function AdminDashboard() {
       // Batasi hanya 5 aktivitas terbaru
       setRecentActivities(sortedActivities.slice(0, 5));
       lastFetchTimeRef.current = Date.now();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching dashboard data:", error);
       // Set data kosong untuk menghindari error UI
       setStats({
@@ -200,10 +233,13 @@ export default function AdminDashboard() {
         totalSalaryExpense: 0,
       });
       setRecentActivities([]);
+      
+      // Tampilkan pesan error
+      setErrorMessage(`Terjadi kesalahan: ${error.message || 'Tidak dapat memuat data dashboard'}`);
     } finally {
       if (showLoading) {
         setIsLoading(false);
-      } else {
+      } else if (!isRetry) {
         setIsRefreshing(false);
       }
     }
@@ -321,6 +357,30 @@ export default function AdminDashboard() {
           )}
         </button>
       </div>
+
+      {/* Tampilkan pesan error jika ada */}
+      {errorMessage && (
+        <div className="rounded-md bg-red-50 p-4">
+          <div className="flex">
+            <div className="flex-shrink-0">
+              <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div className="ml-3">
+              <p className="text-sm text-red-700">{errorMessage}</p>
+              <div className="mt-2">
+                <button
+                  onClick={() => fetchDashboardData(false)}
+                  className="rounded bg-red-50 px-2 py-1 text-xs font-medium text-red-800 hover:bg-red-100"
+                >
+                  Coba Lagi
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
         {/* Total Employees */}
