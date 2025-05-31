@@ -120,16 +120,8 @@ export const recordCheckIn = async (employeeId: string) => {
   // Tentukan apakah check-in ini adalah lembur
   const isOvertimeEntry = isOvertimeCheckIn(now, now);
   
-  // Tentukan message dan flag berdasarkan jenis hari dan waktu
-  let notes = "";
+  // Flag untuk Sunday work
   const isSundayWork = isSundayWorkday;
-  
-  // Hanya tambahkan notes jika bekerja di hari Minggu atau lembur
-  if (isSundayWorkday) {
-    notes = "Bekerja pada hari Minggu (memerlukan persetujuan admin)";
-  } else if (isOvertimeEntry) {
-    notes = "Check-in pada jam lembur (memerlukan persetujuan admin)";
-  }
 
   // Hitung status kehadiran dan keterlambatan - jika hari Minggu dan tidak disetujui, status ABSENT
   const attendanceStatus = getAttendanceStatusRule(now, now, false); // Belum disetujui
@@ -146,7 +138,6 @@ export const recordCheckIn = async (employeeId: string) => {
         status,
         isLate,
         lateMinutes,
-        notes: notes || existingAttendance.notes,
         isSundayWork,
         // Catatan: kita tidak mengubah isOvertimeApproved dan isSundayWorkApproved di sini
       },
@@ -161,7 +152,6 @@ export const recordCheckIn = async (employeeId: string) => {
         status,
         isLate,
         lateMinutes,
-        notes,
         isSundayWork,
         isOvertimeApproved: false, // Default tidak disetujui
         isSundayWorkApproved: false, // Default tidak disetujui
@@ -209,23 +199,12 @@ export const recordCheckOut = async (employeeId: string) => {
   // Nanti admin bisa menyetujui dan overtime akan dihitung ulang
   const overtimeMinutes = calculateOvertimeMinutes(now, today, false, false);
   
-  // Tentukan apakah checkout ini menghasilkan lembur
-  const isOvertimeExit = isOvertimeCheckOut(now, today);
-  let notes = attendance.notes || "";
-  
-  // Hanya tambahkan notes lembur jika belum ada
-  if (isOvertimeExit && !notes.includes("lembur") && !notes.includes("Lembur")) {
-    if (notes) notes += ". ";
-    notes += generateApprovalMessage(now, false, false); // Message untuk lembur checkout
-  }
-
   // Update catatan dengan check-out dan overtime
   return prisma.attendance.update({
     where: { id: attendance.id },
     data: {
       checkOut: now,
       overtime: overtimeMinutes, // Simpan overtime meskipun belum disetujui
-      notes,
     },
   });
 };
@@ -247,14 +226,6 @@ export const approveOvertime = async (attendanceId: string, adminId: string) => 
   
   // Cek apakah ada lembur atau bekerja di hari Minggu
   const isOvertime = attendance.overtime > 0;
-  
-  // Pesan yang akan ditambahkan ke catatan
-  let notes = attendance.notes || "";
-  
-  // Ganti "memerlukan persetujuan" dengan "disetujui" jika ada
-  if (notes.includes("memerlukan persetujuan admin")) {
-    notes = notes.replace("memerlukan persetujuan admin", "disetujui admin");
-  }
 
   // Hitung ulang overtime dengan persetujuan jika ada checkout
   let overtimeMinutes = attendance.overtime;
@@ -273,7 +244,6 @@ export const approveOvertime = async (attendanceId: string, adminId: string) => 
     data: {
       isOvertimeApproved: isOvertime,
       isSundayWorkApproved: isSundayWorkday,
-      notes,
       overtime: overtimeMinutes, // Update overtime dengan perhitungan baru
       approvedBy: adminId,
       approvedAt: new Date(),
@@ -297,14 +267,6 @@ export const rejectOvertime = async (attendanceId: string, adminId: string) => {
 
   // Cek apakah ini hari Minggu
   const isSundayWorkday = isSunday(new Date(attendance.date));
-  
-  // Pesan yang akan ditambahkan ke catatan
-  let notes = attendance.notes || "";
-  
-  // Ganti "memerlukan persetujuan" dengan "ditolak" jika ada
-  if (notes.includes("memerlukan persetujuan admin")) {
-    notes = notes.replace("memerlukan persetujuan admin", "ditolak admin");
-  }
 
   // Update status persetujuan
   return prisma.attendance.update({
@@ -312,7 +274,6 @@ export const rejectOvertime = async (attendanceId: string, adminId: string) => {
     data: {
       isOvertimeApproved: false,
       isSundayWorkApproved: false,
-      notes,
       overtime: 0, // Reset overtime karena ditolak
       approvedBy: adminId,
       approvedAt: new Date(),
