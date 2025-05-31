@@ -275,7 +275,7 @@ export default function AdminDashboard() {
     
     // Juga dengarkan event khusus browser
     window.addEventListener('storage', (e) => {
-      if (e.key === 'attendance-update') {
+      if (e.key === 'attendance-update' || e.key === 'notification-update') {
         handleActivityUpdate();
       }
     });

@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { db } from "@/lib/db";
 import { authOptions } from "@/lib/auth";
 import { Prisma } from "@prisma/client";
+import { createPayrollPaidNotification } from "@/lib/notification";
 
 // GET: Fetch payrolls with filtering
 export async function GET(request: NextRequest) {
@@ -171,26 +172,15 @@ export async function PATCH(request: NextRequest) {
         )
       );
       
-      // Buat notifikasi untuk setiap karyawan yang gajinya dibayarkan
-      const notificationPromises = payrollsData.map(payroll => {
-        const formattedDate = new Intl.DateTimeFormat('id-ID', {
-          year: 'numeric',
-          month: 'long'
-        }).format(new Date(payroll.year, payroll.month - 1));
-        
-        return db.notification.create({
-          data: {
-            userId: payroll.employee.userId,
-            title: "Gaji Telah Dibayarkan",
-            message: `Gaji Anda untuk periode ${formattedDate} telah dibayarkan. Jumlah: ${new Intl.NumberFormat('id-ID', {
-              style: 'currency',
-              currency: 'IDR',
-              minimumFractionDigits: 0
-            }).format(payroll.netSalary)}`,
-            type: "success",
-          }
-        });
-      });
+      // Buat notifikasi untuk setiap karyawan yang gajinya dibayarkan menggunakan layanan notifikasi
+      const notificationPromises = payrollsData.map(payroll => 
+        createPayrollPaidNotification(
+          payroll.employeeId,
+          payroll.month,
+          payroll.year,
+          payroll.netSalary
+        )
+      );
       
       // Jalankan pembuatan notifikasi
       await Promise.all(notificationPromises);

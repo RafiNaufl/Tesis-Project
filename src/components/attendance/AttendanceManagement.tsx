@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { NOTIFICATION_UPDATE_EVENT } from "../notifications/NotificationDropdown";
+import { ACTIVITY_UPDATE_EVENT } from "../dashboard/AdminDashboard";
 
 type AttendanceRecord = {
   id: string;
@@ -142,6 +143,12 @@ export default function AttendanceManagement() {
       if (response.headers.get('X-Notification-Update') === 'true') {
         // Dispatch custom event to update notifications
         window.dispatchEvent(new Event(NOTIFICATION_UPDATE_EVENT));
+        // Tambahkan event untuk memperbarui aktivitas di dashboard admin
+        window.dispatchEvent(new Event(ACTIVITY_UPDATE_EVENT));
+        
+        // Tambahkan juga storage event untuk komunikasi antar tab
+        localStorage.setItem('attendance-update', Date.now().toString());
+        localStorage.setItem('notification-update', Date.now().toString());
       }
       
       // Refresh attendance records
@@ -189,6 +196,12 @@ export default function AttendanceManagement() {
       if (response.headers.get('X-Notification-Update') === 'true') {
         // Dispatch custom event to update notifications
         window.dispatchEvent(new Event(NOTIFICATION_UPDATE_EVENT));
+        // Tambahkan event untuk memperbarui aktivitas di dashboard admin
+        window.dispatchEvent(new Event(ACTIVITY_UPDATE_EVENT));
+        
+        // Tambahkan juga storage event untuk komunikasi antar tab
+        localStorage.setItem('attendance-update', Date.now().toString());
+        localStorage.setItem('notification-update', Date.now().toString());
       }
       
       // Refresh attendance records
@@ -291,6 +304,12 @@ export default function AttendanceManagement() {
         const data = await response.json();
         throw new Error(data.error || 'Failed to update attendance record');
       }
+      
+      // Trigger events untuk update dashboard dan notifikasi
+      window.dispatchEvent(new Event(NOTIFICATION_UPDATE_EVENT));
+      window.dispatchEvent(new Event(ACTIVITY_UPDATE_EVENT));
+      localStorage.setItem('attendance-update', Date.now().toString());
+      localStorage.setItem('notification-update', Date.now().toString());
       
       // Refresh attendance records
       const queryParams = new URLSearchParams({

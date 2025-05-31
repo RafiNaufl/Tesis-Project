@@ -28,58 +28,177 @@ export default function NotificationDropdown() {
   const lastFetchTimeRef = useRef<number>(0);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const POLLING_INTERVAL = 1000; // Interval polling 10 detik, lebih cepat dari 30 detik
+  const [fetchError, setFetchError] = useState<boolean>(false);
 
-  // Memoize the fetchNotifications function to avoid recreating it on every render
-  const fetchNotifications = useCallback(async (showLoading = true) => {
-    if (!session) return;
-    
+  // Fungsi untuk memeriksa status server API notifikasi
+  const checkApiStatus = useCallback(async () => {
     try {
-      if (showLoading) {
-        setIsLoading(true);
-      } else {
-        setIsRefreshing(true);
-      }
-
-      // Tambahkan timeout untuk fetch request
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 detik timeout
-      
-      const response = await fetch("/api/notifications?limit=5&timestamp=" + Date.now(), {
+      const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 detik timeout
+
+      const response = await fetch("/api/health", {
+        method: "HEAD", // Gunakan HEAD request karena hanya perlu cek status
         signal: controller.signal,
         headers: {
           'Cache-Control': 'no-cache',
           'Pragma': 'no-cache'
         }
       });
-      
+
       clearTimeout(timeoutId);
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      setNotifications(data.notifications);
-      setUnreadCount(data.unreadCount);
-      lastFetchTimeRef.current = Date.now();
-    } catch (error: any) {
-      // Tangani error dengan lebih spesifik
-      if (error instanceof TypeError && error.message === 'Failed to fetch') {
-        console.error("Koneksi jaringan terputus atau server tidak merespon:", error);
-      } else if (error.name === 'AbortError') {
-        console.error("Request timeout, server tidak merespon dalam waktu yang ditentukan");
-      } else {
-        console.error("Error saat mengambil notifikasi:", error);
-      }
-      // Jangan ubah state notifikasi jika terjadi error
-    } finally {
-      if (showLoading) {
-        setIsLoading(false);
-      } else {
-        setIsRefreshing(false);
-      }
+      return response.ok;
+    } catch (error) {
+      console.warn("API server mungkin tidak tersedia:", error);
+      return false;
     }
-  }, [session]);
+  }, []);
+
+  // Fungsi fallback untuk notifikasi ketika server tidak merespons
+  const getOfflineNotifications = useCallback(() => {
+    try {
+      // Coba mendapatkan notifikasi dari localStorage jika tersedia
+      const cachedNotifications = localStorage.getItem('cached_notifications');
+      if (cachedNotifications) {
+        return JSON.parse(cachedNotifications);
+      }
+    } catch (error) {
+      console.error("Error reading cached notifications:", error);
+    }
+    
+    // Fallback ke data kosong jika tidak ada cache
+    return {
+      notifications: [],
+      unreadCount: 0
+    };
+  }, []);
+
+  // Fungsi untuk menyimpan notifikasi ke cache
+  const cacheNotifications = useCallback((data: { notifications: Notification[], unreadCount: number }) => {
+    try {
+      localStorage.setItem('cached_notifications', JSON.stringify(data));
+    } catch (error) {
+      console.error("Error caching notifications:", error);
+    }
+  }, []);
+
+  // Memoize the fetchNotifications function to avoid recreating it on every render
+  const fetchNotifications = useCallback(async (showLoading = true) => {
+    if (!session) return;
+    
+    let retryCount = 0;
+    const MAX_RETRIES = 3;
+    const RETRY_DELAY = 1000; // 1 detik
+
+    const fetchWithRetry = async () => {
+      try {
+        setFetchError(false);
+        
+        if (showLoading) {
+          setIsLoading(true);
+        } else {
+          setIsRefreshing(true);
+        }
+
+        // Periksa status API terlebih dahulu jika ini adalah retry
+        if (retryCount > 0) {
+          const apiAvailable = await checkApiStatus();
+          if (!apiAvailable) {
+            console.warn("API server tidak tersedia, menggunakan data cache");
+            
+            // Gunakan data cache jika server tidak tersedia
+            const cachedData = getOfflineNotifications();
+            setNotifications(cachedData.notifications || []);
+            setUnreadCount(cachedData.unreadCount || 0);
+            setFetchError(true);
+            
+            throw new Error("API server tidak tersedia");
+          }
+        }
+
+        // Tambahkan timeout untuk fetch request
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 detik timeout (lebih lama)
+        
+        const response = await fetch("/api/notifications?limit=5&timestamp=" + Date.now(), {
+          signal: controller.signal,
+          headers: {
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
+          }
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        // Periksa apakah data memiliki flag error
+        if (data.hasError) {
+          console.warn("Partial error in notifications API response");
+          setFetchError(true);
+        } else {
+          setFetchError(false);
+        }
+        
+        const processedData = {
+          notifications: data.notifications || [],
+          unreadCount: data.unreadCount || 0
+        };
+        
+        // Simpan data ke cache untuk fallback
+        cacheNotifications(processedData);
+        
+        setNotifications(processedData.notifications);
+        setUnreadCount(processedData.unreadCount);
+        lastFetchTimeRef.current = Date.now();
+      } catch (error: any) {
+        // Tangani error dengan lebih spesifik
+        setFetchError(true);
+        
+        if (error instanceof TypeError && error.message === 'Failed to fetch') {
+          console.error("Koneksi jaringan terputus atau server tidak merespon:", error);
+          
+          // Gunakan data cache dalam kasus koneksi gagal
+          const cachedData = getOfflineNotifications();
+          setNotifications(cachedData.notifications || []);
+          setUnreadCount(cachedData.unreadCount || 0);
+          
+          // Retry logic
+          if (retryCount < MAX_RETRIES) {
+            retryCount++;
+            console.log(`Mencoba lagi (${retryCount}/${MAX_RETRIES})...`);
+            await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+            return fetchWithRetry(); // Retry
+          }
+        } else if (error.name === 'AbortError') {
+          console.error("Request timeout, server tidak merespon dalam waktu yang ditentukan");
+          
+          // Gunakan data cache dalam kasus timeout
+          const cachedData = getOfflineNotifications();
+          setNotifications(cachedData.notifications || []);
+          setUnreadCount(cachedData.unreadCount || 0);
+        } else {
+          console.error("Error saat mengambil notifikasi:", error);
+          
+          // Untuk error lainnya, juga gunakan cache jika tersedia
+          const cachedData = getOfflineNotifications();
+          setNotifications(cachedData.notifications || []);
+          setUnreadCount(cachedData.unreadCount || 0);
+        }
+      } finally {
+        if (showLoading) {
+          setIsLoading(false);
+        } else {
+          setIsRefreshing(false);
+        }
+      }
+    };
+
+    await fetchWithRetry();
+  }, [session, checkApiStatus, getOfflineNotifications, cacheNotifications]);
 
   // Check for new notifications if user has been inactive
   const checkForNewNotifications = useCallback(() => {
@@ -96,26 +215,43 @@ export default function NotificationDropdown() {
   useEffect(() => {
     if (session) {
       // Initial fetch
-      fetchNotifications();
+      fetchNotifications().catch(err => console.error("Error pada initial fetch:", err));
       lastFetchTimeRef.current = Date.now();
       
-      // Set up polling for notifications - check every 10 seconds
+      // Set up polling for notifications - check every 10 seconds but dengan try-catch
       pollingIntervalRef.current = setInterval(() => {
-        fetchNotifications(false);
+        fetchNotifications(false).catch(err => console.error("Error pada polling fetch:", err));
       }, POLLING_INTERVAL);
       
       // Set up global event listener for attendance actions
       const handleNotificationUpdate = () => {
-        fetchNotifications(false);
+        fetchNotifications(false).catch(err => console.error("Error pada event fetch:", err));
       };
       
       // Register the event listener
       window.addEventListener(NOTIFICATION_UPDATE_EVENT, handleNotificationUpdate);
       
+      // Add storage event untuk sinkronisasi antar tab dengan error handling
+      const handleStorageEvent = (e: StorageEvent) => {
+        try {
+          if (e.key === 'notification-update' || e.key === 'attendance-update') {
+            handleNotificationUpdate();
+          }
+        } catch (error) {
+          console.error("Error handling storage event:", error);
+        }
+      };
+      
+      window.addEventListener('storage', handleStorageEvent);
+      
       // Add event listeners for user activity to check for new notifications
       const activityEvents = ['mousedown', 'keydown', 'touchstart', 'scroll'];
       const handleUserActivity = () => {
-        checkForNewNotifications();
+        try {
+          checkForNewNotifications();
+        } catch (error) {
+          console.error("Error handling user activity:", error);
+        }
       };
       
       activityEvents.forEach(event => {
@@ -128,6 +264,7 @@ export default function NotificationDropdown() {
           clearInterval(pollingIntervalRef.current);
         }
         window.removeEventListener(NOTIFICATION_UPDATE_EVENT, handleNotificationUpdate);
+        window.removeEventListener('storage', handleStorageEvent);
         activityEvents.forEach(event => {
           window.removeEventListener(event, handleUserActivity);
         });
@@ -139,7 +276,7 @@ export default function NotificationDropdown() {
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        fetchNotifications(false);
+        fetchNotifications(false).catch(err => console.error("Error pada visibility change fetch:", err));
       }
     };
     
@@ -178,27 +315,66 @@ export default function NotificationDropdown() {
 
   const markAllAsRead = async () => {
     try {
-      const promises = notifications
-        .filter((notification) => !notification.read)
-        .map((notification) =>
+      // Simpan notifikasi yang belum dibaca
+      const unreadNotifications = notifications.filter((notification) => !notification.read);
+      
+      if (unreadNotifications.length === 0) {
+        return; // Tidak ada notifikasi yang perlu ditandai
+      }
+      
+      // Update state terlebih dahulu untuk respons UI yang cepat
+      setNotifications(
+        notifications.map((notification) => ({ ...notification, read: true }))
+      );
+      setUnreadCount(0);
+      
+      // Gunakan endpoint baru yang lebih efisien untuk menandai semua notifikasi sebagai dibaca
+      try {
+        const response = await fetch('/api/notifications/mark-all-read', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          // Tambahkan timeout untuk permintaan
+          signal: AbortSignal.timeout(5000)
+        });
+        
+        if (!response.ok) {
+          console.warn('Failed to mark all notifications as read:', await response.text());
+        } else {
+          const result = await response.json();
+          console.log(`Successfully marked ${result.count} notifications as read`);
+        }
+      } catch (apiError) {
+        console.error('API error marking all notifications as read:', apiError);
+        
+        // Jika API gagal, gunakan metode lama dengan permintaan individual sebagai fallback
+        const promises = unreadNotifications.map((notification) =>
           fetch(`/api/notifications/${notification.id}`, {
             method: "PATCH",
             headers: {
               "Content-Type": "application/json",
             },
             body: JSON.stringify({ read: true }),
+          }).catch(error => {
+            console.error(`Error marking notification ${notification.id} as read:`, error);
+            return null; // Return null untuk error, sehingga Promise.all tidak gagal
           })
         );
 
-      await Promise.all(promises);
-
-      // Update local state
-      setNotifications(
-        notifications.map((notification) => ({ ...notification, read: true }))
-      );
-      setUnreadCount(0);
+        // Gunakan allSettled untuk menangani kegagalan individual
+        const results = await Promise.allSettled(promises);
+        
+        // Log error jika ada
+        results.forEach((result, index) => {
+          if (result.status === 'rejected') {
+            console.error(`Failed to mark notification ${unreadNotifications[index]?.id} as read:`, result.reason);
+          }
+        });
+      }
     } catch (error) {
       console.error("Error marking all notifications as read:", error);
+      // Tidak mengembalikan state, karena pengguna sudah melihat UI yang diperbarui
     }
   };
 
@@ -221,7 +397,16 @@ export default function NotificationDropdown() {
   // Handle dropdown open/close to fetch fresh notifications when opened
   const handleOpen = (open: boolean) => {
     if (open && !isOpen) {
+      // Jalankan fetch dan mark-all-read secara terpisah untuk UX yang lebih responsif
       fetchNotifications(false);
+      
+      // Tandai semua notifikasi sebagai dibaca dengan delay singkat
+      if (unreadCount > 0) {
+        // Tampilkan efek count hilang secara langsung di UI
+        setTimeout(() => {
+          markAllAsRead();
+        }, 300); // Delay 300ms agar efek visual terlihat
+      }
     }
     setIsOpen(open);
   };
@@ -282,6 +467,23 @@ export default function NotificationDropdown() {
                     </div>
                   </div>
                 </div>
+
+                {fetchError && (
+                  <div className="px-4 py-2 bg-yellow-50 border-b border-yellow-100">
+                    <div className="flex items-center text-yellow-800 text-xs">
+                      <svg className="h-4 w-4 mr-1.5 text-yellow-600" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                      </svg>
+                      Menggunakan data cache. 
+                      <button 
+                        onClick={() => fetchNotifications(false)}
+                        className="ml-1 underline font-medium"
+                      >
+                        Coba lagi
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 <div className="max-h-80 overflow-y-auto">
                   {isLoading ? (

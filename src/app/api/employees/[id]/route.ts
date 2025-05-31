@@ -165,12 +165,12 @@ export async function DELETE(
     const session = await getServerSession(authOptions);
 
     if (!session) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ error: "Tidak diizinkan" }, { status: 401 });
     }
 
     // Only admins can delete employees
     if (session.user.role !== "ADMIN") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return NextResponse.json({ error: "Akses ditolak" }, { status: 403 });
     }
 
     const employeeId = params.id;
@@ -182,30 +182,87 @@ export async function DELETE(
 
     if (!employee) {
       return NextResponse.json(
-        { error: "Employee not found" },
+        { error: "Karyawan tidak ditemukan" },
         { status: 404 }
       );
     }
 
-    // Delete employee and associated user in a transaction
+    // Periksa data terkait (untuk informasi)
+    const attendanceCount = await prisma.attendance.count({
+      where: { employeeId: employee.id }
+    });
+
+    const payrollCount = await prisma.payroll.count({
+      where: { employeeId: employee.id }
+    });
+
+    // Lakukan penghapusan CASCADE semua data terkait
+    // Hapus semua data dalam transaksi untuk menjaga integritas database
     await prisma.$transaction(async (tx) => {
-      // Delete employee
+      // 1. Hapus semua data kehadiran terkait karyawan
+      if (attendanceCount > 0) {
+        await tx.attendance.deleteMany({
+          where: { employeeId: employee.id }
+        });
+      }
+
+      // 2. Hapus semua data penggajian terkait karyawan
+      if (payrollCount > 0) {
+        await tx.payroll.deleteMany({
+          where: { employeeId: employee.id }
+        });
+      }
+
+      // 3. Hapus data notifikasi terkait
+      await tx.notification.deleteMany({
+        where: { userId: employee.userId }
+      });
+
+      // 4. Hapus karyawan
       await tx.employee.delete({
         where: { id: employeeId },
       });
 
-      // Delete user
+      // 5. Hapus user
       await tx.user.delete({
         where: { id: employee.userId },
       });
     });
 
-    return NextResponse.json({ message: "Employee deleted successfully" });
-  } catch (error) {
+    // Informasi tentang data yang dihapus (untuk log)
+    const deletedDataInfo = [];
+    if (attendanceCount > 0) deletedDataInfo.push(`${attendanceCount} data kehadiran`);
+    if (payrollCount > 0) deletedDataInfo.push(`${payrollCount} data penggajian`);
+    
+    const successMessage = deletedDataInfo.length > 0
+      ? `Karyawan berhasil dihapus beserta ${deletedDataInfo.join(" dan ")}`
+      : "Karyawan berhasil dihapus";
+
+    return NextResponse.json({ 
+      message: successMessage,
+      deletedRelatedData: {
+        attendance: attendanceCount,
+        payroll: payrollCount
+      }
+    });
+  } catch (error: any) {
     console.error("Error deleting employee:", error);
+    
+    // Berikan pesan error yang lebih spesifik berdasarkan jenis error
+    let errorMessage = "Gagal menghapus karyawan";
+    let statusCode = 500;
+    
+    if (error.code === 'P2025') {
+      errorMessage = "Karyawan tidak ditemukan";
+      statusCode = 404;
+    } else if (error.code === 'P2003') {
+      errorMessage = "Tidak dapat menghapus karyawan. Hubungi administrator sistem.";
+      statusCode = 400;
+    }
+    
     return NextResponse.json(
-      { error: "Failed to delete employee" },
-      { status: 500 }
+      { error: errorMessage },
+      { status: statusCode }
     );
   }
 } 

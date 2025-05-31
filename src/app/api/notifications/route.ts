@@ -3,6 +3,16 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 
+// Fallback data untuk respons saat terjadi error
+const getFallbackData = () => {
+  return {
+    notifications: [],
+    unreadCount: 0,
+    error: "Terjadi kesalahan saat mengambil notifikasi",
+    fromFallback: true
+  };
+};
+
 // GET: Fetch notifications for the current user
 export async function GET(request: NextRequest) {
   try {
@@ -20,35 +30,74 @@ export async function GET(request: NextRequest) {
     const unreadOnly = searchParams.get("unreadOnly") === "true";
     const limit = parseInt(searchParams.get("limit") || "20");
     
-    // Fetch notifications using Prisma client
-    const notifications = await db.notification.findMany({
-      where: {
-        userId: session.user.id,
-        ...(unreadOnly ? { read: false } : {}),
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-      take: limit,
+    // Tambahkan timeout untuk database query
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error("Database query timeout")), 5000);
     });
     
-    // Count unread notifications
-    const unreadCount = await db.notification.count({
-      where: {
-        userId: session.user.id,
-        read: false,
-      },
-    });
+    // Fetch notifications dengan timeout
+    const notificationsPromise = Promise.race([
+      db.notification.findMany({
+        where: {
+          userId: session.user.id,
+          ...(unreadOnly ? { read: false } : {}),
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+        take: limit,
+      }),
+      timeoutPromise
+    ]);
     
+    // Count unread notifications dengan timeout
+    const unreadCountPromise = Promise.race([
+      db.notification.count({
+        where: {
+          userId: session.user.id,
+          read: false,
+        },
+      }),
+      timeoutPromise
+    ]);
+    
+    // Gunakan Promise.allSettled untuk menangani kegagalan masing-masing promise
+    const [notificationsResult, unreadCountResult] = await Promise.allSettled([
+      notificationsPromise,
+      unreadCountPromise
+    ]);
+    
+    // Periksa hasil promise dan gunakan fallback jika perlu
+    const notifications = notificationsResult.status === 'fulfilled' 
+      ? notificationsResult.value 
+      : [];
+    
+    const unreadCount = unreadCountResult.status === 'fulfilled'
+      ? unreadCountResult.value
+      : 0;
+    
+    // Jika salah satu promise gagal, catat log error
+    if (notificationsResult.status === 'rejected') {
+      console.error("Error fetching notifications:", notificationsResult.reason);
+    }
+    
+    if (unreadCountResult.status === 'rejected') {
+      console.error("Error counting unread notifications:", unreadCountResult.reason);
+    }
+    
+    // Tetap berikan respons meskipun terjadi kesalahan parsial
     return NextResponse.json({
       notifications,
       unreadCount,
+      hasError: notificationsResult.status === 'rejected' || unreadCountResult.status === 'rejected'
     });
   } catch (error) {
     console.error("Error fetching notifications:", error);
+    
+    // Gunakan fallback data untuk respons
     return NextResponse.json(
-      { error: "Failed to fetch notifications" },
-      { status: 500 }
+      getFallbackData(),
+      { status: 200 } // Tetap berikan status 200 untuk mencegah kesalahan di klien
     );
   }
 }
@@ -75,10 +124,29 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Check if the user exists
-    const user = await db.user.findUnique({
-      where: { id: userId },
+    // Tambahkan timeout untuk database query
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error("Database query timeout")), 5000);
     });
+    
+    // Check if the user exists dengan timeout
+    const userPromise = Promise.race([
+      db.user.findUnique({
+        where: { id: userId },
+      }),
+      timeoutPromise
+    ]);
+    
+    let user;
+    try {
+      user = await userPromise;
+    } catch (error) {
+      console.error("Error checking user existence:", error);
+      return NextResponse.json(
+        { error: "Failed to verify user" },
+        { status: 500 }
+      );
+    }
     
     if (!user) {
       return NextResponse.json(
@@ -88,15 +156,27 @@ export async function POST(request: NextRequest) {
     }
     
     // Create the notification using Prisma client
-    const notification = await db.notification.create({
-      data: {
-        userId,
-        title,
-        message,
-        type,
-        read: false,
-      },
-    });
+    let notification;
+    try {
+      notification = await Promise.race([
+        db.notification.create({
+          data: {
+            userId,
+            title,
+            message,
+            type,
+            read: false,
+          },
+        }),
+        timeoutPromise
+      ]);
+    } catch (error) {
+      console.error("Error creating notification:", error);
+      return NextResponse.json(
+        { error: "Failed to create notification" },
+        { status: 500 }
+      );
+    }
     
     return NextResponse.json(notification, { status: 201 });
   } catch (error) {

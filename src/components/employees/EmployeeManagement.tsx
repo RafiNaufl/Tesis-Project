@@ -98,7 +98,7 @@ export default function EmployeeManagement() {
   };
 
   const handleDeleteEmployee = async (employeeId: string) => {
-    if (!confirm("Are you sure you want to delete this employee?")) {
+    if (!confirm("Apakah Anda yakin ingin menghapus karyawan ini? Semua data terkait (kehadiran, penggajian) juga akan dihapus.")) {
       return;
     }
     
@@ -108,12 +108,39 @@ export default function EmployeeManagement() {
       });
       
       if (!response.ok) {
-        throw new Error("Failed to delete employee");
+        const errorData = await response.json();
+        const errorMessage = errorData.error || "Gagal menghapus karyawan";
+        console.error("Error response:", errorData);
+        alert(errorMessage);
+        throw new Error(errorMessage);
       }
       
+      // Jika berhasil, perbarui daftar karyawan
       setEmployees(employees.filter((emp) => emp.id !== employeeId));
-    } catch (error) {
+      
+      // Tampilkan informasi tentang data yang dihapus
+      const responseData = await response.json();
+      alert(responseData.message || "Karyawan berhasil dihapus");
+      
+      // Log informasi tentang data terkait yang dihapus
+      if (responseData.deletedRelatedData) {
+        console.log("Data terkait yang dihapus:", responseData.deletedRelatedData);
+      }
+    } catch (error: any) {
       console.error("Error deleting employee:", error);
+      
+      // Coba identifikasi kemungkinan penyebab kesalahan
+      let errorMessage = "Gagal menghapus karyawan: ";
+      
+      if (error.message.includes("foreign key constraint")) {
+        errorMessage += "Karyawan ini memiliki data terkait yang tidak dapat dihapus secara otomatis. Hubungi administrator sistem.";
+      } else if (error.message.includes("not found")) {
+        errorMessage += "Karyawan tidak ditemukan.";
+      } else {
+        errorMessage += error.message || "Terjadi kesalahan pada server.";
+      }
+      
+      alert(errorMessage);
     }
   };
 

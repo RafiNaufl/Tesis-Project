@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { createPayslipGeneratedNotification } from "@/lib/notification";
 
 // POST: Generate payroll for employees (admin only)
 export async function POST(request: NextRequest) {
@@ -188,21 +189,9 @@ export async function POST(request: NextRequest) {
           },
         });
         
-        // Kirim notifikasi ke karyawan bahwa slip gaji baru telah dibuat
+        // Kirim notifikasi ke karyawan bahwa slip gaji baru telah dibuat menggunakan layanan notifikasi
         try {
-          const formattedDate = new Intl.DateTimeFormat('id-ID', {
-            year: 'numeric',
-            month: 'long'
-          }).format(new Date(payrollYear, payrollMonth - 1));
-          
-          await db.notification.create({
-            data: {
-              userId: employee.userId,
-              title: "Slip Gaji Baru Tersedia",
-              message: `Slip gaji Anda untuk periode ${formattedDate} telah tersedia. Silahkan periksa halaman Penggajian.`,
-              type: "info",
-            }
-          });
+          await createPayslipGeneratedNotification(employee.id, payrollMonth, payrollYear);
         } catch (notifError) {
           console.error(`Error creating notification for employee ${employee.employeeId}:`, notifError);
           // Tidak menghentikan proses jika notifikasi gagal

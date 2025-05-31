@@ -5,6 +5,13 @@ import { prisma } from "@/lib/prisma";
 import { format } from "date-fns";
 import { recordCheckIn, recordCheckOut, getMonthlyAttendanceReport } from "@/lib/attendance";
 import { Status } from "@/generated/prisma";
+import { 
+  createCheckInNotification, 
+  createLateCheckInAdminNotification,
+  createCheckOutNotification,
+  createOvertimeAdminNotification,
+  addNotificationUpdateHeader
+} from "@/lib/notification";
 
 // Tipe untuk data attendance
 interface AttendanceData {
@@ -229,39 +236,13 @@ export async function POST(req: NextRequest) {
       let checkInRecord = await recordCheckIn(employee.id);
       attendanceRecord = formatAttendanceResponse(checkInRecord) as AttendanceData;
 
-      // Buat notifikasi untuk karyawan
+      // Buat notifikasi untuk karyawan menggunakan layanan notifikasi
       const isLate = attendanceRecord.status === "LATE";
-      await prisma.notification.create({
-        data: {
-          userId: session.user.id,
-          title: isLate ? "Check-in Terlambat" : "Check-in Berhasil",
-          message: isLate
-            ? `Anda check-in pada ${format(now, "HH:mm")} yang terlambat dari waktu yang diharapkan (08:00).`
-            : `Anda berhasil check-in pada ${format(now, "HH:mm")}.`,
-          type: isLate ? "warning" : "success",
-        },
-      });
+      await createCheckInNotification(session.user.id, isLate, now);
 
-      // Beri tahu admin tentang keterlambatan
+      // Beri tahu admin tentang keterlambatan menggunakan layanan notifikasi
       if (isLate) {
-        // Cari pengguna admin
-        const admins = await prisma.user.findMany({
-          where: {
-            role: "ADMIN",
-          },
-        });
-
-        // Buat notifikasi untuk setiap admin
-        for (const admin of admins) {
-          await prisma.notification.create({
-            data: {
-              userId: admin.id,
-              title: "Peringatan Keterlambatan",
-              message: `${employee.user.name} terlambat check-in pada ${format(now, "HH:mm")} tanggal ${format(now, "dd MMMM yyyy")}.`,
-              type: "warning",
-            },
-          });
-        }
+        await createLateCheckInAdminNotification(employee.user.name, now);
       }
     } else {
       // Check-out
@@ -275,46 +256,25 @@ export async function POST(req: NextRequest) {
           throw new Error("Data check-in tidak ditemukan");
         }
 
-        const workDurationHours = (
-          (now.getTime() - checkInTime.getTime()) /
-          (1000 * 60 * 60)
-        ).toFixed(2);
+        const workDurationHours = (now.getTime() - checkInTime.getTime()) / (1000 * 60 * 60);
 
         // Cek apakah ada lembur
         const hasOvertime = attendanceRecord.overtime > 0;
         const overtimeMinutes = attendanceRecord.overtime;
-        const overtimeHours = (overtimeMinutes / 60).toFixed(2);
+        const overtimeHours = overtimeMinutes / 60;
 
-        // Buat notifikasi untuk check-out
-        await prisma.notification.create({
-          data: {
-            userId: session.user.id,
-            title: "Check-out Berhasil",
-            message: hasOvertime
-              ? `Anda berhasil check-out pada ${format(now, "HH:mm")}. Total durasi kerja: ${workDurationHours} jam, termasuk lembur ${overtimeHours} jam.`
-              : `Anda berhasil check-out pada ${format(now, "HH:mm")}. Total durasi kerja: ${workDurationHours} jam.`,
-            type: "success",
-          },
-        });
+        // Buat notifikasi untuk check-out menggunakan layanan notifikasi
+        await createCheckOutNotification(
+          session.user.id, 
+          workDurationHours, 
+          hasOvertime, 
+          overtimeHours, 
+          now
+        );
 
-        // Notifikasi untuk admin jika ada lembur
+        // Notifikasi untuk admin jika ada lembur menggunakan layanan notifikasi
         if (hasOvertime) {
-          const admins = await prisma.user.findMany({
-            where: {
-              role: "ADMIN",
-            },
-          });
-
-          for (const admin of admins) {
-            await prisma.notification.create({
-              data: {
-                userId: admin.id,
-                title: "Laporan Lembur",
-                message: `${employee.user.name} melakukan lembur selama ${overtimeHours} jam pada tanggal ${format(now, "dd MMMM yyyy")}.`,
-                type: "info",
-              },
-            });
-          }
+          await createOvertimeAdminNotification(employee.user.name, overtimeHours);
         }
       } catch (error: any) {
         return NextResponse.json(
@@ -326,9 +286,7 @@ export async function POST(req: NextRequest) {
 
     // Tambahkan header respons untuk memicu pembaruan notifikasi di frontend
     const response = NextResponse.json(attendanceRecord);
-    response.headers.set("X-Notification-Update", "true");
-
-    return response;
+    return addNotificationUpdateHeader(response);
   } catch (error: any) {
     console.error("Error recording attendance:", error);
     return NextResponse.json(
