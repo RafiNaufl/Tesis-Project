@@ -8,6 +8,7 @@ interface OvertimeApprovalButtonProps {
   isSundayWork: boolean;
   isApproved: boolean;
   onApprovalChange?: (attendanceId: string, isApproved: boolean) => void;
+  isRejected?: boolean;
 }
 
 export default function OvertimeApprovalButton({
@@ -15,6 +16,7 @@ export default function OvertimeApprovalButton({
   isSundayWork,
   isApproved,
   onApprovalChange,
+  isRejected = false,
 }: OvertimeApprovalButtonProps) {
   const [isLoading, setIsLoading] = useState(false);
   
@@ -70,6 +72,10 @@ export default function OvertimeApprovalButton({
           : "Permintaan lembur ditolak"
       );
       
+      // Trigger event untuk update tampilan
+      localStorage.setItem('attendance-reject', Date.now().toString());
+      localStorage.setItem('attendance-update', Date.now().toString());
+      
       // Callback untuk refresh data
       if (onApprovalChange) {
         onApprovalChange(attendanceId, false);
@@ -86,6 +92,14 @@ export default function OvertimeApprovalButton({
     return (
       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
         Disetujui
+      </span>
+    );
+  }
+  
+  if (isRejected) {
+    return (
+      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+        Tidak Disetujui
       </span>
     );
   }

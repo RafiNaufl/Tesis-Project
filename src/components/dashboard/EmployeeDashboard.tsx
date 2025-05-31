@@ -31,6 +31,8 @@ type TodayAttendanceRecord = {
   isOvertimeApproved: boolean;
   isSundayWork: boolean;
   isSundayWorkApproved: boolean;
+  approvedAt: Date | null;
+  notes?: string | null;
 };
 
 export default function EmployeeDashboard() {
@@ -150,6 +152,26 @@ export default function EmployeeDashboard() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
 
+  // Listener untuk pembaruan kehadiran
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'attendance-update' || e.key === 'attendance-reject') {
+        fetchAttendanceData();
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+
+    // Also set up an interval to refresh data every minute
+    const intervalId = setInterval(fetchAttendanceData, 60000);
+
+    // Cleanup
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      clearInterval(intervalId);
+    };
+  }, []);
+
   const handleCheckIn = async () => {
     setActionLoading(true);
     setError(null);
@@ -169,13 +191,28 @@ export default function EmployeeDashboard() {
       }
       
       const data = await response.json();
+      console.log("Check-in response:", data); // Log untuk debugging
       
-      // Update state with new check-in information
+      // Reset checkOut jika ini adalah pengajuan ulang
+      if (data.notes && data.notes.includes("Di Tolak") || 
+         (data.approvedAt && (!data.isSundayWorkApproved || !data.isOvertimeApproved))) {
+        data.checkOut = null;
+      }
+      
+      // Update state dengan informasi check-in baru
       setIsCheckedIn(true);
       setTodayRecord(data);
       
-      // Tampilkan alert untuk check in
-      window.alert("✅ Absen masuk berhasil dicatat! Selamat bekerja!");
+      // Tampilkan alert berdasarkan status pengajuan
+      if (todayRecord && 
+         ((todayRecord.notes && todayRecord.notes.includes("Di Tolak")) || 
+          (todayRecord.approvedAt && 
+           ((todayRecord.overtime > 0 && !todayRecord.isOvertimeApproved) || 
+            (todayRecord.isSundayWork && !todayRecord.isSundayWorkApproved))))) {
+        window.alert("✅ Pengajuan ulang absen berhasil dicatat! Menunggu persetujuan admin.");
+      } else {
+        window.alert("✅ Absen masuk berhasil dicatat! Selamat bekerja!");
+      }
       
       // Update recent attendance
       const updatedAttendance = [...recentAttendance];
@@ -427,7 +464,28 @@ export default function EmployeeDashboard() {
           </div>
         </div>
         <div className="mt-4 sm:ml-6 sm:mt-0 sm:flex-shrink-0">
-          {!todayRecord.checkOut ? (
+          {((todayRecord.notes && todayRecord.notes.includes("Di Tolak")) || 
+            (todayRecord.approvedAt && 
+             ((todayRecord.overtime > 0 && !todayRecord.isOvertimeApproved) || 
+              (todayRecord.isSundayWork && !todayRecord.isSundayWorkApproved)))) ? (
+            <button
+              onClick={handleCheckIn}
+              disabled={actionLoading}
+              className="inline-flex items-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 sm:text-sm disabled:opacity-50"
+            >
+              {actionLoading ? "Memproses..." : "Absen Masuk"}
+            </button>
+          ) : 
+          (todayRecord.checkOut && 
+           !(todayRecord.notes && todayRecord.notes.includes("Di Tolak")) && 
+           !(todayRecord.approvedAt && 
+             ((todayRecord.overtime > 0 && !todayRecord.isOvertimeApproved) || 
+              (todayRecord.isSundayWork && !todayRecord.isSundayWorkApproved)))) ? (
+            <span className="inline-flex items-center rounded-md bg-green-50 px-4 py-2 text-sm font-medium text-green-700">
+              Kehadiran hari ini sudah lengkap
+            </span>
+          ) : 
+          (todayRecord.checkIn && !todayRecord.checkOut) ? (
             <button
               onClick={handleCheckOut}
               disabled={actionLoading}
@@ -435,10 +493,15 @@ export default function EmployeeDashboard() {
             >
               {actionLoading ? "Memproses..." : "Absen Keluar"}
             </button>
-          ) : (
-            <span className="inline-flex items-center rounded-md bg-green-50 px-4 py-2 text-sm font-medium text-green-700">
-              Kehadiran hari ini sudah lengkap
-            </span>
+          ) : 
+          (
+            <button
+              onClick={handleCheckIn}
+              disabled={actionLoading}
+              className="inline-flex items-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 sm:text-sm disabled:opacity-50"
+            >
+              {actionLoading ? "Memproses..." : "Absen Masuk"}
+            </button>
           )}
         </div>
       </div>
@@ -462,6 +525,27 @@ export default function EmployeeDashboard() {
           <h3 className="text-lg font-medium leading-6 text-gray-900">
             Kehadiran Hari Ini
           </h3>
+          {/* Tambahkan informasi penolakan */}
+          {todayRecord && 
+           ((todayRecord.notes && todayRecord.notes.includes("Di Tolak")) || 
+            (todayRecord.approvedAt && 
+             ((todayRecord.overtime > 0 && !todayRecord.isOvertimeApproved) || 
+              (todayRecord.isSundayWork && !todayRecord.isSundayWorkApproved)))) && (
+            <div className="mt-4 rounded-md bg-blue-50 p-4">
+              <div className="flex">
+                <div className="flex-shrink-0">
+                  <svg className="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2h-1V9a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <div className="ml-3">
+                  <p className="text-sm text-blue-700">
+                    Permintaan Anda telah ditolak oleh admin. Anda dapat mengajukan check-in kembali.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
           {error && (
             <div className={`mt-4 rounded-md ${error.includes("sudah melakukan") ? "bg-blue-50" : "bg-red-50"} p-4`}>
               <div className="flex">

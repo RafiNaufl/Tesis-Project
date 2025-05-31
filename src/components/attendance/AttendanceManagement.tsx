@@ -20,6 +20,7 @@ type AttendanceRecord = {
   isOvertimeApproved: boolean;
   isSundayWork: boolean;
   isSundayWorkApproved: boolean;
+  approvedAt: Date | null;
   employee?: {
     id: string;
     employeeId: string;
@@ -117,6 +118,23 @@ export default function AttendanceManagement() {
           return recordDate === todayString;
         });
 
+        // Log data kehadiran hari ini untuk debugging
+        console.log("Today's attendance record:", todayAttendance);
+        
+        // Cek apakah kehadiran hari ini telah ditolak
+        if (todayAttendance) {
+          const isDitolak = (todayAttendance.notes && todayAttendance.notes.includes("Di Tolak")) || 
+                           (todayAttendance.approvedAt && 
+                            ((todayAttendance.overtime > 0 && !todayAttendance.isOvertimeApproved) || 
+                             (todayAttendance.isSundayWork && !todayAttendance.isSundayWorkApproved)));
+          
+          console.log("Is rejected:", isDitolak, 
+                     "Notes:", todayAttendance.notes, 
+                     "ApprovedAt:", todayAttendance.approvedAt,
+                     "checkIn:", todayAttendance.checkIn,
+                     "checkOut:", todayAttendance.checkOut);
+        }
+
         setTodayRecord(todayAttendance || null);
       } catch (err) {
         console.error("Error fetching attendance:", err);
@@ -132,6 +150,90 @@ export default function AttendanceManagement() {
       fetchAttendance();
     }
   }, [session, selectedMonth, selectedYear]);
+
+  // Tambahkan effect untuk refresh otomatis ketika ada update dari penolakan
+  useEffect(() => {
+    // Function untuk menangani event storage
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'attendance-reject') {
+        // Refresh data kehadiran
+        fetchAttendance();
+      }
+    };
+    
+    // Function untuk fetch attendance
+    const fetchAttendance = async () => {
+      try {
+        const queryParams = new URLSearchParams({
+          month: selectedMonth.toString(),
+          year: selectedYear.toString(),
+        });
+
+        const response = await fetch(`/api/attendance?${queryParams}`, {
+          method: "GET",
+        });
+
+        if (!response.ok) {
+          throw new Error("Gagal mengambil data kehadiran");
+        }
+
+        const data = await response.json();
+        
+        let processedData: AttendanceRecord[] = [];
+        
+        if (Array.isArray(data)) {
+          processedData = data.flatMap((item) => {
+            if (item.report && Array.isArray(item.report.attendances)) {
+              return item.report.attendances.map((attendance: any) => ({
+                ...attendance,
+                employee: {
+                  id: item.employee?.id || "",
+                  employeeId: item.employee?.employeeId || "",
+                  name: item.employee?.name || "",
+                  user: {
+                    name: item.employee?.name || "",
+                  }
+                }
+              }));
+            }
+            return [];
+          });
+        } else if (data && data.attendances && Array.isArray(data.attendances)) {
+          processedData = data.attendances;
+        }
+        
+        // Pastikan selalu set sebagai array
+        setAttendanceRecords(Array.isArray(processedData) ? processedData : []);
+
+        // Check if there's a record for today
+        const today = new Date();
+        const todayString = today.toISOString().split("T")[0];
+        const todayAttendance = processedData.find((record: AttendanceRecord) => {
+          const recordDate = new Date(record.date).toISOString().split("T")[0];
+          return recordDate === todayString;
+        });
+
+        console.log("Today's attendance after refresh:", todayAttendance);
+        setTodayRecord(todayAttendance || null);
+      } catch (err) {
+        console.error("Error refreshing attendance:", err);
+        // Jika terjadi error, pastikan attendanceRecords tetap array kosong
+        setAttendanceRecords([]);
+      }
+    };
+
+    // Add event listener for storage changes
+    window.addEventListener('storage', handleStorageChange);
+    
+    // Also set up an interval to refresh data every 30 seconds
+    const intervalId = setInterval(fetchAttendance, 30000);
+    
+    // Cleanup
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      clearInterval(intervalId);
+    };
+  }, [selectedMonth, selectedYear]);
 
   const handleCheckIn = async () => {
     setIsCheckingIn(true);
@@ -159,10 +261,24 @@ export default function AttendanceManagement() {
       }
 
       const data = await response.json();
+      console.log("Check-in response:", data); // Log response untuk debugging
+      
+      // Hapus checkout jika ini adalah pengajuan ulang
+      if (data.notes && data.notes.includes("Di Tolak") || 
+          (data.approvedAt && (!data.isSundayWorkApproved || !data.isOvertimeApproved))) {
+        // Reset checkout ke null
+        data.checkOut = null;
+      }
+      
       setTodayRecord(data);
       
       // Tampilkan alert untuk check in
-      window.alert("✅ Absen masuk berhasil dicatat! Selamat bekerja!");
+      if (data.notes && data.notes.includes("Di Tolak") || 
+          (data.approvedAt && (!data.isSundayWorkApproved || !data.isOvertimeApproved))) {
+        window.alert("✅ Pengajuan ulang absen berhasil dicatat! Menunggu persetujuan admin.");
+      } else {
+        window.alert("✅ Absen masuk berhasil dicatat! Selamat bekerja!");
+      }
       
       // Check if the response header indicates a notification update
       if (response.headers.get('X-Notification-Update') === 'true') {
@@ -184,7 +300,18 @@ export default function AttendanceManagement() {
       const refreshResponse = await fetch(`/api/attendance?${queryParams}`);
       if (refreshResponse.ok) {
         const refreshData = await refreshResponse.json();
-        setAttendanceRecords(refreshData);
+        
+        // Pastikan refreshData adalah array sebelum meng-update state
+        if (refreshData && refreshData.attendances && Array.isArray(refreshData.attendances)) {
+          setAttendanceRecords(refreshData.attendances);
+        } else if (Array.isArray(refreshData)) {
+          // Jika data langsung berupa array
+          setAttendanceRecords(refreshData);
+        } else {
+          // Jika format tidak dikenali, gunakan array kosong
+          console.warn("Format data refresh tidak dikenali:", refreshData);
+          setAttendanceRecords([]);
+        }
       }
     } catch (err: any) {
       console.error("Error checking in:", err);
@@ -245,7 +372,18 @@ export default function AttendanceManagement() {
       const refreshResponse = await fetch(`/api/attendance?${queryParams}`);
       if (refreshResponse.ok) {
         const refreshData = await refreshResponse.json();
-        setAttendanceRecords(refreshData);
+        
+        // Pastikan refreshData adalah array sebelum meng-update state
+        if (refreshData && refreshData.attendances && Array.isArray(refreshData.attendances)) {
+          setAttendanceRecords(refreshData.attendances);
+        } else if (Array.isArray(refreshData)) {
+          // Jika data langsung berupa array
+          setAttendanceRecords(refreshData);
+        } else {
+          // Jika format tidak dikenali, gunakan array kosong
+          console.warn("Format data refresh tidak dikenali:", refreshData);
+          setAttendanceRecords([]);
+        }
       }
     } catch (err: any) {
       console.error("Error checking out:", err);
@@ -352,7 +490,18 @@ export default function AttendanceManagement() {
       const refreshResponse = await fetch(`/api/attendance?${queryParams}`);
       if (refreshResponse.ok) {
         const refreshData = await refreshResponse.json();
-        setAttendanceRecords(refreshData);
+        
+        // Pastikan refreshData adalah array sebelum meng-update state
+        if (refreshData && refreshData.attendances && Array.isArray(refreshData.attendances)) {
+          setAttendanceRecords(refreshData.attendances);
+        } else if (Array.isArray(refreshData)) {
+          // Jika data langsung berupa array
+          setAttendanceRecords(refreshData);
+        } else {
+          // Jika format tidak dikenali, gunakan array kosong
+          console.warn("Format data refresh tidak dikenali:", refreshData);
+          setAttendanceRecords([]);
+        }
       }
       
       // Close the modal
@@ -438,10 +587,13 @@ export default function AttendanceManagement() {
           processedData = data.attendances;
         }
         
+        // Pastikan selalu set sebagai array
         setAttendanceRecords(Array.isArray(processedData) ? processedData : []);
       }
     } catch (error) {
       console.error("Error refreshing attendance data:", error);
+      // Jika terjadi error, tetap pastikan attendanceRecords adalah array
+      setAttendanceRecords([]);
     }
   };
 
@@ -482,7 +634,12 @@ export default function AttendanceManagement() {
                         ? `Absen masuk: ${formatTime(todayRecord.checkIn)}`
                         : "Anda belum absen masuk hari ini"}
                     </p>
-                    {todayRecord?.checkOut && (
+                    {/* Tampilkan checkout hanya jika tidak ditolak */}
+                    {todayRecord?.checkOut && 
+                     !(todayRecord.notes && todayRecord.notes.includes("Di Tolak")) &&
+                     !(todayRecord.approvedAt && 
+                       ((todayRecord.overtime > 0 && !todayRecord.isOvertimeApproved) || 
+                        (todayRecord.isSundayWork && !todayRecord.isSundayWorkApproved))) && (
                       <p className="text-sm font-medium text-gray-900">
                         Absen keluar: {formatTime(todayRecord.checkOut)}
                       </p>
@@ -526,7 +683,12 @@ export default function AttendanceManagement() {
                   </div>
                 </div>
                 <div className="mt-4 sm:ml-6 sm:mt-0 sm:flex-shrink-0">
-                  {!todayRecord?.checkIn ? (
+                  {(!todayRecord?.checkIn || 
+                    // Tambahkan kondisi untuk menampilkan Absen Masuk jika ditolak
+                    (todayRecord?.notes && todayRecord.notes.includes("Di Tolak")) || 
+                    (todayRecord?.approvedAt && 
+                     ((todayRecord.overtime > 0 && !todayRecord.isOvertimeApproved) || 
+                      (todayRecord.isSundayWork && !todayRecord.isSundayWorkApproved)))) ? (
                     <button
                       onClick={handleCheckIn}
                       disabled={isCheckingIn}
@@ -601,6 +763,26 @@ export default function AttendanceManagement() {
                 ? "Lihat dan kelola catatan kehadiran karyawan"
                 : "Lihat catatan kehadiran Anda"}
             </p>
+            {!isAdmin && Array.isArray(attendanceRecords) && attendanceRecords.some(record => 
+              (record.notes && record.notes.includes("Di Tolak")) ||
+              (record.approvedAt && ((record.overtime > 0 && !record.isOvertimeApproved) || 
+              (record.isSundayWork && !record.isSundayWorkApproved)))
+            ) && (
+              <div className="mt-2 rounded-md bg-blue-50 p-4">
+                <div className="flex">
+                  <div className="flex-shrink-0">
+                    <svg className="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2h-1V9a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                  </div>
+                  <div className="ml-3">
+                    <p className="text-sm text-blue-700">
+                      Anda memiliki permintaan yang ditolak. Anda dapat mengajukan check-in kembali dengan menekan tombol "Absen Masuk" di atas.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
           <div className="mt-4 sm:mt-0 sm:ml-16 sm:flex-none space-x-2">
             <select
@@ -735,8 +917,18 @@ export default function AttendanceManagement() {
                           <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                             {getDayTypeLabel(new Date(record.date))}
                             {record.isSundayWork && (
-                              <div className={`text-xs mt-1 ${record.isSundayWorkApproved ? "text-green-500" : "text-yellow-500"}`}>
-                                {record.isSundayWorkApproved ? "(Disetujui)" : "(Menunggu persetujuan)"}
+                              <div className={`text-xs mt-1 ${
+                                record.isSundayWorkApproved ? 
+                                "text-green-500" : 
+                                record.approvedAt && !record.isSundayWorkApproved ? 
+                                "text-red-500" : 
+                                "text-yellow-500"}`}
+                              >
+                                {record.isSundayWorkApproved 
+                                  ? "(Disetujui)" 
+                                  : record.approvedAt && !record.isSundayWorkApproved
+                                  ? "(Tidak Disetujui)"
+                                  : "(Menunggu persetujuan)"}
                               </div>
                             )}
                           </td>
@@ -769,8 +961,18 @@ export default function AttendanceManagement() {
                           <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                             {record.overtime > 0 ? formatMinutesToHours(record.overtime) : "-"}
                             {record.overtime > 0 && (
-                              <div className={`text-xs mt-1 ${record.isOvertimeApproved ? "text-green-500" : "text-yellow-500"}`}>
-                                {record.isOvertimeApproved ? "(Disetujui)" : "(Menunggu persetujuan)"}
+                              <div className={`text-xs mt-1 ${
+                                record.isOvertimeApproved ? 
+                                "text-green-500" : 
+                                record.approvedAt && !record.isOvertimeApproved ? 
+                                "text-red-500" : 
+                                "text-yellow-500"}`}
+                              >
+                                {record.isOvertimeApproved 
+                                  ? "(Disetujui)" 
+                                  : record.approvedAt && !record.isOvertimeApproved
+                                  ? "(Tidak Disetujui)"
+                                  : "(Menunggu persetujuan)"}
                               </div>
                             )}
                           </td>
@@ -782,6 +984,7 @@ export default function AttendanceManagement() {
                                   isSundayWork={record.isSundayWork}
                                   isApproved={record.isSundayWork ? record.isSundayWorkApproved : record.isOvertimeApproved}
                                   onApprovalChange={handleApprovalChange}
+                                  isRejected={!!record.approvedAt && ((record.overtime > 0 && !record.isOvertimeApproved) || (record.isSundayWork && !record.isSundayWorkApproved))}
                                 />
                               )}
                             </td>

@@ -65,9 +65,9 @@ export async function POST(
       let message = "";
       
       if (attendance.isSundayWork) {
-        message = "Permintaan bekerja pada hari Minggu ditolak. Kehadiran tidak akan dihitung.";
+        message = "Permintaan bekerja pada hari Minggu ditolak. Anda dapat mengajukan check-in kembali.";
       } else {
-        message = "Permintaan lembur ditolak. Jam kerja akan dihitung sebagai jam kerja normal saja.";
+        message = "Permintaan lembur ditolak. Anda dapat mengajukan check-in kembali.";
       }
       
       await createNotification(
@@ -78,7 +78,15 @@ export async function POST(
       );
     }
     
-    return NextResponse.json(updatedAttendance);
+    // Log hasil untuk debugging
+    console.log("Rejected attendance:", updatedAttendance);
+    
+    // Persiapkan response dengan header khusus
+    const response = NextResponse.json(updatedAttendance);
+    // Tambahkan header khusus untuk notify klien
+    response.headers.set('X-Attendance-Rejected', 'true');
+    
+    return response;
   } catch (error: any) {
     console.error("Error rejecting overtime:", error);
     return NextResponse.json(

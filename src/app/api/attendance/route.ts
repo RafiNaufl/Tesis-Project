@@ -263,6 +263,11 @@ export async function POST(req: NextRequest) {
         let message = "";
         if (isPengajuanUlang) {
           message = "Pengajuan ulang check-in berhasil dicatat. Menunggu persetujuan admin.";
+          if (workdayType === WorkdayType.SUNDAY) {
+            message += " Bekerja di hari Minggu memerlukan persetujuan.";
+          } else if (isOvertimeCheckIn(now, now)) {
+            message += " Check-in pada jam lembur memerlukan persetujuan.";
+          }
         } else if (workdayType === WorkdayType.SUNDAY) {
           message = "Absen masuk berhasil dicatat. Bekerja pada hari Minggu memerlukan persetujuan admin.";
         } else if (isOvertimeCheckIn(now, now)) {
@@ -332,7 +337,7 @@ export async function POST(req: NextRequest) {
         if (isOvertimeCheckOut(now, now)) {
           const overtimeHours = Math.floor(attendance.overtime / 60);
           const overtimeMinutes = attendance.overtime % 60;
-          message = `Absen keluar berhasil dicatat. Anda lembur ${overtimeHours} jam ${overtimeMinutes} menit (memerlukan persetujuan admin).`;
+          message = `Absen keluar berhasil dicatat. Anda lembur ${overtimeHours} jam ${overtimeMinutes} menit.`;
         } else if (attendance.overtime > 0) {
           const overtimeHours = Math.floor(attendance.overtime / 60);
           const overtimeMinutes = attendance.overtime % 60;
