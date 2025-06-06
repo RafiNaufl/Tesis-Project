@@ -101,7 +101,15 @@ export async function GET(req: NextRequest) {
         attendanceReport.attendances = attendanceReport.attendances.map(formatAttendanceResponse);
       }
       
-      return NextResponse.json(attendanceReport);
+      // Create response with cache control headers
+      const response = NextResponse.json(attendanceReport);
+      
+      // Add cache control headers to prevent caching
+      response.headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+      response.headers.set('Pragma', 'no-cache');
+      response.headers.set('Expires', '0');
+      
+      return response;
     }
 
     // For admins with specific employee query
@@ -117,7 +125,15 @@ export async function GET(req: NextRequest) {
         attendanceReport.attendances = attendanceReport.attendances.map(formatAttendanceResponse);
       }
       
-      return NextResponse.json(attendanceReport);
+      // Create response with cache control headers
+      const response = NextResponse.json(attendanceReport);
+      
+      // Add cache control headers to prevent caching
+      response.headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+      response.headers.set('Pragma', 'no-cache');
+      response.headers.set('Expires', '0');
+      
+      return response;
     }
 
     // For admins requesting all employees
@@ -162,7 +178,15 @@ export async function GET(req: NextRequest) {
       })
     );
 
-    return NextResponse.json(allReports);
+    // Create response with cache control headers
+    const response = NextResponse.json(allReports);
+    
+    // Add cache control headers to prevent caching
+    response.headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    response.headers.set('Pragma', 'no-cache');
+    response.headers.set('Expires', '0');
+    
+    return response;
   } catch (error: any) {
     console.error("Error fetching attendance:", error);
     return NextResponse.json(
@@ -223,6 +247,8 @@ export async function POST(req: NextRequest) {
           },
         });
         
+        console.log("Check-in request, existing attendance:", existingAttendance);
+        
         const isPengajuanUlang = existingAttendance && 
                                existingAttendance.checkIn && 
                                ((existingAttendance.notes && existingAttendance.notes.includes("Di Tolak")) || 
@@ -258,6 +284,7 @@ export async function POST(req: NextRequest) {
 
         // Proses check-in
         const attendance = await recordCheckIn(employee.id);
+        console.log("Check-in recorded:", attendance);
         
         // Notifikasi karyawan
         let message = "";
@@ -280,19 +307,12 @@ export async function POST(req: NextRequest) {
         
         await createCheckInNotification(employee.id, message);
         
-        // Jika terlambat, notifikasi admin
-        if (attendance.isLate) {
-          await createLateCheckInAdminNotification(
-            employee.id,
-            employee.user.name,
-            `Terlambat ${attendance.lateMinutes} menit`,
-            attendance.checkIn as Date
-          );
-        }
-        
-        // Kirim respons dengan header notifikasi
-        const response = NextResponse.json(attendance);
+        // Kirim respons dengan header notifikasi dan cache control
+        const response = NextResponse.json(formatAttendanceResponse(attendance));
         addNotificationUpdateHeader(response);
+        response.headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+        response.headers.set('Pragma', 'no-cache');
+        response.headers.set('Expires', '0');
         return response;
       } else if (action === "check-out") {
         // Cek apakah karyawan melakukan check-in terlebih dahulu
@@ -311,11 +331,35 @@ export async function POST(req: NextRequest) {
           },
         });
         
+        console.log("Check-out request, existing attendance:", todayAttendance);
+        
         if (!todayAttendance || !todayAttendance.checkIn) {
           return NextResponse.json(
             { error: "Anda belum melakukan check-in hari ini" },
             { status: 400 }
           );
+        }
+        
+        // Cek apakah checkout sudah dilakukan
+        if (todayAttendance.checkOut) {
+          // Return clearer error message with the existing attendance data
+          return NextResponse.json({
+            error: "Anda sudah melakukan check-out hari ini",
+            existingAttendance: {
+              id: todayAttendance.id,
+              date: todayAttendance.date,
+              checkIn: todayAttendance.checkIn,
+              checkOut: todayAttendance.checkOut,
+              status: todayAttendance.status,
+              notes: todayAttendance.notes,
+              isLate: todayAttendance.isLate,
+              lateMinutes: todayAttendance.lateMinutes,
+              overtime: todayAttendance.overtime || 0,
+              isOvertimeApproved: todayAttendance.isOvertimeApproved,
+              isSundayWork: todayAttendance.isSundayWork || false,
+              isSundayWorkApproved: todayAttendance.isSundayWorkApproved
+            }
+          }, { status: 400 });
         }
         
         // Cek apakah checkout menghasilkan lembur
@@ -331,6 +375,7 @@ export async function POST(req: NextRequest) {
         
         // Proses check-out
         const attendance = await recordCheckOut(employee.id);
+        console.log("Check-out recorded:", attendance);
         
         // Notifikasi karyawan
         let message = "Absen keluar berhasil dicatat.";
@@ -346,9 +391,12 @@ export async function POST(req: NextRequest) {
         
         await createCheckOutNotification(employee.id, message);
         
-        // Kirim respons dengan header notifikasi
-        const response = NextResponse.json(attendance);
+        // Kirim respons dengan header notifikasi dan cache control
+        const response = NextResponse.json(formatAttendanceResponse(attendance));
         addNotificationUpdateHeader(response);
+        response.headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+        response.headers.set('Pragma', 'no-cache');
+        response.headers.set('Expires', '0');
         return response;
       } else {
         return NextResponse.json(
@@ -360,6 +408,53 @@ export async function POST(req: NextRequest) {
       // Tangani error khusus double absen
       if (error.message === "Anda sudah melakukan check-in hari ini" || 
           error.message === "Anda sudah melakukan check-out hari ini") {
+        
+        // Jika error tentang double check-in, dapatkan data kehadiran hari ini
+        if (error.message === "Anda sudah melakukan check-in hari ini" || 
+            error.message === "Anda sudah melakukan check-out hari ini") {
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const todayEnd = new Date(today);
+          todayEnd.setHours(23, 59, 59, 999);
+          
+          try {
+            const existingAttendance = await prisma.attendance.findFirst({
+              where: {
+                employeeId: employee.id,
+                date: {
+                  gte: today,
+                  lte: todayEnd,
+                },
+              },
+            });
+            
+            if (existingAttendance) {
+              return NextResponse.json(
+                { 
+                  error: error.message,
+                  existingAttendance: formatAttendanceResponse({
+                    id: existingAttendance.id,
+                    date: existingAttendance.date,
+                    checkIn: existingAttendance.checkIn,
+                    checkOut: existingAttendance.checkOut,
+                    status: existingAttendance.status,
+                    notes: existingAttendance.notes,
+                    isLate: existingAttendance.isLate,
+                    lateMinutes: existingAttendance.lateMinutes,
+                    overtime: existingAttendance.overtime || 0,
+                    isOvertimeApproved: existingAttendance.isOvertimeApproved,
+                    isSundayWork: existingAttendance.isSundayWork || false,
+                    isSundayWorkApproved: existingAttendance.isSundayWorkApproved
+                  })
+                },
+                { status: 400 }
+              );
+            }
+          } catch (fetchError) {
+            console.error("Error fetching existing attendance:", fetchError);
+          }
+        }
+        
         return NextResponse.json(
           { error: error.message },
           { status: 400 }

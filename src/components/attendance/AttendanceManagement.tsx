@@ -54,6 +54,63 @@ export default function AttendanceManagement() {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Tambahkan state untuk menyimpan data absensi sebelum refresh
+  const [persistedAttendance, setPersistedAttendance] = useState<AttendanceRecord | null>(null);
+
+  // Tambahkan useEffect untuk menyimpan data absensi ke localStorage saat ada perubahan
+  useEffect(() => {
+    if (todayRecord?.checkIn) {
+      // Simpan data absensi ke localStorage
+      localStorage.setItem('todayAttendance', JSON.stringify({
+        id: todayRecord.id,
+        date: todayRecord.date,
+        checkIn: todayRecord.checkIn,
+        checkOut: todayRecord.checkOut,
+        status: todayRecord.status,
+        notes: todayRecord.notes,
+        isLate: todayRecord.isLate,
+        lateMinutes: todayRecord.lateMinutes,
+        overtime: todayRecord.overtime,
+        isOvertimeApproved: todayRecord.isOvertimeApproved,
+        isSundayWork: todayRecord.isSundayWork,
+        isSundayWorkApproved: todayRecord.isSundayWorkApproved,
+        approvedAt: todayRecord.approvedAt
+      }));
+    }
+  }, [todayRecord]);
+
+  // Tambahkan useEffect untuk memulihkan data absensi dari localStorage saat komponen dimuat
+  useEffect(() => {
+    const savedAttendance = localStorage.getItem('todayAttendance');
+    if (savedAttendance) {
+      try {
+        const parsedAttendance = JSON.parse(savedAttendance);
+        // Konversi string tanggal kembali ke objek Date
+        if (parsedAttendance.date) parsedAttendance.date = new Date(parsedAttendance.date);
+        if (parsedAttendance.checkIn) parsedAttendance.checkIn = new Date(parsedAttendance.checkIn);
+        if (parsedAttendance.checkOut) parsedAttendance.checkOut = new Date(parsedAttendance.checkOut);
+        if (parsedAttendance.approvedAt) parsedAttendance.approvedAt = new Date(parsedAttendance.approvedAt);
+        
+        setPersistedAttendance(parsedAttendance);
+        
+        // Jika todayRecord belum ada, gunakan data yang dipulihkan
+        if (!todayRecord) {
+          // Periksa apakah data absensi masih untuk hari ini
+          const today = new Date();
+          const todayString = today.toISOString().split("T")[0];
+          const persistedDate = new Date(parsedAttendance.date).toISOString().split("T")[0];
+          
+          if (persistedDate === todayString) {
+            console.log("Menggunakan data absensi dari localStorage:", parsedAttendance);
+            setTodayRecord(parsedAttendance);
+          }
+        }
+      } catch (error) {
+        console.error("Error parsing saved attendance:", error);
+      }
+    }
+  }, []);
+
   // Fetch attendance records
   useEffect(() => {
     const fetchAttendance = async () => {
@@ -100,8 +157,13 @@ export default function AttendanceManagement() {
             return [];
           });
         } else if (data && data.attendances && Array.isArray(data.attendances)) {
-          // Jika response adalah objek dengan properti attendances (untuk karyawan)
-          processedData = data.attendances;
+          processedData = data.attendances.map((attendance: any) => ({
+            ...attendance,
+            // Pastikan checkIn dan checkOut adalah objek Date yang valid
+            checkIn: attendance.checkIn ? new Date(attendance.checkIn) : null,
+            checkOut: attendance.checkOut ? new Date(attendance.checkOut) : null,
+            date: new Date(attendance.date)
+          }));
         } else {
           // Jika format data tidak dikenali, tetap gunakan array kosong
           console.warn("Format data tidak dikenali:", data);
@@ -121,26 +183,33 @@ export default function AttendanceManagement() {
         // Log data kehadiran hari ini untuk debugging
         console.log("Today's attendance record:", todayAttendance);
         
-        // Cek apakah kehadiran hari ini telah ditolak
-        if (todayAttendance) {
-          const isDitolak = (todayAttendance.notes && todayAttendance.notes.includes("Di Tolak")) || 
-                           (todayAttendance.approvedAt && 
-                            ((todayAttendance.overtime > 0 && !todayAttendance.isOvertimeApproved) || 
-                             (todayAttendance.isSundayWork && !todayAttendance.isSundayWorkApproved)));
-          
-          console.log("Is rejected:", isDitolak, 
-                     "Notes:", todayAttendance.notes, 
-                     "ApprovedAt:", todayAttendance.approvedAt,
-                     "checkIn:", todayAttendance.checkIn,
-                     "checkOut:", todayAttendance.checkOut);
+        // Jika tidak ada catatan kehadiran hari ini dari API tetapi ada di localStorage, gunakan data dari localStorage
+        if (!todayAttendance && persistedAttendance) {
+          const persistedDate = new Date(persistedAttendance.date).toISOString().split("T")[0];
+          if (persistedDate === todayString) {
+            setTodayRecord(persistedAttendance);
+          } else {
+            setTodayRecord(null);
+          }
+        } else {
+          setTodayRecord(todayAttendance || null);
         }
-
-        setTodayRecord(todayAttendance || null);
       } catch (err) {
         console.error("Error fetching attendance:", err);
         setError("Gagal memuat data kehadiran");
         // Jika terjadi error, pastikan attendanceRecords masih array kosong
         setAttendanceRecords([]);
+        
+        // Jika ada data di localStorage, gunakan sebagai fallback
+        if (persistedAttendance) {
+          const today = new Date();
+          const todayString = today.toISOString().split("T")[0];
+          const persistedDate = new Date(persistedAttendance.date).toISOString().split("T")[0];
+          
+          if (persistedDate === todayString) {
+            setTodayRecord(persistedAttendance);
+          }
+        }
       } finally {
         setIsLoading(false);
       }
@@ -149,7 +218,7 @@ export default function AttendanceManagement() {
     if (session) {
       fetchAttendance();
     }
-  }, [session, selectedMonth, selectedYear]);
+  }, [session, selectedMonth, selectedYear, persistedAttendance]);
 
   // Tambahkan effect untuk refresh otomatis ketika ada update dari penolakan
   useEffect(() => {
@@ -199,7 +268,16 @@ export default function AttendanceManagement() {
             return [];
           });
         } else if (data && data.attendances && Array.isArray(data.attendances)) {
-          processedData = data.attendances;
+          processedData = data.attendances.map((attendance: any) => ({
+            ...attendance,
+            // Pastikan checkIn dan checkOut adalah objek Date yang valid
+            checkIn: attendance.checkIn ? new Date(attendance.checkIn) : null,
+            checkOut: attendance.checkOut ? new Date(attendance.checkOut) : null,
+            date: new Date(attendance.date)
+          }));
+        } else {
+          // Jika format data tidak dikenali, tetap gunakan array kosong
+          console.warn("Format data tidak dikenali:", data);
         }
         
         // Pastikan selalu set sebagai array
@@ -214,11 +292,58 @@ export default function AttendanceManagement() {
         });
 
         console.log("Today's attendance after refresh:", todayAttendance);
-        setTodayRecord(todayAttendance || null);
+        
+        // Jika tidak ada catatan kehadiran hari ini dari API tetapi ada di localStorage, gunakan data dari localStorage
+        const savedAttendance = localStorage.getItem('todayAttendance');
+        if (!todayAttendance && savedAttendance) {
+          try {
+            const parsedAttendance = JSON.parse(savedAttendance);
+            // Konversi string tanggal kembali ke objek Date
+            if (parsedAttendance.date) parsedAttendance.date = new Date(parsedAttendance.date);
+            if (parsedAttendance.checkIn) parsedAttendance.checkIn = new Date(parsedAttendance.checkIn);
+            if (parsedAttendance.checkOut) parsedAttendance.checkOut = new Date(parsedAttendance.checkOut);
+            if (parsedAttendance.approvedAt) parsedAttendance.approvedAt = new Date(parsedAttendance.approvedAt);
+            
+            const persistedDate = new Date(parsedAttendance.date).toISOString().split("T")[0];
+            if (persistedDate === todayString) {
+              setTodayRecord(parsedAttendance);
+            } else {
+              setTodayRecord(todayAttendance || null);
+            }
+          } catch (error) {
+            console.error("Error parsing saved attendance:", error);
+            setTodayRecord(todayAttendance || null);
+          }
+        } else {
+          setTodayRecord(todayAttendance || null);
+        }
       } catch (err) {
         console.error("Error refreshing attendance:", err);
         // Jika terjadi error, pastikan attendanceRecords tetap array kosong
         setAttendanceRecords([]);
+        
+        // Jika ada data di localStorage, gunakan sebagai fallback
+        const savedAttendance = localStorage.getItem('todayAttendance');
+        if (savedAttendance) {
+          try {
+            const parsedAttendance = JSON.parse(savedAttendance);
+            // Konversi string tanggal kembali ke objek Date
+            if (parsedAttendance.date) parsedAttendance.date = new Date(parsedAttendance.date);
+            if (parsedAttendance.checkIn) parsedAttendance.checkIn = new Date(parsedAttendance.checkIn);
+            if (parsedAttendance.checkOut) parsedAttendance.checkOut = new Date(parsedAttendance.checkOut);
+            if (parsedAttendance.approvedAt) parsedAttendance.approvedAt = new Date(parsedAttendance.approvedAt);
+            
+            const today = new Date();
+            const todayString = today.toISOString().split("T")[0];
+            const persistedDate = new Date(parsedAttendance.date).toISOString().split("T")[0];
+            
+            if (persistedDate === todayString) {
+              setTodayRecord(parsedAttendance);
+            }
+          } catch (error) {
+            console.error("Error parsing saved attendance:", error);
+          }
+        }
       }
     };
 
@@ -227,6 +352,9 @@ export default function AttendanceManagement() {
     
     // Also set up an interval to refresh data every 30 seconds
     const intervalId = setInterval(fetchAttendance, 30000);
+    
+    // Jalankan fetchAttendance sekali saat komponen dimuat
+    fetchAttendance();
     
     // Cleanup
     return () => {
@@ -270,7 +398,29 @@ export default function AttendanceManagement() {
         data.checkOut = null;
       }
       
+      // Pastikan data berformat Date
+      if (data.date) data.date = new Date(data.date);
+      if (data.checkIn) data.checkIn = new Date(data.checkIn);
+      if (data.checkOut) data.checkOut = new Date(data.checkOut);
+      
       setTodayRecord(data);
+      
+      // Simpan data absensi ke localStorage segera setelah absen berhasil
+      localStorage.setItem('todayAttendance', JSON.stringify({
+        id: data.id,
+        date: data.date,
+        checkIn: data.checkIn,
+        checkOut: data.checkOut,
+        status: data.status,
+        notes: data.notes,
+        isLate: data.isLate,
+        lateMinutes: data.lateMinutes,
+        overtime: data.overtime,
+        isOvertimeApproved: data.isOvertimeApproved,
+        isSundayWork: data.isSundayWork,
+        isSundayWorkApproved: data.isSundayWorkApproved,
+        approvedAt: data.approvedAt
+      }));
       
       // Tampilkan alert untuk check in
       if (data.notes && data.notes.includes("Di Tolak") || 
@@ -347,7 +497,30 @@ export default function AttendanceManagement() {
       }
 
       const data = await response.json();
+      
+      // Pastikan data berformat Date
+      if (data.date) data.date = new Date(data.date);
+      if (data.checkIn) data.checkIn = new Date(data.checkIn);
+      if (data.checkOut) data.checkOut = new Date(data.checkOut);
+      
       setTodayRecord(data);
+      
+      // Simpan data absensi ke localStorage segera setelah absen keluar berhasil
+      localStorage.setItem('todayAttendance', JSON.stringify({
+        id: data.id,
+        date: data.date,
+        checkIn: data.checkIn,
+        checkOut: data.checkOut,
+        status: data.status,
+        notes: data.notes,
+        isLate: data.isLate,
+        lateMinutes: data.lateMinutes,
+        overtime: data.overtime,
+        isOvertimeApproved: data.isOvertimeApproved,
+        isSundayWork: data.isSundayWork,
+        isSundayWorkApproved: data.isSundayWorkApproved,
+        approvedAt: data.approvedAt
+      }));
       
       // Tampilkan alert untuk check out
       window.alert("✅ Absen keluar berhasil dicatat! Terima kasih atas kerja keras Anda hari ini!");
@@ -696,7 +869,7 @@ export default function AttendanceManagement() {
                     >
                       {isCheckingIn ? "Processing..." : "Absen Masuk"}
                     </button>
-                  ) : !todayRecord?.checkOut ? (
+                  ) : todayRecord?.checkIn && !todayRecord?.checkOut ? (
                     <button
                       onClick={handleCheckOut}
                       disabled={isCheckingOut}

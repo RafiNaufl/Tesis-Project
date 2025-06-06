@@ -74,8 +74,17 @@ export default function EmployeeDashboard() {
       const currentMonth = currentDate.getMonth() + 1;
       const currentYear = currentDate.getFullYear();
       
+      console.log(`Fetching attendance data for ${currentMonth}/${currentYear}`);
+      
       // Get attendance stats for current month
-      const statsResponse = await fetch(`/api/attendance?month=${currentMonth}&year=${currentYear}`);
+      const statsResponse = await fetch(`/api/attendance?month=${currentMonth}&year=${currentYear}`, {
+        // Add cache control headers to prevent caching
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
+      });
       if (!statsResponse.ok) throw new Error('Gagal mengambil data statistik kehadiran');
       const data = await statsResponse.json();
       
@@ -87,6 +96,8 @@ export default function EmployeeDashboard() {
         console.error("Data kehadiran bukan array:", attendanceData);
         throw new Error("Format data kehadiran tidak valid");
       }
+      
+      console.log("Received attendance data:", attendanceData);
       
       // Calculate stats from attendance data
       const stats = {
@@ -121,10 +132,26 @@ export default function EmployeeDashboard() {
         new Date(item.date).toISOString().split('T')[0] === today
       );
       
+      console.log("Raw today's record from API:", todayRecord);
+      
       if (todayRecord) {
-        setIsCheckedIn(!!todayRecord.checkIn && !todayRecord.checkOut);
-        if (todayRecord.checkIn) {
-          setCheckInTime(new Date(todayRecord.checkIn).toLocaleTimeString([], {
+        // Konversi nilai date, checkIn, checkOut ke objek Date
+        const processedTodayRecord = {
+          ...todayRecord,
+          date: new Date(todayRecord.date),
+          checkIn: todayRecord.checkIn ? new Date(todayRecord.checkIn) : null,
+          checkOut: todayRecord.checkOut ? new Date(todayRecord.checkOut) : null
+        };
+        
+        console.log("Processed today's record:", processedTodayRecord);
+        
+        // Tentukan status checked in berdasarkan keberadaan checkIn dan checkOut
+        const isCurrentlyCheckedIn = !!processedTodayRecord.checkIn && !processedTodayRecord.checkOut;
+        setIsCheckedIn(isCurrentlyCheckedIn);
+        console.log("Setting isCheckedIn to:", isCurrentlyCheckedIn);
+        
+        if (processedTodayRecord.checkIn) {
+          setCheckInTime(new Date(processedTodayRecord.checkIn).toLocaleTimeString([], {
             hour: '2-digit',
             minute: '2-digit',
             hour12: true
@@ -132,9 +159,11 @@ export default function EmployeeDashboard() {
         }
         
         // Set today record for detailed display
-        setTodayRecord(todayRecord);
+        setTodayRecord(processedTodayRecord);
       } else {
         setTodayRecord(null);
+        setIsCheckedIn(false);
+        console.log("No today's record found, setting isCheckedIn to false");
       }
     } catch (error) {
       console.error("Error fetching attendance data:", error);
@@ -144,18 +173,19 @@ export default function EmployeeDashboard() {
     }
   };
 
-  // Fetch attendance data on component mount
+  // Fetch attendance data on component mount and when session changes
   useEffect(() => {
     if (session) {
+      console.log("Fetching attendance data on mount or session change");
       fetchAttendanceData();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
 
   // Listener untuk pembaruan kehadiran
   useEffect(() => {
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === 'attendance-update' || e.key === 'attendance-reject') {
+        console.log("Storage event detected, refreshing attendance data");
         fetchAttendanceData();
       }
     };
@@ -163,7 +193,10 @@ export default function EmployeeDashboard() {
     window.addEventListener('storage', handleStorageChange);
 
     // Also set up an interval to refresh data every minute
-    const intervalId = setInterval(fetchAttendanceData, 60000);
+    const intervalId = setInterval(() => {
+      console.log("Interval refresh triggered");
+      fetchAttendanceData();
+    }, 60000);
 
     // Cleanup
     return () => {
@@ -181,17 +214,40 @@ export default function EmployeeDashboard() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
         },
         body: JSON.stringify({ action: 'check-in' }),
       });
       
       if (!response.ok) {
         const errorData = await response.json();
+        
+        // Tampilkan pesan khusus untuk double absen dan gunakan existingAttendance jika ada
+        if (errorData.error === "Anda sudah melakukan check-in hari ini" && errorData.existingAttendance) {
+          // Konversi data tanggal
+          const existingData = errorData.existingAttendance;
+          if (existingData.date) existingData.date = new Date(existingData.date);
+          if (existingData.checkIn) existingData.checkIn = new Date(existingData.checkIn);
+          if (existingData.checkOut) existingData.checkOut = new Date(existingData.checkOut);
+          
+          // Update todayRecord dengan data yang sudah ada
+          setTodayRecord(existingData);
+          setIsCheckedIn(true);
+          
+          console.log("Double check-in detected, using existing attendance:", existingData);
+          console.log("Setting isCheckedIn to true");
+          
+          setError(errorData.error || 'Gagal melakukan absen masuk');
+          return;
+        }
+        
         throw new Error(errorData.error || 'Gagal melakukan absen masuk');
       }
-      
+
       const data = await response.json();
-      console.log("Check-in response:", data); // Log untuk debugging
+      console.log("Check-in response:", data); // Log response untuk debugging
       
       // Reset checkOut jika ini adalah pengajuan ulang
       if (data.notes && data.notes.includes("Di Tolak") || 
@@ -199,8 +255,14 @@ export default function EmployeeDashboard() {
         data.checkOut = null;
       }
       
+      // Pastikan data berformat Date
+      if (data.date) data.date = new Date(data.date);
+      if (data.checkIn) data.checkIn = new Date(data.checkIn);
+      if (data.checkOut) data.checkOut = new Date(data.checkOut);
+      
       // Update state dengan informasi check-in baru
       setIsCheckedIn(true);
+      console.log("Check-in successful, setting isCheckedIn to true");
       setTodayRecord(data);
       
       // Tampilkan alert berdasarkan status pengajuan
@@ -213,6 +275,9 @@ export default function EmployeeDashboard() {
       } else {
         window.alert("✅ Absen masuk berhasil dicatat! Selamat bekerja!");
       }
+      
+      // Trigger storage event untuk refresh di tab lain
+      localStorage.setItem('attendance-update', Date.now().toString());
       
       // Update recent attendance
       const updatedAttendance = [...recentAttendance];
@@ -247,6 +312,12 @@ export default function EmployeeDashboard() {
       
       // Refresh attendance data to get the most up-to-date data
       await fetchAttendanceData();
+      
+      // Force another refresh after a short delay to ensure data consistency
+      setTimeout(() => {
+        console.log("Performing delayed refresh to ensure data consistency");
+        fetchAttendanceData();
+      }, 2000);
     } catch (error: any) {
       console.error("Error checking in:", error);
       setError(error.message || "Gagal melakukan absen masuk");
@@ -264,23 +335,55 @@ export default function EmployeeDashboard() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
         },
         body: JSON.stringify({ action: 'check-out' }),
       });
       
       if (!response.ok) {
         const errorData = await response.json();
+        
+        // Tampilkan pesan khusus untuk double checkout dan gunakan existingAttendance jika ada
+        if (errorData.error === "Anda sudah melakukan check-out hari ini" && errorData.existingAttendance) {
+          // Konversi data tanggal
+          const existingData = errorData.existingAttendance;
+          if (existingData.date) existingData.date = new Date(existingData.date);
+          if (existingData.checkIn) existingData.checkIn = new Date(existingData.checkIn);
+          if (existingData.checkOut) existingData.checkOut = new Date(existingData.checkOut);
+          
+          // Update todayRecord dengan data yang sudah ada
+          setTodayRecord(existingData);
+          setIsCheckedIn(false);
+          
+          console.log("Double check-out detected, using existing attendance:", existingData);
+          console.log("Setting isCheckedIn to false");
+          
+          setError(errorData.error || 'Gagal melakukan absen keluar');
+          return;
+        }
+        
         throw new Error(errorData.error || 'Gagal melakukan absen keluar');
       }
-      
+
       const data = await response.json();
+      
+      // Pastikan data berformat Date
+      if (data.date) data.date = new Date(data.date);
+      if (data.checkIn) data.checkIn = new Date(data.checkIn);
+      if (data.checkOut) data.checkOut = new Date(data.checkOut);
       
       // Update state with check-out information
       setIsCheckedIn(false);
+      console.log("Check-out successful, setting isCheckedIn to false");
       setTodayRecord(data);
       
       // Tampilkan alert untuk check out
       window.alert("✅ Absen keluar berhasil dicatat! Terima kasih atas kerja keras Anda hari ini!");
+      
+      // Trigger storage event untuk refresh di tab lain
+      localStorage.setItem('attendance-update', Date.now().toString());
       
       // Update recent attendance
       const updatedAttendance = [...recentAttendance];
@@ -303,6 +406,12 @@ export default function EmployeeDashboard() {
       
       // Refresh attendance data to get the most up-to-date data
       await fetchAttendanceData();
+      
+      // Force another refresh after a short delay to ensure data consistency
+      setTimeout(() => {
+        console.log("Performing delayed refresh to ensure data consistency");
+        fetchAttendanceData();
+      }, 2000);
     } catch (error: any) {
       console.error("Error checking out:", error);
       setError(error.message || "Gagal melakukan absen keluar");
@@ -313,6 +422,12 @@ export default function EmployeeDashboard() {
 
   // Tampilan kehadiran hari ini
   const renderTodayAttendance = () => {
+    // Debugging untuk melihat state saat ini
+    console.log("Current state in renderTodayAttendance:");
+    console.log("isCheckedIn:", isCheckedIn);
+    console.log("todayRecord:", todayRecord);
+    console.log("error:", error);
+    
     if (isLoading) {
       return (
         <div className="rounded-md bg-gray-50 px-6 py-5 sm:flex sm:items-center sm:justify-between">
@@ -350,6 +465,51 @@ export default function EmployeeDashboard() {
               className="inline-flex items-center rounded-md border border-transparent bg-gray-400 px-4 py-2 font-medium text-white shadow-sm sm:text-sm disabled:opacity-50"
             >
               Memproses...
+            </button>
+          </div>
+        </div>
+      );
+    }
+    
+    // If there's an error about already checking in, show check-out button
+    if (error && error.includes("sudah melakukan check-in hari ini")) {
+      return (
+        <div className="rounded-md bg-gray-50 px-6 py-5 sm:flex sm:items-center sm:justify-between">
+          <div className="sm:flex sm:items-center">
+            <svg
+              className="h-8 w-8 text-gray-400"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth="1.5"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+            <div className="mt-3 sm:ml-4 sm:mt-0">
+              <p className="text-sm font-medium text-gray-900">
+                Absen masuk sudah tercatat
+              </p>
+              <p className="mt-1 text-sm text-gray-500">
+                {new Date().toLocaleDateString("id-ID", {
+                  weekday: "long",
+                  year: "numeric",
+                  month: "long",
+                  day: "numeric",
+                })}
+              </p>
+            </div>
+          </div>
+          <div className="mt-4 sm:ml-6 sm:mt-0 sm:flex-shrink-0">
+            <button
+              onClick={handleCheckOut}
+              disabled={actionLoading}
+              className="inline-flex items-center rounded-md border border-transparent bg-red-600 px-4 py-2 font-medium text-white shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 sm:text-sm disabled:opacity-50"
+            >
+              {actionLoading ? "Memproses..." : "Absen Keluar"}
             </button>
           </div>
         </div>
@@ -400,6 +560,20 @@ export default function EmployeeDashboard() {
       );
     }
     
+    // Tambahkan kondisi untuk menampilkan tombol yang tepat berdasarkan status check-in/check-out
+    const hasCheckedIn = todayRecord && todayRecord.checkIn;
+    const hasCheckedOut = todayRecord && todayRecord.checkOut;
+    const isPengajuanUlang = todayRecord && 
+                           ((todayRecord.notes && todayRecord.notes.includes("Di Tolak")) || 
+                           (todayRecord.approvedAt && 
+                           ((todayRecord.overtime > 0 && !todayRecord.isOvertimeApproved) || 
+                           (todayRecord.isSundayWork && !todayRecord.isSundayWorkApproved))));
+    
+    console.log("Button display conditions:");
+    console.log("hasCheckedIn:", hasCheckedIn);
+    console.log("hasCheckedOut:", hasCheckedOut);
+    console.log("isPengajuanUlang:", isPengajuanUlang);
+    
     return (
       <div className="rounded-md bg-gray-50 px-6 py-5 sm:flex sm:items-center sm:justify-between">
         <div className="sm:flex sm:items-center">
@@ -420,7 +594,7 @@ export default function EmployeeDashboard() {
             <p className="text-sm font-medium text-gray-900">
               Absen masuk: {formatTime(todayRecord.checkIn)}
             </p>
-            {todayRecord.checkOut && (
+            {todayRecord.checkOut && !isPengajuanUlang && (
               <p className="text-sm font-medium text-gray-900">
                 Absen keluar: {formatTime(todayRecord.checkOut)}
               </p>
@@ -464,10 +638,7 @@ export default function EmployeeDashboard() {
           </div>
         </div>
         <div className="mt-4 sm:ml-6 sm:mt-0 sm:flex-shrink-0">
-          {((todayRecord.notes && todayRecord.notes.includes("Di Tolak")) || 
-            (todayRecord.approvedAt && 
-             ((todayRecord.overtime > 0 && !todayRecord.isOvertimeApproved) || 
-              (todayRecord.isSundayWork && !todayRecord.isSundayWorkApproved)))) ? (
+          {isPengajuanUlang ? (
             <button
               onClick={handleCheckIn}
               disabled={actionLoading}
@@ -476,16 +647,12 @@ export default function EmployeeDashboard() {
               {actionLoading ? "Memproses..." : "Absen Masuk"}
             </button>
           ) : 
-          (todayRecord.checkOut && 
-           !(todayRecord.notes && todayRecord.notes.includes("Di Tolak")) && 
-           !(todayRecord.approvedAt && 
-             ((todayRecord.overtime > 0 && !todayRecord.isOvertimeApproved) || 
-              (todayRecord.isSundayWork && !todayRecord.isSundayWorkApproved)))) ? (
+          (hasCheckedIn && hasCheckedOut) ? (
             <span className="inline-flex items-center rounded-md bg-green-50 px-4 py-2 text-sm font-medium text-green-700">
               Kehadiran hari ini sudah lengkap
             </span>
           ) : 
-          (todayRecord.checkIn && !todayRecord.checkOut) ? (
+          (hasCheckedIn && !hasCheckedOut) ? (
             <button
               onClick={handleCheckOut}
               disabled={actionLoading}
