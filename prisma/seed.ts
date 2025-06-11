@@ -404,35 +404,120 @@ async function main() {
   
   console.log('Payroll records created');
 
-  // Add sample notifications using raw SQL for the admin
-  await prisma.$executeRaw`
-    INSERT INTO notifications ("id", "userId", "title", "message", "type", "read", "createdAt")
-    VALUES 
-      (gen_random_uuid(), ${admin.id}, 'Welcome to the Admin Dashboard', 'You can manage employees, payroll, and more from here.', 'info', false, NOW()),
-      (gen_random_uuid(), ${admin.id}, 'New Employee Joined', 'John Employee has joined the Engineering department.', 'success', false, NOW() - interval '2 days'),
-      (gen_random_uuid(), ${admin.id}, 'Payroll Processing Due', 'Monthly payroll processing is due in 3 days.', 'warning', false, NOW() - interval '1 day'),
-      (gen_random_uuid(), ${admin.id}, 'New Reports Available', 'Financial summary reports for last month are now available.', 'info', false, NOW() - interval '2 days'),
-      (gen_random_uuid(), ${admin.id}, 'System Update', 'System will undergo maintenance this weekend.', 'warning', true, NOW() - interval '4 days')
-  `;
+  // Add sample notifications for the admin
+  await prisma.notification.create({
+    data: {
+      userId: admin.id,
+      title: 'Welcome to the Admin Dashboard',
+      message: 'You can manage employees, payroll, and more from here.',
+      type: 'info',
+      read: false,
+      createdAt: new Date()
+    }
+  });
+  
+  await prisma.notification.create({
+    data: {
+      userId: admin.id,
+      title: 'New Employee Joined',
+      message: 'John Employee has joined the Engineering department.',
+      type: 'success',
+      read: false,
+      createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000) // 2 days ago
+    }
+  });
+  
+  await prisma.notification.create({
+    data: {
+      userId: admin.id,
+      title: 'Payroll Processing Due',
+      message: 'Monthly payroll processing is due in 3 days.',
+      type: 'warning',
+      read: false,
+      createdAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000) // 1 day ago
+    }
+  });
+  
+  await prisma.notification.create({
+    data: {
+      userId: admin.id,
+      title: 'New Reports Available',
+      message: 'Financial summary reports for last month are now available.',
+      type: 'info',
+      read: false,
+      createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000) // 2 days ago
+    }
+  });
+  
+  await prisma.notification.create({
+    data: {
+      userId: admin.id,
+      title: 'System Update',
+      message: 'System will undergo maintenance this weekend.',
+      type: 'warning',
+      read: true,
+      createdAt: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000) // 4 days ago
+    }
+  });
 
   // Add sample notifications for each employee
   for (const employee of employees) {
-    await prisma.$executeRaw`
-      INSERT INTO notifications ("id", "userId", "title", "message", "type", "read", "createdAt")
-      VALUES 
-        (gen_random_uuid(), ${employee.id}, 'Welcome to the Employee Portal', 'You can view your attendance, payroll, and more.', 'info', false, NOW()),
-        (gen_random_uuid(), ${employee.id}, 'Attendance Confirmed', 'Your attendance for yesterday has been recorded.', 'success', false, NOW() - interval '1 day'),
-        (gen_random_uuid(), ${employee.id}, 'Payslip Available', 'Your payslip for the last month is now available for download.', 'info', ${Math.random() > 0.5}, NOW() - interval '15 days'),
-        (gen_random_uuid(), ${employee.id}, 'Profile Update Reminder', 'Please ensure your contact details are up to date.', 'info', ${Math.random() > 0.5}, NOW() - interval '7 days')
-    `;
+    await prisma.notification.create({
+      data: {
+        userId: employee.id,
+        title: 'Welcome to the Employee Portal',
+        message: 'You can view your attendance, payroll, and more.',
+        type: 'info',
+        read: false,
+        createdAt: new Date()
+      }
+    });
+    
+    await prisma.notification.create({
+      data: {
+        userId: employee.id,
+        title: 'Attendance Confirmed',
+        message: 'Your attendance for yesterday has been recorded.',
+        type: 'success',
+        read: false,
+        createdAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000) // 1 day ago
+      }
+    });
+    
+    await prisma.notification.create({
+      data: {
+        userId: employee.id,
+        title: 'Payslip Available',
+        message: 'Your payslip for the last month is now available for download.',
+        type: 'info',
+        read: Math.random() > 0.5,
+        createdAt: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000) // 15 days ago
+      }
+    });
+    
+    await prisma.notification.create({
+      data: {
+        userId: employee.id,
+        title: 'Profile Update Reminder',
+        message: 'Please ensure your contact details are up to date.',
+        type: 'info',
+        read: Math.random() > 0.5,
+        createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) // 7 days ago
+      }
+    });
     
     // Add a late check-in notification randomly to some employees
     if (Math.random() > 0.3) {
-      await prisma.$executeRaw`
-        INSERT INTO notifications ("id", "userId", "title", "message", "type", "read", "createdAt")
-        VALUES 
-          (gen_random_uuid(), ${employee.id}, 'Late Check-in Recorded', 'You were marked late for your check-in on Monday.', 'warning', false, NOW() - interval '5 days')
-      `;
+      await prisma.notification.create({
+        data: {
+          userId: employee.id,
+          title: 'Late Check-in Recorded',
+          message: 'You were marked late for your check-in on Monday.',
+          type: 'warning',
+          read: false,
+          createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000) // 5 days ago
+        }
+      });
     }
   }
 

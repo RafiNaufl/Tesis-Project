@@ -231,7 +231,7 @@ export default function AttendanceManagement() {
     };
     
     // Function untuk fetch attendance
-    const fetchAttendance = async () => {
+    const fetchAttendanceRecords = async () => {
       try {
         const queryParams = new URLSearchParams({
           month: selectedMonth.toString(),
@@ -351,10 +351,10 @@ export default function AttendanceManagement() {
     window.addEventListener('storage', handleStorageChange);
     
     // Also set up an interval to refresh data every 30 seconds
-    const intervalId = setInterval(fetchAttendance, 30000);
+    const intervalId = setInterval(fetchAttendanceRecords, 30000);
     
-    // Jalankan fetchAttendance sekali saat komponen dimuat
-    fetchAttendance();
+    // Jalankan fetchAttendanceRecords sekali saat komponen dimuat
+    fetchAttendanceRecords();
     
     // Cleanup
     return () => {
@@ -483,27 +483,40 @@ export default function AttendanceManagement() {
         body: JSON.stringify({ action: "check-out" }),
       });
 
-      if (!response.ok) {
+      // Ambil data respons terlebih dahulu
         const data = await response.json();
         
+      // Cek status respons setelah mendapatkan data
+      if (!response.ok) {
         // Tampilkan pesan khusus untuk double absen
         if (data.error === "Anda sudah melakukan check-out hari ini") {
-          // Jangan tampilkan alert, tampilkan saja pesan di UI dengan ramah
+          // Jika ada data existingAttendance dari respons, gunakan itu
+          if (data.existingAttendance) {
+            // Konversi data tanggal
+            if (data.existingAttendance.date) data.existingAttendance.date = new Date(data.existingAttendance.date);
+            if (data.existingAttendance.checkIn) data.existingAttendance.checkIn = new Date(data.existingAttendance.checkIn);
+            if (data.existingAttendance.checkOut) data.existingAttendance.checkOut = new Date(data.existingAttendance.checkOut);
+            
+            // Update todayRecord dengan data yang sudah ada
+            setTodayRecord(data.existingAttendance);
+          }
+          
+          // Tampilkan pesan ramah di UI
           setError(`Anda sudah melakukan check-out hari ini. Data kehadiran sebelumnya: Check-in ${todayRecord?.checkIn ? formatTime(todayRecord.checkIn) : '-'}, Check-out ${todayRecord?.checkOut ? formatTime(todayRecord.checkOut) : '-'}`);
           return; // Hentikan eksekusi
         }
         
         throw new Error(data.error || "Gagal melakukan absen keluar");
       }
-
-      const data = await response.json();
       
       // Pastikan data berformat Date
       if (data.date) data.date = new Date(data.date);
       if (data.checkIn) data.checkIn = new Date(data.checkIn);
       if (data.checkOut) data.checkOut = new Date(data.checkOut);
       
+      // Update state dengan data terbaru
       setTodayRecord(data);
+      console.log("Check-out berhasil, data:", data);
       
       // Simpan data absensi ke localStorage segera setelah absen keluar berhasil
       localStorage.setItem('todayAttendance', JSON.stringify({
@@ -531,33 +544,19 @@ export default function AttendanceManagement() {
         window.dispatchEvent(new Event(NOTIFICATION_UPDATE_EVENT));
         // Tambahkan event untuk memperbarui aktivitas di dashboard admin
         window.dispatchEvent(new Event(ACTIVITY_UPDATE_EVENT));
+      }
         
-        // Tambahkan juga storage event untuk komunikasi antar tab
+      // Tambahkan storage event untuk komunikasi antar tab
         localStorage.setItem('attendance-update', Date.now().toString());
         localStorage.setItem('notification-update', Date.now().toString());
-      }
       
       // Refresh attendance records
-      const queryParams = new URLSearchParams({
-        month: selectedMonth.toString(),
-        year: selectedYear.toString(),
-      });
-      const refreshResponse = await fetch(`/api/attendance?${queryParams}`);
-      if (refreshResponse.ok) {
-        const refreshData = await refreshResponse.json();
-        
-        // Pastikan refreshData adalah array sebelum meng-update state
-        if (refreshData && refreshData.attendances && Array.isArray(refreshData.attendances)) {
-          setAttendanceRecords(refreshData.attendances);
-        } else if (Array.isArray(refreshData)) {
-          // Jika data langsung berupa array
-          setAttendanceRecords(refreshData);
-        } else {
-          // Jika format tidak dikenali, gunakan array kosong
-          console.warn("Format data refresh tidak dikenali:", refreshData);
-          setAttendanceRecords([]);
-        }
-      }
+      await fetchAttendanceRecords();
+      
+      // Force refresh setelah beberapa saat untuk memastikan data konsisten
+      setTimeout(() => {
+        fetchAttendanceRecords();
+      }, 1000);
     } catch (err: any) {
       console.error("Error checking out:", err);
       setError(err.message || "Gagal melakukan absen keluar");
@@ -1361,4 +1360,4 @@ export default function AttendanceManagement() {
       )}
     </div>
   );
-} 
+}

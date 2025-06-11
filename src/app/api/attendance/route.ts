@@ -373,9 +373,27 @@ export async function POST(req: NextRequest) {
           );
         }
         
+        try {
         // Proses check-out
         const attendance = await recordCheckOut(employee.id);
         console.log("Check-out recorded:", attendance);
+          
+          // Pastikan data lengkap sebelum dikirim ke klien
+          const formattedAttendance = formatAttendanceResponse({
+            id: attendance.id,
+            date: attendance.date,
+            checkIn: attendance.checkIn,
+            checkOut: attendance.checkOut,
+            status: attendance.status,
+            notes: attendance.notes,
+            isLate: attendance.isLate || false,
+            lateMinutes: attendance.lateMinutes || 0,
+            overtime: attendance.overtime || 0,
+            isOvertimeApproved: attendance.isOvertimeApproved || false,
+            isSundayWork: attendance.isSundayWork || false,
+            isSundayWorkApproved: attendance.isSundayWorkApproved || false,
+            approvedAt: attendance.approvedAt
+          });
         
         // Notifikasi karyawan
         let message = "Absen keluar berhasil dicatat.";
@@ -392,12 +410,19 @@ export async function POST(req: NextRequest) {
         await createCheckOutNotification(employee.id, message);
         
         // Kirim respons dengan header notifikasi dan cache control
-        const response = NextResponse.json(formatAttendanceResponse(attendance));
+          const response = NextResponse.json(formattedAttendance);
         addNotificationUpdateHeader(response);
         response.headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
         response.headers.set('Pragma', 'no-cache');
         response.headers.set('Expires', '0');
         return response;
+        } catch (error: any) {
+          console.error("Error during check-out:", error);
+          return NextResponse.json(
+            { error: `Gagal melakukan absen keluar: ${error.message}` },
+            { status: 500 }
+          );
+        }
       } else {
         return NextResponse.json(
           { error: "Tindakan tidak valid. Gunakan 'check-in' atau 'check-out'." },

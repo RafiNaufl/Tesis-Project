@@ -246,13 +246,23 @@ export const recordCheckOut = async (employeeId: string) => {
   const overtimeMinutes = calculateOvertimeMinutes(now, today, false, false);
   
   // Update catatan dengan check-out dan overtime
-  return prisma.attendance.update({
+  const updatedAttendance = await prisma.attendance.update({
     where: { id: attendance.id },
     data: {
       checkOut: now,
       overtime: overtimeMinutes, // Simpan overtime meskipun belum disetujui
     },
   });
+  
+  // Log untuk debugging
+  console.log("Updated attendance after checkout:", {
+    id: updatedAttendance.id,
+    checkIn: updatedAttendance.checkIn,
+    checkOut: updatedAttendance.checkOut,
+    overtime: updatedAttendance.overtime
+  });
+  
+  return updatedAttendance;
 };
 
 /**
@@ -368,7 +378,7 @@ export const getMonthlyAttendanceReport = async (employeeId: string, year: numbe
       },
     },
     orderBy: {
-      date: 'asc',
+      date: 'desc',
     },
   });
 
@@ -408,4 +418,4 @@ export const getMonthlyAttendanceReport = async (employeeId: string, year: numbe
     totalLatePenalty,
     attendances,
   };
-}; 
+};
