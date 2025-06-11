@@ -194,34 +194,67 @@ export default function AdminDashboard() {
         // Periksa dan dapatkan data kehadiran yang valid
         const checkInTime = item.checkIn ? formatDateSafely(item.checkIn) : formatDateSafely(item.date);
         
+        // Tentukan action berdasarkan activityType dari API
+        let action = "melakukan aktivitas";
+        let displayTime = checkInTime;
+        
+        if (item.activityType === 'checkout') {
+          action = "absen keluar";
+          displayTime = formatDateSafely(item.activityTime);
+        } else if (item.activityType === 'checkin') {
+          if (item.status === "LATE") {
+            action = "absen masuk (terlambat)";
+          } else {
+            action = "absen masuk";
+          }
+          displayTime = formatDateSafely(item.activityTime);
+        } else if (item.activityType === 'status') {
+          if (item.status === "ABSENT") {
+            action = "tidak hadir";
+          } else if (item.status === "LEAVE") {
+            action = "sedang cuti";
+          }
+          displayTime = formatDateSafely(item.activityTime);
+        } else {
+          // Fallback untuk kompatibilitas mundur
+          if (item.checkIn && item.checkOut) {
+            action = "absen keluar";
+            displayTime = formatDateSafely(item.checkOut);
+          } else if (item.checkIn && !item.checkOut) {
+            if (item.status === "LATE") {
+              action = "absen masuk (terlambat)";
+            } else {
+              action = "absen masuk";
+            }
+            displayTime = formatDateSafely(item.checkIn);
+          } else if (item.status === "ABSENT") {
+            action = "tidak hadir";
+          } else if (item.status === "LEAVE") {
+            action = "sedang cuti";
+          } else {
+            action = "melakukan absensi";
+          }
+        }
+        
+        // Create unique ID by combining attendance ID with activity type and timestamp
+        const uniqueId = item.activityType 
+          ? `${item.id}-${item.activityType}-${item.activityTime || item.date}`
+          : item.id || `activity-${index}-${Date.now()}`;
+        
         return {
-          id: item.id || `activity-${index}`,
+          id: uniqueId,
           employeeName: item.employee?.user?.name || (item.employee?.name || "Karyawan Tidak Diketahui"),
-          action: item.status === "PRESENT" ? "telah absen masuk" : 
-                 item.status === "ABSENT" ? "tidak hadir" : 
-                 item.status === "LATE" ? "terlambat masuk" : 
-                 item.status === "LEAVE" ? "sedang cuti" : "masuk setengah hari",
-          time: checkInTime,
+          action: action,
+          time: displayTime,
           status: item.status
         };
       });
       
       console.log("Formatted activities:", activities);
       
-      // Sortir aktivitas berdasarkan waktu terbaru (jika date atau checkIn tersedia)
-      const sortedActivities = activities.sort((a: ActivityItem, b: ActivityItem) => {
-        const aItem = attendanceRecords.find((item: any) => item.id === a.id || `activity-${item.id}` === a.id);
-        const bItem = attendanceRecords.find((item: any) => item.id === b.id || `activity-${item.id}` === b.id);
-        
-        const aTime = aItem?.checkIn || aItem?.date || new Date();
-        const bTime = bItem?.checkIn || bItem?.date || new Date();
-        
-        // Sortir dari yang terbaru ke yang terlama
-        return new Date(bTime).getTime() - new Date(aTime).getTime();
-      });
-      
-      // Batasi hanya 5 aktivitas terbaru
-      setRecentActivities(sortedActivities.slice(0, 5));
+      // Data sudah diurutkan dari API, tidak perlu sorting lagi
+      // Batasi hanya 5 aktivitas terbaru (meskipun API sudah membatasi dengan limit)
+      setRecentActivities(activities.slice(0, 5));
       lastFetchTimeRef.current = Date.now();
     } catch (error: any) {
       console.error("Error fetching dashboard data:", error);
@@ -633,4 +666,4 @@ export default function AdminDashboard() {
       </div>
     </div>
   );
-} 
+}

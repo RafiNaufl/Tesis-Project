@@ -68,10 +68,93 @@ export async function GET(req: NextRequest) {
     const employeeId = searchParams.get("employeeId");
     const month = searchParams.get("month");
     const year = searchParams.get("year");
+    const limit = searchParams.get("limit");
 
     // Parse month and year if provided
     const monthNum = month ? parseInt(month) : new Date().getMonth() + 1;
     const yearNum = year ? parseInt(year) : new Date().getFullYear();
+    const limitNum = limit ? parseInt(limit) : undefined;
+
+    // Special case: If limit is provided without month/year, return recent activities for admin dashboard
+    if (limitNum && session.user.role === "ADMIN" && !month && !year) {
+      // Get recent attendance records across all employees for admin dashboard
+      const recentAttendances = await prisma.attendance.findMany({
+        where: {
+          employee: {
+            isActive: true
+          }
+        },
+        include: {
+          employee: {
+            include: {
+              user: {
+                select: {
+                  name: true
+                }
+              }
+            }
+          }
+        },
+        orderBy: [
+          {
+            date: 'desc'
+          },
+          {
+            checkIn: 'desc'
+          }
+        ],
+        take: limitNum * 2 // Ambil lebih banyak untuk memungkinkan aktivitas terpisah
+      });
+
+      // Buat aktivitas terpisah untuk check-in dan check-out
+      const activities: any[] = [];
+      
+      recentAttendances.forEach(attendance => {
+        // Tambahkan aktivitas check-out jika ada
+        if (attendance.checkOut) {
+          activities.push({
+            ...formatAttendanceResponse(attendance),
+            activityType: 'checkout',
+            activityTime: attendance.checkOut
+          });
+        }
+        
+        // Tambahkan aktivitas check-in jika ada
+        if (attendance.checkIn) {
+          activities.push({
+            ...formatAttendanceResponse(attendance),
+            activityType: 'checkin',
+            activityTime: attendance.checkIn
+          });
+        }
+        
+        // Tambahkan aktivitas lain (absent, leave) jika tidak ada check-in/out
+        if (!attendance.checkIn && !attendance.checkOut && 
+            (attendance.status === 'ABSENT' || attendance.status === 'LEAVE')) {
+          activities.push({
+            ...formatAttendanceResponse(attendance),
+            activityType: 'status',
+            activityTime: attendance.date
+          });
+        }
+      });
+      
+      // Urutkan berdasarkan waktu aktivitas dan batasi
+      const sortedActivities = activities
+        .sort((a, b) => new Date(b.activityTime).getTime() - new Date(a.activityTime).getTime())
+        .slice(0, limitNum);
+      
+      const formattedActivities = sortedActivities;
+      
+      const response = NextResponse.json({ attendances: formattedActivities });
+      
+      // Add cache control headers to prevent caching
+      response.headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+      response.headers.set('Pragma', 'no-cache');
+      response.headers.set('Expires', '0');
+      
+      return response;
+    }
 
     // Admins can see all records, employees can only see their own
     if (session.user.role !== "ADMIN" && !employeeId) {
@@ -550,4 +633,4 @@ export async function PUT(req: NextRequest) {
       { status: 500 }
     );
   }
-} 
+}

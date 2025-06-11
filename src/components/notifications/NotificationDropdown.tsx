@@ -27,7 +27,7 @@ export default function NotificationDropdown() {
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const lastFetchTimeRef = useRef<number>(0);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const POLLING_INTERVAL = 1000; // Interval polling 10 detik, lebih cepat dari 30 detik
+  const POLLING_INTERVAL = 30000; // Interval polling 30 detik untuk mengurangi beban server
   const [fetchError, setFetchError] = useState<boolean>(false);
 
   // Fungsi untuk memeriksa status server API notifikasi
@@ -218,9 +218,26 @@ export default function NotificationDropdown() {
       fetchNotifications().catch(err => console.error("Error pada initial fetch:", err));
       lastFetchTimeRef.current = Date.now();
       
-      // Set up polling for notifications - check every 10 seconds but dengan try-catch
+      // Set up polling for notifications dengan error handling yang lebih baik
       pollingIntervalRef.current = setInterval(() => {
-        fetchNotifications(false).catch(err => console.error("Error pada polling fetch:", err));
+        // Hanya lakukan polling jika tidak ada error yang sedang berlangsung
+        if (!fetchError) {
+          fetchNotifications(false).catch(err => {
+            console.error("Error pada polling fetch:", err);
+            // Jika terjadi error berulang, hentikan polling sementara
+            if (pollingIntervalRef.current) {
+              clearInterval(pollingIntervalRef.current);
+              // Restart polling setelah 5 menit
+              setTimeout(() => {
+                if (session) {
+                  pollingIntervalRef.current = setInterval(() => {
+                    fetchNotifications(false).catch(err => console.error("Error pada retry polling:", err));
+                  }, POLLING_INTERVAL);
+                }
+              }, 300000); // 5 menit
+            }
+          });
+        }
       }, POLLING_INTERVAL);
       
       // Set up global event listener for attendance actions
@@ -270,7 +287,7 @@ export default function NotificationDropdown() {
         });
       };
     }
-  }, [session, fetchNotifications, checkForNewNotifications]);
+  }, [session, fetchNotifications, checkForNewNotifications, fetchError]);
 
   // Add a focus/visibility change event listener to refresh on tab focus
   useEffect(() => {
@@ -593,4 +610,4 @@ export default function NotificationDropdown() {
       }}
     </Menu>
   );
-} 
+}

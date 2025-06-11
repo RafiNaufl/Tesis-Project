@@ -25,4 +25,4 @@ export async function HEAD() {
     console.error('Health check error:', error);
     return new NextResponse(null, { status: 500 });
   }
-} 
+}
