@@ -176,7 +176,7 @@ export default function LeaveRequestForm({ onLeaveSubmitted }: LeaveRequestFormP
                   if (range?.from) {
                     onDateSelect({
                       from: range.from,
-                      to: range.to,
+                      to: range.to || null,
                     });
                   }
                 }}
@@ -251,4 +251,4 @@ export default function LeaveRequestForm({ onLeaveSubmitted }: LeaveRequestFormP
       </form>
     </div>
   );
-} 
+}

@@ -6,7 +6,7 @@ import { authOptions } from "@/lib/auth";
 // GET /api/attendance/[id] - Get attendance record by ID
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -15,7 +15,7 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const attendanceId = params.id;
+    const { id: attendanceId } = await params;
 
     // Get the attendance record
     const attendance = await db.attendance.findUnique({
@@ -65,7 +65,7 @@ export async function GET(
 // PUT /api/attendance/[id] - Update attendance record
 export async function PUT(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -82,7 +82,7 @@ export async function PUT(
       );
     }
 
-    const attendanceId = params.id;
+    const { id: attendanceId } = await params;
     const body = await req.json();
     const { checkIn, checkOut, status, notes } = body;
 
@@ -125,7 +125,7 @@ export async function PUT(
 // DELETE /api/attendance/[id] - Delete attendance record
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -142,7 +142,7 @@ export async function DELETE(
       );
     }
 
-    const attendanceId = params.id;
+    const { id: attendanceId } = await params;
 
     // Check if the attendance record exists
     const attendance = await db.attendance.findUnique({
@@ -171,4 +171,4 @@ export async function DELETE(
       { status: 500 }
     );
   }
-} 
+}

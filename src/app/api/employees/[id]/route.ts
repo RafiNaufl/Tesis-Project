@@ -6,7 +6,7 @@ import prisma from "@/lib/prisma";
 // GET a single employee
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -15,7 +15,7 @@ export async function GET(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const employeeId = params.id;
+    const { id: employeeId } = await params;
 
     // Allow admins to access any employee, but employees can only access their own data
     if (session.user.role !== "ADMIN") {
@@ -65,7 +65,7 @@ export async function GET(
 // PUT update an employee
 export async function PUT(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -79,7 +79,7 @@ export async function PUT(
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const employeeId = params.id;
+    const { id: employeeId } = await params;
     const body = await req.json();
     const {
       name,
@@ -159,7 +159,7 @@ export async function PUT(
 // DELETE an employee
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -173,7 +173,7 @@ export async function DELETE(
       return NextResponse.json({ error: "Akses ditolak" }, { status: 403 });
     }
 
-    const employeeId = params.id;
+    const { id: employeeId } = await params;
 
     // Find the employee
     const employee = await prisma.employee.findUnique({
@@ -265,4 +265,4 @@ export async function DELETE(
       { status: statusCode }
     );
   }
-} 
+}

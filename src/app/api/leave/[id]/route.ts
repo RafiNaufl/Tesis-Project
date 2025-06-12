@@ -8,7 +8,7 @@ import { db } from "@/lib/db";
 // Mendapatkan detail permohonan cuti berdasarkan ID
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -19,7 +19,7 @@ export async function GET(
       );
     }
 
-    const leaveId = params.id;
+    const { id: leaveId } = await params;
 
     // Dapatkan permohonan cuti
     const leave = await prisma.leave.findUnique({
@@ -68,7 +68,7 @@ export async function GET(
 // Memperbarui status permohonan cuti (menyetujui atau menolak)
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession();
@@ -96,9 +96,11 @@ export async function PATCH(
       );
     }
     
+    const { id } = await params;
+    
     // Get leave request
     const leave = await db.leave.findUnique({
-      where: { id: params.id },
+      where: { id },
       include: {
         employee: {
           include: {
@@ -124,7 +126,7 @@ export async function PATCH(
     
     // Update leave status
     const updatedLeave = await db.leave.update({
-      where: { id: params.id },
+      where: { id },
       data: {
         status,
         approvedBy: user.id,
@@ -200,7 +202,7 @@ export async function PATCH(
 // Menghapus permohonan cuti (hanya untuk admin atau pemilik cuti)
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -211,7 +213,7 @@ export async function DELETE(
       );
     }
 
-    const leaveId = params.id;
+    const { id: leaveId } = await params;
 
     // Dapatkan permohonan cuti
     const leave = await prisma.leave.findUnique({
@@ -259,4 +261,4 @@ export async function DELETE(
       { status: 500 }
     );
   }
-} 
+}

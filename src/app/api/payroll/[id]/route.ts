@@ -9,7 +9,7 @@ type PayrollStatus = "PENDING" | "PAID" | "CANCELLED";
 // GET: Fetch a single payroll record by ID
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -21,10 +21,12 @@ export async function GET(
       );
     }
     
+    const { id } = await params;
+    
     // Get the payroll record
     const payroll = await db.payroll.findUnique({
       where: {
-        id: params.id,
+        id,
       },
       include: {
         employee: {
@@ -117,7 +119,7 @@ export async function GET(
 // PATCH: Update a payroll record (admin only)
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -129,10 +131,12 @@ export async function PATCH(
       );
     }
     
+    const { id } = await params;
+    
     // Check if the payroll record exists
     const payroll = await db.payroll.findUnique({
       where: {
-        id: params.id,
+        id,
       },
     });
     
@@ -198,7 +202,7 @@ export async function PATCH(
     // Update the payroll record
     const updatedPayroll = await db.payroll.update({
       where: {
-        id: params.id,
+        id,
       },
       data: updateData,
       include: {
@@ -235,7 +239,7 @@ export async function PATCH(
 // DELETE: Delete a payroll record (admin only)
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -247,10 +251,12 @@ export async function DELETE(
       );
     }
     
+    const { id } = await params;
+    
     // Check if the payroll record exists
     const payroll = await db.payroll.findUnique({
       where: {
-        id: params.id,
+        id,
       },
     });
     
@@ -272,7 +278,7 @@ export async function DELETE(
     // Delete the payroll record
     await db.payroll.delete({
       where: {
-        id: params.id,
+        id,
       },
     });
     
@@ -287,4 +293,4 @@ export async function DELETE(
       { status: 500 }
     );
   }
-} 
+}

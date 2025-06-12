@@ -52,13 +52,18 @@ function Calendar({
         ...classNames,
       }}
       components={{
-        IconLeft: () => <ChevronLeftIcon className="h-4 w-4" />,
-        IconRight: () => <ChevronRightIcon className="h-4 w-4" />,
+        Chevron: ({ orientation, ...props }) => {
+          const Icon = orientation === 'left' ? ChevronLeftIcon : ChevronRightIcon;
+          return <Icon className="h-4 w-4" {...props} />;
+        },
       }}
       formatters={{
-        formatWeekdayName: (weekday) => weekdayLabels[weekday],
+        formatWeekdayName: (weekday, options) => {
+          const dayIndex = weekday.getDay();
+          return weekdayLabels[dayIndex === 0 ? 6 : dayIndex - 1];
+        },
         formatCaption: (date) => {
-          return format(date, "MMMM yyyy", { locale });
+          return format(date, "MMMM yyyy", { locale: id });
         },
       }}
       weekStartsOn={1} // Mulai dari hari Senin
@@ -68,4 +73,4 @@ function Calendar({
 }
 Calendar.displayName = "Calendar";
 
-export { Calendar }; 
+export { Calendar };

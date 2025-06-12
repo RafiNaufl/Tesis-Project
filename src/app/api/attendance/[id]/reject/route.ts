@@ -7,7 +7,7 @@ import { createNotification } from "@/lib/notification";
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions);
@@ -20,7 +20,7 @@ export async function POST(
       );
     }
     
-    const attendanceId = params.id;
+    const { id: attendanceId } = await params;
     
     // Validasi ID kehadiran
     if (!attendanceId) {
@@ -94,4 +94,4 @@ export async function POST(
       { status: 500 }
     );
   }
-} 
+}

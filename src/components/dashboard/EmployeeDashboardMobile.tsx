@@ -111,10 +111,13 @@ export default function EmployeeDashboardMobile() {
       }));
       setRecentAttendance(recentRecords);
       
-      const today = new Date().toISOString().split('T')[0];
-      const todayRecord = attendanceData.find((item: any) => 
-        new Date(item.date).toISOString().split('T')[0] === today
-      );
+      const today = new Date();
+      const todayString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+      const todayRecord = attendanceData.find((item: any) => {
+        const itemDate = new Date(item.date);
+        const itemDateString = `${itemDate.getFullYear()}-${String(itemDate.getMonth() + 1).padStart(2, '0')}-${String(itemDate.getDate()).padStart(2, '0')}`;
+        return itemDateString === todayString;
+      });
       
       if (todayRecord) {
         const processedTodayRecord = {
