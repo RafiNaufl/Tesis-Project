@@ -79,8 +79,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <div className="fixed inset-y-0 left-0 flex w-full max-w-xs flex-col bg-white">
           <div className="h-0 flex-1 overflow-y-auto pt-5 pb-4">
             <div className="flex flex-shrink-0 items-center px-4">
-              <h1 className="text-xl font-bold">EMS</h1>
+            <div className="flex items-center space-x-2">
+              <Image src="/logoctu.png" alt="CV Catur Teknik Utama" width={40} height={40} />
+              <div>
+                <h1 className="text-lg font-bold text-blue-800">CV CTU</h1>
+                <p className="text-xs text-gray-600">Attendance & Payroll System</p>
+              </div>
             </div>
+          </div>
             <nav className="mt-5 space-y-1 px-2">
               {filteredNavigation.map((item) => (
                 <Link
@@ -131,7 +137,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <div className="flex min-h-0 flex-1 flex-col border-r border-gray-200 bg-white">
           <div className="flex flex-1 flex-col overflow-y-auto pt-5 pb-4">
             <div className="flex flex-shrink-0 items-center px-4">
-              <h1 className="text-xl font-bold">EMS</h1>
+              <div className="flex items-center space-x-2">
+                <Image src="/logoctu.png" alt="CV Catur Teknik Utama" width={40} height={40} />
+                <div>
+                  <h1 className="text-lg font-bold text-blue-800">CV CTU</h1>
+                  <p className="text-xs text-gray-600">Attendance & Payroll System</p>
+                </div>
+              </div>
             </div>
             <nav className="mt-5 flex-1 space-y-1 bg-white px-2">
               {filteredNavigation.map((item) => (
@@ -242,4 +254,4 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </div>
     </div>
   );
-} 
+}

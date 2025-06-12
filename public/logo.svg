@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <!-- Gear icon representing technical/engineering company -->
+  <circle cx="50" cy="50" r="40" fill="#0047AB" />
+  <circle cx="50" cy="50" r="30" fill="white" />
+  
+  <!-- Gear teeth -->
+  <g fill="#0047AB">
+    <!-- Vertical teeth -->
+    <rect x="48" y="5" width="4" height="15" />
+    <rect x="48" y="80" width="4" height="15" />
+    
+    <!-- Horizontal teeth -->
+    <rect x="5" y="48" width="15" height="4" />
+    <rect x="80" y="48" width="15" height="4" />
+    
+    <!-- Diagonal teeth -->
+    <rect x="15" y="15" width="12" height="4" transform="rotate(45 15 15)" />
+    <rect x="81" y="81" width="12" height="4" transform="rotate(45 81 81)" />
+    <rect x="15" y="81" width="12" height="4" transform="rotate(-45 15 81)" />
+    <rect x="81" y="15" width="12" height="4" transform="rotate(-45 81 15)" />
+  </g>
+  
+  <!-- Compass directions representing guidance and direction -->
+  <g>
+    <!-- North pointer -->
+    <path d="M50 25 L45 40 L50 35 L55 40 Z" fill="#FF0000" />
+    
+    <!-- East pointer -->
+    <path d="M75 50 L60 45 L65 50 L60 55 Z" fill="#FF0000" />
+    
+    <!-- South pointer -->
+    <path d="M50 75 L55 60 L50 65 L45 60 Z" fill="#FF0000" />
+    
+    <!-- West pointer -->
+    <path d="M25 50 L40 55 L35 50 L40 45 Z" fill="#FF0000" />
+  </g>
+</svg>
