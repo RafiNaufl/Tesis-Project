@@ -1,0 +1,263 @@
+<svg width="1400" height="2000" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .title { font-family: Arial, sans-serif; font-size: 24px; font-weight: bold; text-anchor: middle; }
+      .subtitle { font-family: Arial, sans-serif; font-size: 18px; font-weight: bold; text-anchor: middle; }
+      .activity { fill: #e3f2fd; stroke: #1976d2; stroke-width: 2; rx: 20; ry: 20; }
+      .decision { fill: #fff3e0; stroke: #f57c00; stroke-width: 2; }
+      .start-end { fill: #2e2e2e; stroke: #000; stroke-width: 3; }
+      .fork-join { fill: #000; stroke: #000; stroke-width: 2; }
+      .swimlane { fill: none; stroke: #666; stroke-width: 2; stroke-dasharray: 5,5; }
+      .arrow { stroke: #333; stroke-width: 2; fill: none; marker-end: url(#arrowhead); }
+      .text { font-family: Arial, sans-serif; font-size: 12px; text-anchor: middle; }
+      .small-text { font-family: Arial, sans-serif; font-size: 10px; text-anchor: middle; }
+      .decision-text { font-family: Arial, sans-serif; font-size: 10px; text-anchor: middle; }
+      .yes-no { font-family: Arial, sans-serif; font-size: 10px; font-weight: bold; fill: #d32f2f; }
+      .swimlane-label { font-family: Arial, sans-serif; font-size: 14px; font-weight: bold; text-anchor: middle; writing-mode: tb; }
+      .note { fill: #fffde7; stroke: #fbc02d; stroke-width: 1; rx: 5; ry: 5; }
+      .note-text { font-family: Arial, sans-serif; font-size: 10px; font-style: italic; }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#333" />
+    </marker>
+  </defs>
+  
+  <!-- Title -->
+  <text x="700" y="30" class="title">Activity Diagram - Sistem Manajemen Absensi dan Payroll</text>
+  
+  <!-- Swimlanes -->
+  <rect x="50" y="80" width="200" height="1850" class="swimlane" />
+  <text x="150" y="100" class="swimlane-label">Karyawan</text>
+  
+  <rect x="250" y="80" width="200" height="1850" class="swimlane" />
+  <text x="350" y="100" class="swimlane-label">Sistem</text>
+  
+  <rect x="450" y="80" width="200" height="1850" class="swimlane" />
+  <text x="550" y="100" class="swimlane-label">Admin</text>
+  
+  <rect x="650" y="80" width="200" height="1850" class="swimlane" />
+  <text x="750" y="100" class="swimlane-label">Database</text>
+  
+  <!-- Start Node -->
+  <circle cx="150" cy="150" r="15" class="start-end" />
+  
+  <!-- Login Activity -->
+  <rect x="100" y="200" width="100" height="40" class="activity" />
+  <text x="150" y="225" class="text">Login</text>
+  <path d="M 150,165 V 200" class="arrow" />
+  
+  <!-- Authentication Decision -->
+  <polygon points="350,220 400,240 350,260 300,240" class="decision" />
+  <text x="350" y="245" class="decision-text">Valid?</text>
+  <path d="M 200,220 H 300" class="arrow" />
+  
+  <!-- Invalid Login Path -->
+  <rect x="100" y="300" width="100" height="40" class="activity" />
+  <text x="150" y="325" class="text">Tampilkan Error</text>
+  <text x="250" y="280" class="yes-no">Tidak</text>
+  <path d="M 300,240 H 250 V 320 H 200" class="arrow" />
+  <path d="M 150,340 V 360 H 80 V 220 H 100" class="arrow" />
+  
+  <!-- Role Decision -->
+  <polygon points="350,380 400,400 350,420 300,400" class="decision" />
+  <text x="350" y="405" class="decision-text">Role?</text>
+  <text x="420" y="280" class="yes-no">Ya</text>
+  <path d="M 400,240 H 450 V 400 H 400" class="arrow" />
+  
+  <!-- Employee Path -->
+  <rect x="100" y="480" width="100" height="40" class="activity" />
+  <text x="150" y="505" class="text">Dashboard Karyawan</text>
+  <text x="280" y="440" class="yes-no">Karyawan</text>
+  <path d="M 300,400 H 250 V 500 H 200" class="arrow" />
+  
+  <!-- Admin Path -->
+  <rect x="500" y="480" width="100" height="40" class="activity" />
+  <text x="550" y="505" class="text">Dashboard Admin</text>
+  <text x="420" y="440" class="yes-no">Admin</text>
+  <path d="M 400,400 H 450 V 500 H 500" class="arrow" />
+  
+  <!-- Employee Activities -->
+  <rect x="100" y="580" width="100" height="40" class="activity" />
+  <text x="150" y="605" class="text">Pilih Menu Absensi</text>
+  <path d="M 150,520 V 580" class="arrow" />
+  
+  <!-- Check-in Process -->
+  <rect x="100" y="680" width="100" height="40" class="activity" />
+  <text x="150" y="705" class="text">Check-in</text>
+  <path d="M 150,620 V 680" class="arrow" />
+  
+  <!-- Capture Photo -->
+  <rect x="100" y="780" width="100" height="40" class="activity" />
+  <text x="150" y="805" class="text">Ambil Foto</text>
+  <path d="M 150,720 V 780" class="arrow" />
+  
+  <!-- Get Location -->
+  <rect x="100" y="880" width="100" height="40" class="activity" />
+  <text x="150" y="905" class="text">Dapatkan Lokasi</text>
+  <path d="M 150,820 V 880" class="arrow" />
+  
+  <!-- System Validation -->
+  <rect x="300" y="880" width="100" height="40" class="activity" />
+  <text x="350" y="905" class="text">Validasi Data</text>
+  <path d="M 200,900 H 300" class="arrow" />
+  
+  <!-- Location Check -->
+  <polygon points="350,980 400,1000 350,1020 300,1000" class="decision" />
+  <text x="350" y="1005" class="decision-text">Lokasi Valid?</text>
+  <path d="M 350,920 V 980" class="arrow" />
+  
+  <!-- Invalid Location -->
+  <rect x="100" y="1080" width="100" height="40" class="activity" />
+  <text x="150" y="1105" class="text">Tampilkan Error Lokasi</text>
+  <text x="250" y="1040" class="yes-no">Tidak</text>
+  <path d="M 300,1000 H 250 V 1100 H 200" class="arrow" />
+  <path d="M 150,1120 V 1140 H 80 V 900 H 100" class="arrow" />
+  
+  <!-- Save Attendance -->
+  <rect x="700" y="1080" width="100" height="40" class="activity" />
+  <text x="750" y="1105" class="text">Simpan Absensi</text>
+  <text x="420" y="1040" class="yes-no">Ya</text>
+  <path d="M 400,1000 H 450 V 1100 H 700" class="arrow" />
+  
+  <!-- Time Check -->
+  <polygon points="350,1180 400,1200 350,1220 300,1200" class="decision" />
+  <text x="350" y="1205" class="decision-text">Tepat Waktu?</text>
+  <path d="M 750,1120 V 1200 H 400" class="arrow" />
+  
+  <!-- Late Penalty -->
+  <rect x="300" y="1280" width="100" height="40" class="activity" />
+  <text x="350" y="1305" class="text">Hitung Denda</text>
+  <text x="250" y="1240" class="yes-no">Tidak</text>
+  <path d="M 300,1200 H 250 V 1300 H 300" class="arrow" />
+  
+  <!-- Normal Attendance -->
+  <rect x="300" y="1380" width="100" height="40" class="activity" />
+  <text x="350" y="1405" class="text">Catat Kehadiran Normal</text>
+  <text x="420" y="1240" class="yes-no">Ya</text>
+  <path d="M 400,1200 H 450 V 1400 H 400" class="arrow" />
+  <path d="M 350,1320 V 1380" class="arrow" />
+  
+  <!-- Send Notification -->
+  <rect x="300" y="1480" width="100" height="40" class="activity" />
+  <text x="350" y="1505" class="text">Kirim Notifikasi</text>
+  <path d="M 350,1420 V 1480" class="arrow" />
+  
+  <!-- Check-out Process -->
+  <rect x="100" y="1580" width="100" height="40" class="activity" />
+  <text x="150" y="1605" class="text">Check-out</text>
+  <path d="M 350,1520 V 1600 H 200" class="arrow" />
+  
+  <!-- Overtime Check -->
+  <polygon points="350,1680 400,1700 350,1720 300,1700" class="decision" />
+  <text x="350" y="1705" class="decision-text">Lembur?</text>
+  <path d="M 200,1600 H 350 V 1680" class="arrow" />
+  
+  <!-- Record Overtime -->
+  <rect x="300" y="1780" width="100" height="40" class="activity" />
+  <text x="350" y="1805" class="text">Catat Lembur</text>
+  <text x="420" y="1740" class="yes-no">Ya</text>
+  <path d="M 400,1700 H 450 V 1800 H 400" class="arrow" />
+  
+  <!-- Admin Activities -->
+  <rect x="500" y="580" width="100" height="40" class="activity" />
+  <text x="550" y="605" class="text">Kelola Data Karyawan</text>
+  <path d="M 550,520 V 580" class="arrow" />
+  
+  <rect x="500" y="680" width="100" height="40" class="activity" />
+  <text x="550" y="705" class="text">Lihat Laporan Absensi</text>
+  <path d="M 550,620 V 680" class="arrow" />
+  
+  <rect x="500" y="780" width="100" height="40" class="activity" />
+  <text x="550" y="805" class="text">Proses Payroll</text>
+  <path d="M 550,720 V 780" class="arrow" />
+  
+  <!-- Payroll Calculation -->
+  <rect x="500" y="880" width="100" height="40" class="activity" />
+  <text x="550" y="905" class="text">Hitung Gaji</text>
+  <path d="M 550,820 V 880" class="arrow" />
+  
+  <!-- Add Allowances -->
+  <rect x="500" y="980" width="100" height="40" class="activity" />
+  <text x="550" y="1005" class="text">Tambah Tunjangan</text>
+  <path d="M 550,920 V 980" class="arrow" />
+  
+  <!-- Apply Deductions -->
+  <rect x="500" y="1080" width="100" height="40" class="activity" />
+  <text x="550" y="1105" class="text">Terapkan Potongan</text>
+  <path d="M 550,1020 V 1080" class="arrow" />
+  
+  <!-- Generate Payslip -->
+  <rect x="500" y="1180" width="100" height="40" class="activity" />
+  <text x="550" y="1205" class="text">Generate Slip Gaji</text>
+  <path d="M 550,1120 V 1180" class="arrow" />
+  
+  <!-- Save Payroll -->
+  <rect x="700" y="1180" width="100" height="40" class="activity" />
+  <text x="750" y="1205" class="text">Simpan Payroll</text>
+  <path d="M 600,1200 H 700" class="arrow" />
+  
+  <!-- Approve Overtime -->
+  <rect x="500" y="1780" width="100" height="40" class="activity" />
+  <text x="550" y="1805" class="text">Setujui Lembur</text>
+  <path d="M 400,1800 H 500" class="arrow" />
+  
+  <!-- Fork for Parallel Activities -->
+  <rect x="340" y="1850" width="20" height="5" class="fork-join" />
+  <text x="250" y="1740" class="yes-no">Tidak</text>
+  <path d="M 300,1700 H 250 V 1850 H 340" class="arrow" />
+  <path d="M 350,1820 V 1850" class="arrow" />
+  <path d="M 550,1820 V 1850 H 360" class="arrow" />
+  
+  <!-- End Node -->
+  <circle cx="350" cy="1900" r="15" class="start-end" />
+  <circle cx="350" cy="1900" r="10" fill="white" />
+  <path d="M 350,1855 V 1885" class="arrow" />
+  
+  <!-- Legend -->
+  <rect x="900" y="100" width="400" height="300" fill="#f5f5f5" stroke="#ccc" stroke-width="1" rx="5" ry="5"/>
+  <text x="1100" y="130" class="subtitle">Legenda</text>
+  
+  <circle cx="930" cy="160" r="10" class="start-end" />
+  <text x="980" y="165" class="small-text">Start/End Node</text>
+  
+  <rect x="920" y="180" width="60" height="25" class="activity" />
+  <text x="950" y="197" class="small-text">Activity</text>
+  <text x="1020" y="197" class="small-text">Aktivitas/Proses</text>
+  
+  <polygon points="930,220 950,230 930,240 910,230" class="decision" />
+  <text x="980" y="235" class="small-text">Decision</text>
+  
+  <rect x="920" y="250" width="60" height="5" class="fork-join" />
+  <text x="1020" y="257" class="small-text">Fork/Join</text>
+  
+  <line x1="920" y1="280" x2="980" y2="280" class="arrow" />
+  <text x="1020" y="285" class="small-text">Control Flow</text>
+  
+  <!-- Notes -->
+  <rect x="900" y="450" width="400" height="200" class="note" />
+  <text x="1100" y="470" class="note-text">Catatan Activity Diagram:</text>
+  <text x="1100" y="490" class="note-text">• Diagram menunjukkan alur aktivitas lengkap sistem</text>
+  <text x="1100" y="510" class="note-text">• Swimlane memisahkan tanggung jawab setiap aktor</text>
+  <text x="1100" y="530" class="note-text">• Decision node menunjukkan percabangan logika</text>
+  <text x="1100" y="550" class="note-text">• Fork/Join menunjukkan aktivitas paralel</text>
+  <text x="1100" y="570" class="note-text">• Setiap aktivitas memiliki input dan output yang jelas</text>
+  <text x="1100" y="590" class="note-text">• Validasi dilakukan pada setiap tahap kritis</text>
+  <text x="1100" y="610" class="note-text">• Sistem memberikan feedback untuk setiap aksi</text>
+  <text x="1100" y="630" class="note-text">• Proses absensi dan payroll terintegrasi</text>
+  
+  <!-- Process Flow Description -->
+  <rect x="900" y="700" width="400" height="300" class="note" />
+  <text x="1100" y="720" class="note-text">Alur Proses Utama:</text>
+  <text x="1100" y="740" class="note-text">1. Login dan Autentikasi</text>
+  <text x="1100" y="760" class="note-text">2. Pemilihan Role (Admin/Karyawan)</text>
+  <text x="1100" y="780" class="note-text">3. Akses Dashboard sesuai Role</text>
+  <text x="1100" y="800" class="note-text">4. Proses Absensi (Check-in/out)</text>
+  <text x="1100" y="820" class="note-text">5. Validasi Lokasi dan Waktu</text>
+  <text x="1100" y="840" class="note-text">6. Perhitungan Denda/Lembur</text>
+  <text x="1100" y="860" class="note-text">7. Penyimpanan Data ke Database</text>
+  <text x="1100" y="880" class="note-text">8. Proses Payroll (Admin)</text>
+  <text x="1100" y="900" class="note-text">9. Perhitungan Gaji dan Tunjangan</text>
+  <text x="1100" y="920" class="note-text">10. Generate dan Simpan Slip Gaji</text>
+  <text x="1100" y="940" class="note-text">11. Notifikasi ke Karyawan</text>
+  <text x="1100" y="960" class="note-text">12. Selesai</text>
+</svg>

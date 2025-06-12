@@ -1,0 +1,219 @@
+<svg width="1200" height="1800" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .title { font-family: Arial, sans-serif; font-size: 24px; font-weight: bold; text-anchor: middle; }
+      .subtitle { font-family: Arial, sans-serif; font-size: 18px; font-weight: bold; text-anchor: middle; }
+      .box { fill: #e3f2fd; stroke: #1976d2; stroke-width: 2; rx: 5; ry: 5; }
+      .process { fill: #e8f5e9; stroke: #388e3c; stroke-width: 2; rx: 5; ry: 5; }
+      .decision { fill: #fff3e0; stroke: #f57c00; stroke-width: 2; }
+      .start-end { fill: #f3e5f5; stroke: #8e24aa; stroke-width: 2; rx: 20; ry: 20; }
+      .arrow { stroke: #333; stroke-width: 2; fill: none; marker-end: url(#arrowhead); }
+      .text { font-family: Arial, sans-serif; font-size: 12px; text-anchor: middle; }
+      .small-text { font-family: Arial, sans-serif; font-size: 10px; text-anchor: middle; }
+      .decision-text { font-family: Arial, sans-serif; font-size: 10px; }
+      .yes-no { font-family: Arial, sans-serif; font-size: 10px; font-weight: bold; fill: #d32f2f; }
+      .subflow { fill: #e1f5fe; stroke: #0288d1; stroke-width: 2; stroke-dasharray: 5,3; rx: 5; ry: 5; }
+      .note { fill: #fffde7; stroke: #fbc02d; stroke-width: 1; rx: 5; ry: 5; }
+      .note-text { font-family: Arial, sans-serif; font-size: 10px; font-style: italic; }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#333" />
+    </marker>
+  </defs>
+  
+  <!-- Title -->
+  <text x="600" y="30" class="title">Flowchart Sistem Manajemen Absensi dan Payroll</text>
+  
+  <!-- Start -->
+  <rect x="500" y="60" width="200" height="50" class="start-end" />
+  <text x="600" y="90" class="text">Mulai</text>
+  
+  <!-- Login Process -->
+  <rect x="500" y="150" width="200" height="60" class="process" />
+  <text x="600" y="180" class="text">Login dengan Email dan Password</text>
+  
+  <!-- Authentication Decision -->
+  <polygon points="600,250 650,300 600,350 550,300" class="decision" />
+  <text x="600" y="305" class="decision-text">Autentikasi Valid?</text>
+  
+  <!-- No path for Authentication -->
+  <text x="520" y="280" class="yes-no">Tidak</text>
+  <path d="M 550,300 H 450 V 180 H 500" class="arrow" />
+  
+  <!-- Yes path for Authentication -->
+  <text x="630" y="280" class="yes-no">Ya</text>
+  
+  <!-- Role Decision -->
+  <polygon points="600,400 650,450 600,500 550,450" class="decision" />
+  <text x="600" y="455" class="decision-text">Role?</text>
+  
+  <!-- Admin Dashboard -->
+  <rect x="300" y="500" width="200" height="60" class="box" />
+  <text x="400" y="530" class="text">Dashboard Admin</text>
+  <text x="520" y="430" class="yes-no">Admin</text>
+  <path d="M 550,450 H 400 V 500" class="arrow" />
+  
+  <!-- Employee Dashboard -->
+  <rect x="700" y="500" width="200" height="60" class="box" />
+  <text x="800" y="530" class="text">Dashboard Karyawan</text>
+  <text x="680" y="430" class="yes-no">Karyawan</text>
+  <path d="M 650,450 H 800 V 500" class="arrow" />
+  
+  <!-- Connect Authentication to Role Decision -->
+  <path d="M 600,350 V 400" class="arrow" />
+  
+  <!-- Admin Features -->
+  <rect x="100" y="600" width="150" height="50" class="box" />
+  <text x="175" y="625" class="text">Kelola Karyawan</text>
+  <path d="M 400,560 V 580 H 175 V 600" class="arrow" />
+  
+  <rect x="300" y="600" width="150" height="50" class="box" />
+  <text x="375" y="625" class="text">Kelola Absensi</text>
+  <path d="M 400,560 V 600" class="arrow" />
+  
+  <rect x="500" y="600" width="150" height="50" class="box" />
+  <text x="575" y="625" class="text">Kelola Payroll</text>
+  <path d="M 400,560 V 580 H 575 V 600" class="arrow" />
+  
+  <!-- Employee Features -->
+  <rect x="700" y="600" width="150" height="50" class="box" />
+  <text x="775" y="625" class="text">Catat Absensi</text>
+  <path d="M 800,560 V 600" class="arrow" />
+  
+  <rect x="900" y="600" width="150" height="50" class="box" />
+  <text x="975" y="625" class="text">Lihat Payroll</text>
+  <path d="M 800,560 V 580 H 975 V 600" class="arrow" />
+  
+  <!-- Attendance Process Subflow -->
+  <text x="600" y="700" class="subtitle">Proses Absensi</text>
+  
+  <!-- Check-in Process -->
+  <rect x="300" y="750" width="200" height="60" class="process" />
+  <text x="400" y="780" class="text">Proses Check-in</text>
+  <path d="M 375,650 V 750" class="arrow" />
+  
+  <!-- Employee Check-in -->
+  <rect x="700" y="750" width="200" height="60" class="process" />
+  <text x="800" y="780" class="text">Karyawan Check-in</text>
+  <path d="M 775,650 V 750" class="arrow" />
+  
+  <!-- Check-in Time Decision -->
+  <polygon points="800,850 850,900 800,950 750,900" class="decision" />
+  <text x="800" y="905" class="decision-text">Tepat Waktu?</text>
+  <path d="M 800,810 V 850" class="arrow" />
+  
+  <!-- Late Check-in -->
+  <rect x="600" y="950" width="200" height="60" class="process" />
+  <text x="700" y="980" class="text">Catat Keterlambatan</text>
+  <text x="750" y="880" class="yes-no">Tidak</text>
+  <path d="M 750,900 H 700 V 950" class="arrow" />
+  
+  <!-- On-time Check-in -->
+  <rect x="900" y="950" width="200" height="60" class="process" />
+  <text x="1000" y="980" class="text">Catat Kehadiran Tepat Waktu</text>
+  <text x="850" y="880" class="yes-no">Ya</text>
+  <path d="M 850,900 H 1000 V 950" class="arrow" />
+  
+  <!-- Check-out Process -->
+  <rect x="700" y="1050" width="200" height="60" class="process" />
+  <text x="800" y="1080" class="text">Proses Check-out</text>
+  <path d="M 700,1010 V 1030 H 800 V 1050" class="arrow" />
+  <path d="M 1000,1010 V 1030 H 800 V 1050" class="arrow" />
+  
+  <!-- Overtime Decision -->
+  <polygon points="800,1150 850,1200 800,1250 750,1200" class="decision" />
+  <text x="800" y="1205" class="decision-text">Lembur?</text>
+  <path d="M 800,1110 V 1150" class="arrow" />
+  
+  <!-- Record Overtime -->
+  <rect x="900" y="1250" width="200" height="60" class="process" />
+  <text x="1000" y="1280" class="text">Catat Jam Lembur</text>
+  <text x="850" y="1180" class="yes-no">Ya</text>
+  <path d="M 850,1200 H 1000 V 1250" class="arrow" />
+  
+  <!-- No Overtime -->
+  <rect x="600" y="1250" width="200" height="60" class="process" />
+  <text x="700" y="1280" class="text">Catat Jam Pulang Normal</text>
+  <text x="750" y="1180" class="yes-no">Tidak</text>
+  <path d="M 750,1200 H 700 V 1250" class="arrow" />
+  
+  <!-- Attendance Report -->
+  <rect x="300" y="1150" width="200" height="60" class="process" />
+  <text x="400" y="1180" class="text">Generate Laporan Absensi</text>
+  <path d="M 400,810 V 1150" class="arrow" />
+  
+  <!-- Payroll Process Subflow -->
+  <text x="600" y="1350" class="subtitle">Proses Payroll</text>
+  
+  <!-- Calculate Salary -->
+  <rect x="500" y="1400" width="200" height="60" class="process" />
+  <text x="600" y="1430" class="text">Hitung Gaji Berdasarkan Absensi</text>
+  <path d="M 400,1210 V 1430 H 500" class="arrow" />
+  <path d="M 700,1310 V 1350 H 600 V 1400" class="arrow" />
+  <path d="M 1000,1310 V 1350 H 600 V 1400" class="arrow" />
+  
+  <!-- Add Allowances -->
+  <rect x="500" y="1500" width="200" height="60" class="process" />
+  <text x="600" y="1530" class="text">Tambahkan Tunjangan</text>
+  <path d="M 600,1460 V 1500" class="arrow" />
+  
+  <!-- Apply Deductions -->
+  <rect x="500" y="1600" width="200" height="60" class="process" />
+  <text x="600" y="1630" class="text">Terapkan Potongan</text>
+  <path d="M 600,1560 V 1600" class="arrow" />
+  
+  <!-- Generate Payslip -->
+  <rect x="500" y="1700" width="200" height="60" class="process" />
+  <text x="600" y="1730" class="text">Generate Slip Gaji</text>
+  <path d="M 600,1660 V 1700" class="arrow" />
+  
+  <!-- End -->
+  <rect x="500" y="1800" width="200" height="50" class="start-end" />
+  <text x="600" y="1830" class="text">Selesai</text>
+  <path d="M 600,1760 V 1800" class="arrow" />
+  
+  <!-- Notification Flow -->
+  <rect x="900" y="1400" width="200" height="60" class="subflow" />
+  <text x="1000" y="1430" class="text">Kirim Notifikasi</text>
+  <path d="M 700,1430 H 900" class="arrow" stroke-dasharray="5,3" />
+  
+  <!-- Notes -->
+  <rect x="50" y="1400" width="250" height="200" class="note" />
+  <text x="175" y="1420" class="note-text">Catatan Proses Absensi:</text>
+  <text x="175" y="1440" class="note-text">• Check-in dicatat dengan waktu dan lokasi</text>
+  <text x="175" y="1460" class="note-text">• Keterlambatan dihitung otomatis</text>
+  <text x="175" y="1480" class="note-text">• Lembur perlu persetujuan admin</text>
+  <text x="175" y="1500" class="note-text">• Absensi digunakan untuk perhitungan gaji</text>
+  <text x="175" y="1520" class="note-text">• Sistem mencatat status: Hadir, Izin,</text>
+  <text x="175" y="1540" class="note-text">  Sakit, Cuti, atau Absen</text>
+  <text x="175" y="1560" class="note-text">• Laporan absensi dibuat per periode</text>
+  
+  <rect x="900" y="1500" width="250" height="200" class="note" />
+  <text x="1025" y="1520" class="note-text">Catatan Proses Payroll:</text>
+  <text x="1025" y="1540" class="note-text">• Gaji dasar sesuai posisi karyawan</text>
+  <text x="1025" y="1560" class="note-text">• Tunjangan: Transport, Makan, dll.</text>
+  <text x="1025" y="1580" class="note-text">• Potongan: Keterlambatan, Pajak, dll.</text>
+  <text x="1025" y="1600" class="note-text">• Lembur dihitung berdasarkan jam</text>
+  <text x="1025" y="1620" class="note-text">• Slip gaji digenerate tiap bulan</text>
+  <text x="1025" y="1640" class="note-text">• Karyawan dapat melihat riwayat gaji</text>
+  <text x="1025" y="1660" class="note-text">• Admin dapat menyetujui/menolak lembur</text>
+  
+  <!-- Legend -->
+  <rect x="50" y="50" width="300" height="200" fill="#f5f5f5" stroke="#ccc" stroke-width="1" rx="5" ry="5"/>
+  <text x="200" y="70" class="subtitle">Legenda</text>
+  
+  <rect x="70" y="90" width="80" height="30" class="start-end" />
+  <text x="110" y="110" class="small-text">Mulai/Selesai</text>
+  
+  <rect x="70" y="130" width="80" height="30" class="process" />
+  <text x="110" y="150" class="small-text">Proses</text>
+  
+  <rect x="70" y="170" width="80" height="30" class="box" />
+  <text x="110" y="190" class="small-text">Aktivitas</text>
+  
+  <polygon points="230,105 260,105 245,135" class="decision" />
+  <text x="245" y="150" class="small-text">Keputusan</text>
+  
+  <rect x="200" y="170" width="80" height="30" class="subflow" />
+  <text x="240" y="190" class="small-text">Sub-proses</text>
+</svg>

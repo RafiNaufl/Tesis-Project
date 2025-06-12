@@ -344,16 +344,29 @@ export default function AttendanceManagement() {
 
   // Tambahkan effect untuk refresh otomatis ketika ada update dari penolakan
   // Function untuk fetch attendance - dipindahkan keluar dari useEffect
-  const fetchAttendanceRecords = async () => {
+  const fetchAttendanceRecords = async (retryCount = 0) => {
     try {
       const queryParams = new URLSearchParams({
         month: selectedMonth.toString(),
         year: selectedYear.toString(),
       });
 
+      // Tambahkan timeout dan headers untuk mobile compatibility
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 detik timeout
+
       const response = await fetch(`/api/attendance?${queryParams}`, {
         method: "GET",
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
       });
+
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         throw new Error("Gagal mengambil data kehadiran");
@@ -396,68 +409,97 @@ export default function AttendanceManagement() {
       // Cari record hari ini
       const today = new Date();
       const todayString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-      const todayRecord = processedData.find((record) => {
+      const todayRecordFromAPI = processedData.find((record) => {
         const recordDate = new Date(record.date);
         const recordDateString = `${recordDate.getFullYear()}-${String(recordDate.getMonth() + 1).padStart(2, '0')}-${String(recordDate.getDate()).padStart(2, '0')}`;
         return recordDateString === todayString;
       });
       
-      console.log("📊 [FETCH] Today's record from API:", todayRecord);
+      console.log("📊 [FETCH] Today's record from API:", todayRecordFromAPI);
       
-      // Cek apakah ada data di localStorage untuk hari ini
-      const savedAttendance = localStorage.getItem('todayAttendance');
-      if (savedAttendance && todayRecord) {
-        try {
-          const parsedAttendance = JSON.parse(savedAttendance);
-          // Konversi string tanggal kembali ke objek Date dengan validasi
-          if (parsedAttendance.date) {
-            const dateObj = new Date(parsedAttendance.date);
-            parsedAttendance.date = isNaN(dateObj.getTime()) ? null : dateObj;
+      // PENTING: Hanya update todayRecord jika bulan dan tahun yang dipilih adalah bulan dan tahun saat ini
+      const currentMonth = today.getMonth() + 1; // getMonth() returns 0-11
+      const currentYear = today.getFullYear();
+      
+      if (selectedMonth === currentMonth && selectedYear === currentYear) {
+        console.log("📅 [FETCH] Melihat bulan dan tahun saat ini, update todayRecord");
+        
+        // Cek apakah ada data di localStorage untuk hari ini
+        const savedAttendance = localStorage.getItem('todayAttendance');
+        if (savedAttendance && todayRecordFromAPI) {
+          try {
+            const parsedAttendance = JSON.parse(savedAttendance);
+            // Konversi string tanggal kembali ke objek Date dengan validasi
+            if (parsedAttendance.date) {
+              const dateObj = new Date(parsedAttendance.date);
+              parsedAttendance.date = isNaN(dateObj.getTime()) ? null : dateObj;
+            }
+            if (parsedAttendance.checkIn) {
+              const checkInObj = new Date(parsedAttendance.checkIn);
+              parsedAttendance.checkIn = isNaN(checkInObj.getTime()) ? null : checkInObj;
+            }
+            if (parsedAttendance.checkOut) {
+              const checkOutObj = new Date(parsedAttendance.checkOut);
+              parsedAttendance.checkOut = isNaN(checkOutObj.getTime()) ? null : checkOutObj;
+            }
+            if (parsedAttendance.approvedAt) {
+              const approvedAtObj = new Date(parsedAttendance.approvedAt);
+              parsedAttendance.approvedAt = isNaN(approvedAtObj.getTime()) ? null : approvedAtObj;
+            }
+            
+            // Safely get the persisted date string using local timezone
+            const persistedDate = parsedAttendance.date && parsedAttendance.date instanceof Date && !isNaN(parsedAttendance.date.getTime())
+              ? (parsedAttendance.date.getFullYear() + '-' + 
+                 String(parsedAttendance.date.getMonth() + 1).padStart(2, '0') + '-' + 
+                 String(parsedAttendance.date.getDate()).padStart(2, '0'))
+              : null;
+            
+            // Jika data localStorage untuk hari ini, selalu prioritaskan localStorage
+            if (persistedDate && persistedDate === todayString) {
+              console.log("✅ [FETCH] Menggunakan data absensi dari localStorage:", parsedAttendance);
+              setTodayRecord(parsedAttendance);
+            } else {
+              console.log("📊 [FETCH] Menggunakan data absensi dari API:", todayRecordFromAPI);
+              setTodayRecord(todayRecordFromAPI || null);
+            }
+          } catch (error) {
+            console.error("❌ [FETCH] Error parsing saved attendance:", error);
+            // Jika error parsing localStorage, gunakan data dari API
+            setTodayRecord(todayRecordFromAPI || null);
           }
-          if (parsedAttendance.checkIn) {
-            const checkInObj = new Date(parsedAttendance.checkIn);
-            parsedAttendance.checkIn = isNaN(checkInObj.getTime()) ? null : checkInObj;
-          }
-          if (parsedAttendance.checkOut) {
-            const checkOutObj = new Date(parsedAttendance.checkOut);
-            parsedAttendance.checkOut = isNaN(checkOutObj.getTime()) ? null : checkOutObj;
-          }
-          if (parsedAttendance.approvedAt) {
-            const approvedAtObj = new Date(parsedAttendance.approvedAt);
-            parsedAttendance.approvedAt = isNaN(approvedAtObj.getTime()) ? null : approvedAtObj;
-          }
-          
-          // Safely get the persisted date string using local timezone
-          const persistedDate = parsedAttendance.date && parsedAttendance.date instanceof Date && !isNaN(parsedAttendance.date.getTime())
-            ? (parsedAttendance.date.getFullYear() + '-' + 
-               String(parsedAttendance.date.getMonth() + 1).padStart(2, '0') + '-' + 
-               String(parsedAttendance.date.getDate()).padStart(2, '0'))
-            : null;
-          
-          // Jika data localStorage untuk hari ini, selalu prioritaskan localStorage
-          if (persistedDate && persistedDate === todayString) {
-            console.log("✅ [FETCH] Menggunakan data absensi dari localStorage:", parsedAttendance);
-            setTodayRecord(parsedAttendance);
-          } else {
-            console.log("📊 [FETCH] Menggunakan data absensi dari API:", todayRecord);
-            setTodayRecord(todayRecord || null);
-          }
-        } catch (error) {
-          console.error("❌ [FETCH] Error parsing saved attendance:", error);
-          // Jika error parsing localStorage, gunakan data dari API
-          setTodayRecord(todayRecord || null);
+        } else {
+          // Jika tidak ada localStorage atau tidak ada todayRecord, gunakan data dari API
+          console.log("📊 [FETCH] Menggunakan data absensi dari API (no localStorage):", todayRecordFromAPI);
+          setTodayRecord(todayRecordFromAPI || null);
         }
       } else {
-        // Jika tidak ada localStorage atau tidak ada todayRecord, gunakan data dari API
-        console.log("📊 [FETCH] Menggunakan data absensi dari API (no localStorage):", todayRecord);
-        setTodayRecord(todayRecord || null);
+        console.log("📅 [FETCH] Melihat bulan/tahun lain, tidak update todayRecord");
+        // Tidak memperbarui todayRecord saat melihat bulan/tahun lain
       }
       
       setAttendanceRecords(processedData);
       setIsLoading(false);
-    } catch (error) {
+    } catch (error: any) {
       console.error("❌ [FETCH] Error fetching attendance records:", error);
-      setError("Gagal mengambil data kehadiran");
+      
+      // Retry mechanism untuk network errors pada mobile
+      if (retryCount < 3 && (error.name === 'AbortError' || error.message.includes('fetch') || error.message.includes('network'))) {
+        console.log(`🔄 [FETCH] Retrying... Attempt ${retryCount + 1}/3`);
+        setTimeout(() => {
+          fetchAttendanceRecords(retryCount + 1);
+        }, 1000 * (retryCount + 1)); // Exponential backoff
+        return;
+      }
+      
+      // Set error message yang lebih informatif
+      let errorMessage = "Gagal mengambil data kehadiran";
+      if (error.name === 'AbortError') {
+        errorMessage = "Koneksi timeout. Periksa koneksi internet Anda.";
+      } else if (error.message.includes('fetch')) {
+        errorMessage = "Masalah koneksi jaringan. Silakan coba lagi.";
+      }
+      
+      setError(errorMessage);
       setIsLoading(false);
       
       // Error fallback: coba gunakan data dari localStorage jika ada
@@ -861,9 +903,16 @@ export default function AttendanceManagement() {
   };
 
   // Fungsi untuk memproses check-out setelah foto dan lokasi didapatkan
-  const processCheckOut = async (photoUrl: string, latitude: number, longitude: number) => {
+  const processCheckOut = async (photoUrl: string, latitude: number, longitude: number, retryCount = 0) => {
+    const maxRetries = 3;
     setError(null);
+    
     try {
+      console.log(`🔄 Attempting check-out (attempt ${retryCount + 1}/${maxRetries})`);
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      
       const response = await fetch("/api/attendance", {
         method: "POST",
         headers: {
@@ -875,7 +924,11 @@ export default function AttendanceManagement() {
           latitude: latitude,
           longitude: longitude
         }),
+        signal: controller.signal,
       });
+      
+      clearTimeout(timeoutId);
+      console.log(`✅ Check-out fetch successful, response status: ${response.status}`);
 
       // Ambil data respons terlebih dahulu
         const data = await response.json();
@@ -973,8 +1026,26 @@ export default function AttendanceManagement() {
         fetchAttendanceRecords();
       }, 1000);
     } catch (err: any) {
-      console.error("Error checking out:", err);
-      setError(err.message || "Gagal melakukan absen keluar");
+      console.error("❌ [CHECK-OUT] Error checking out:", err);
+      
+      // Retry mechanism untuk network errors pada mobile
+      if (retryCount < maxRetries - 1 && (err.name === 'AbortError' || err.message.includes('fetch') || err.message.includes('network'))) {
+        console.log(`🔄 [CHECK-OUT] Retrying... Attempt ${retryCount + 2}/${maxRetries}`);
+        setTimeout(() => {
+          processCheckOut(photoUrl, latitude, longitude, retryCount + 1);
+        }, 1000 * (retryCount + 1)); // Exponential backoff
+        return;
+      }
+      
+      // Set error message yang lebih informatif
+      let errorMessage = "Gagal melakukan absen keluar";
+      if (err.name === 'AbortError') {
+        errorMessage = "Koneksi timeout saat absen keluar. Periksa koneksi internet Anda.";
+      } else if (err.message.includes('fetch')) {
+        errorMessage = "Masalah koneksi jaringan saat absen keluar. Silakan coba lagi.";
+      }
+      
+      setError(errorMessage);
     } finally {
       setIsCheckingOut(false);
     }
@@ -1045,11 +1116,16 @@ export default function AttendanceManagement() {
     setError(null);
     
     try {
+      // Tambahkan timeout untuk mobile compatibility
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 detik timeout
+      
       const response = await fetch(`/api/attendance/${editingRecord.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json'
         },
+        signal: controller.signal,
         body: JSON.stringify({
           checkIn: editFormData.checkIn ? (() => {
             const date = new Date(editFormData.checkIn);
@@ -1063,6 +1139,8 @@ export default function AttendanceManagement() {
           notes: editFormData.notes
         })
       });
+      
+      clearTimeout(timeoutId);
       
       if (!response.ok) {
         const data = await response.json();
@@ -1100,8 +1178,19 @@ export default function AttendanceManagement() {
       // Close the modal
       setIsEditModalOpen(false);
     } catch (err: any) {
-      console.error('Error updating attendance record:', err);
-      setError(err.message || 'Failed to update attendance record');
+      console.error('❌ [EDIT] Error updating attendance record:', err);
+      
+      // Set error message yang lebih informatif
+      let errorMessage = 'Gagal memperbarui data kehadiran';
+      if (err.name === 'AbortError') {
+        errorMessage = 'Koneksi timeout saat memperbarui data. Periksa koneksi internet Anda.';
+      } else if (err.message.includes('fetch')) {
+        errorMessage = 'Masalah koneksi jaringan saat memperbarui data. Silakan coba lagi.';
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+      
+      setError(errorMessage);
     } finally {
       setIsSubmitting(false);
     }
@@ -1150,7 +1239,20 @@ export default function AttendanceManagement() {
     });
     
     try {
-      const response = await fetch(`/api/attendance?${queryParams}`);
+      // Tambahkan timeout untuk mobile compatibility
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 detik timeout
+      
+      const response = await fetch(`/api/attendance?${queryParams}`, {
+        signal: controller.signal,
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
+      });
+      
+      clearTimeout(timeoutId);
       if (response.ok) {
         const data = await response.json();
         
@@ -1183,8 +1285,16 @@ export default function AttendanceManagement() {
         // Pastikan selalu set sebagai array
         setAttendanceRecords(Array.isArray(processedData) ? processedData : []);
       }
-    } catch (error) {
-      console.error("Error refreshing attendance data:", error);
+    } catch (error: any) {
+      console.error("❌ [APPROVAL] Error refreshing attendance data:", error);
+      
+      // Set error message yang lebih informatif jika diperlukan
+      if (error.name === 'AbortError') {
+        console.warn('⚠️ [APPROVAL] Request timeout saat refresh data approval');
+      } else if (error.message.includes('fetch')) {
+        console.warn('⚠️ [APPROVAL] Network error saat refresh data approval');
+      }
+      
       // Jika terjadi error, tetap pastikan attendanceRecords adalah array
       setAttendanceRecords([]);
     }
