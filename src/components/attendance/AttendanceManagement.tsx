@@ -6,6 +6,7 @@ import { NOTIFICATION_UPDATE_EVENT } from "../notifications/NotificationDropdown
 import { ACTIVITY_UPDATE_EVENT } from "../dashboard/AdminDashboard";
 import { getWorkdayType, WorkdayType, LATE_PENALTY } from "@/lib/attendanceRules";
 import OvertimeApprovalButton from "./OvertimeApprovalButton";
+import AttendanceCapture from "./AttendanceCapture";
 
 type AttendanceRecord = {
   id: string;
@@ -21,6 +22,12 @@ type AttendanceRecord = {
   isSundayWork: boolean;
   isSundayWorkApproved: boolean;
   approvedAt: Date | null;
+  checkInPhotoUrl?: string;
+  checkOutPhotoUrl?: string;
+  checkInLatitude?: number;
+  checkInLongitude?: number;
+  checkOutLatitude?: number;
+  checkOutLongitude?: number;
   employee?: {
     id: string;
     employeeId: string;
@@ -56,6 +63,14 @@ export default function AttendanceManagement() {
 
   // Tambahkan state untuk menyimpan data absensi sebelum refresh
   const [persistedAttendance, setPersistedAttendance] = useState<AttendanceRecord | null>(null);
+  
+  // State untuk AttendanceCapture
+  const [showAttendanceCapture, setShowAttendanceCapture] = useState(false);
+  const [captureAction, setCaptureAction] = useState<'check-in' | 'check-out'>('check-in');
+  const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
+  const [capturedLatitude, setCapturedLatitude] = useState<number | null>(null);
+  const [capturedLongitude, setCapturedLongitude] = useState<number | null>(null);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
   // Removed automatic localStorage saving to prevent circular dependency
   // localStorage is now only updated in handleCheckIn and handleCheckOut functions
@@ -534,8 +549,100 @@ export default function AttendanceManagement() {
     };
   }, [selectedMonth, selectedYear]);
 
-  const handleCheckIn = async () => {
+  // Fungsi untuk mengunggah foto ke server
+  const uploadPhoto = async (photoBase64: string): Promise<string> => {
+    setIsUploadingPhoto(true);
+    try {
+      // Konversi base64 ke blob
+      const base64Response = await fetch(photoBase64);
+      const blob = await base64Response.blob();
+      
+      // Buat FormData untuk mengirim file
+      const formData = new FormData();
+      formData.append('file', blob, 'attendance-photo.jpg');
+      
+      // Kirim ke endpoint upload
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Gagal mengunggah foto');
+      }
+      
+      const data = await response.json();
+      return data.url; // URL foto yang sudah diunggah
+    } catch (error) {
+      console.error('Error uploading photo:', error);
+      throw new Error('Gagal mengunggah foto. Silakan coba lagi.');
+    } finally {
+      setIsUploadingPhoto(false);
+    }
+  };
+
+  // Fungsi untuk menangani hasil dari AttendanceCapture
+  const handleCaptureComplete = async (photoUrl: string, latitude: number, longitude: number) => {
+    setCapturedPhoto(photoUrl);
+    setCapturedLatitude(latitude);
+    setCapturedLongitude(longitude);
+    
+    try {
+      // Upload foto ke server
+      const uploadedPhotoUrl = await uploadPhoto(photoUrl);
+      
+      // Lanjutkan dengan proses check-in atau check-out
+      if (captureAction === 'check-in') {
+        await processCheckIn(uploadedPhotoUrl, latitude, longitude);
+      } else {
+        await processCheckOut(uploadedPhotoUrl, latitude, longitude);
+      }
+    } catch (error) {
+      console.error('Error in capture process:', error);
+      setError(error instanceof Error ? error.message : 'Terjadi kesalahan saat memproses data');
+    } finally {
+      setShowAttendanceCapture(false);
+    }
+  };
+
+  // Fungsi untuk membatalkan proses capture
+  const handleCaptureCancel = () => {
+    setShowAttendanceCapture(false);
+    setCapturedPhoto(null);
+    setCapturedLatitude(null);
+    setCapturedLongitude(null);
+    setIsCheckingIn(false);
+    setIsCheckingOut(false);
+  };
+
+  // Fungsi untuk memulai proses check-in
+  const handleCheckIn = () => {
+    // Pre-warm GPS sebelum membuka modal check-in
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        () => {
+          console.log("GPS pre-warmed successfully before check-in");
+        },
+        (err) => {
+          console.warn("GPS pre-warming failed, but continuing anyway:", err.message);
+        },
+        { 
+          timeout: 5000,
+          maximumAge: 30000,
+          enableHighAccuracy: true 
+        }
+      );
+    }
+    
+    setCaptureAction('check-in');
+    setShowAttendanceCapture(true);
     setIsCheckingIn(true);
+    setError(null);
+  };
+
+  // Fungsi untuk memproses check-in setelah foto dan lokasi didapatkan
+  const processCheckIn = async (photoUrl: string, latitude: number, longitude: number) => {
     setError(null);
     
     // Add retry logic for network failures
@@ -555,7 +662,12 @@ export default function AttendanceManagement() {
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ action: "check-in" }),
+          body: JSON.stringify({ 
+            action: "check-in",
+            photoUrl: photoUrl,
+            latitude: latitude,
+            longitude: longitude
+          }),
           signal: controller.signal,
         });
         
@@ -672,12 +784,14 @@ export default function AttendanceManagement() {
         console.error("❌ Error menyimpan ke localStorage:", storageError);
       }
       
-      // Tampilkan alert untuk check in
-      if (data.notes && data.notes.includes("Di Tolak") || 
-          (data.approvedAt && (!data.isSundayWorkApproved || !data.isOvertimeApproved))) {
-        window.alert("✅ Pengajuan ulang absen berhasil dicatat! Menunggu persetujuan admin.");
-      } else {
-        window.alert("✅ Absen masuk berhasil dicatat! Selamat bekerja!");
+      // Tampilkan pesan sukses di modal
+      if (window.showAttendanceSuccess) {
+        if (data.notes && data.notes.includes("Di Tolak") || 
+            (data.approvedAt && (!data.isSundayWorkApproved || !data.isOvertimeApproved))) {
+          window.showAttendanceSuccess("✅ Pengajuan ulang absen berhasil dicatat! Menunggu persetujuan admin.");
+        } else {
+          window.showAttendanceSuccess("✅ Absen masuk berhasil dicatat! Selamat bekerja!");
+        }
       }
       
       // Check if the response header indicates a notification update
@@ -721,8 +835,33 @@ export default function AttendanceManagement() {
     }
   };
 
-  const handleCheckOut = async () => {
+  // Fungsi untuk memulai proses check-out
+  const handleCheckOut = () => {
+    // Pre-warm GPS sebelum membuka modal check-out
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        () => {
+          console.log("GPS pre-warmed successfully before check-out");
+        },
+        (err) => {
+          console.warn("GPS pre-warming failed, but continuing anyway:", err.message);
+        },
+        { 
+          timeout: 5000,
+          maximumAge: 30000,
+          enableHighAccuracy: true 
+        }
+      );
+    }
+    
+    setCaptureAction('check-out');
+    setShowAttendanceCapture(true);
     setIsCheckingOut(true);
+    setError(null);
+  };
+
+  // Fungsi untuk memproses check-out setelah foto dan lokasi didapatkan
+  const processCheckOut = async (photoUrl: string, latitude: number, longitude: number) => {
     setError(null);
     try {
       const response = await fetch("/api/attendance", {
@@ -730,7 +869,12 @@ export default function AttendanceManagement() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ action: "check-out" }),
+        body: JSON.stringify({ 
+          action: "check-out",
+          photoUrl: photoUrl,
+          latitude: latitude,
+          longitude: longitude
+        }),
       });
 
       // Ambil data respons terlebih dahulu
@@ -804,8 +948,10 @@ export default function AttendanceManagement() {
         console.error("❌ Error menyimpan checkout ke localStorage:", storageError);
       }
       
-      // Tampilkan alert untuk check out
-      window.alert("✅ Absen keluar berhasil dicatat! Terima kasih atas kerja keras Anda hari ini!");
+      // Tampilkan pesan sukses di modal
+      if (window.showAttendanceSuccess) {
+        window.showAttendanceSuccess("✅ Absen keluar berhasil dicatat! Terima kasih atas kerja keras Anda hari ini!");
+      }
       
       // Check if the response header indicates a notification update
       if (response.headers.get('X-Notification-Update') === 'true') {
@@ -1336,6 +1482,30 @@ export default function AttendanceManagement() {
                         scope="col"
                         className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
                       >
+                        Foto Masuk
+                      </th>
+                      <th
+                        scope="col"
+                        className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
+                      >
+                        Foto Keluar
+                      </th>
+                      <th
+                        scope="col"
+                        className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
+                      >
+                        Lokasi Masuk
+                      </th>
+                      <th
+                        scope="col"
+                        className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
+                      >
+                        Lokasi Keluar
+                      </th>
+                      <th
+                        scope="col"
+                        className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
+                      >
                         Catatan
                       </th>
                       {isAdmin && (
@@ -1352,7 +1522,7 @@ export default function AttendanceManagement() {
                     {isLoading ? (
                       <tr>
                         <td
-                          colSpan={isAdmin ? 6 : 4}
+                          colSpan={isAdmin ? 11 : 9}
                           className="whitespace-nowrap py-4 px-3 text-sm text-gray-500 text-center"
                         >
                           Memuat data...
@@ -1361,7 +1531,7 @@ export default function AttendanceManagement() {
                     ) : !Array.isArray(attendanceRecords) || attendanceRecords.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={isAdmin ? 6 : 4}
+                          colSpan={isAdmin ? 11 : 9}
                           className="whitespace-nowrap py-4 px-3 text-sm text-gray-500 text-center"
                         >
                           Tidak ditemukan catatan kehadiran
@@ -1453,6 +1623,84 @@ export default function AttendanceManagement() {
                               )}
                             </td>
                           )}
+                          <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                            {record.checkInPhotoUrl ? (
+                              <div className="flex flex-col items-center">
+                                <img
+                                  src={record.checkInPhotoUrl}
+                                  alt="Foto Check-in"
+                                  className="h-16 w-16 rounded-md object-cover cursor-pointer hover:opacity-80"
+                                  onClick={() => window.open(record.checkInPhotoUrl, '_blank')}
+                                />
+                                <button
+                                  onClick={() => window.open(record.checkInPhotoUrl, '_blank')}
+                                  className="text-blue-600 hover:text-blue-800 text-xs mt-1"
+                                >
+                                  Lihat
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                            {record.checkOutPhotoUrl ? (
+                              <div className="flex flex-col items-center">
+                                <img
+                                  src={record.checkOutPhotoUrl}
+                                  alt="Foto Check-out"
+                                  className="h-16 w-16 rounded-md object-cover cursor-pointer hover:opacity-80"
+                                  onClick={() => window.open(record.checkOutPhotoUrl, '_blank')}
+                                />
+                                <button
+                                  onClick={() => window.open(record.checkOutPhotoUrl, '_blank')}
+                                  className="text-blue-600 hover:text-blue-800 text-xs mt-1"
+                                >
+                                  Lihat
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                            {record.checkInLatitude && record.checkInLongitude ? (
+                              <div className="flex flex-col items-center text-center">
+                                <div className="text-xs text-gray-600">
+                                  {record.checkInLatitude.toFixed(6)},
+                                  <br />
+                                  {record.checkInLongitude.toFixed(6)}
+                                </div>
+                                <button
+                                  onClick={() => window.open(`https://maps.google.com/?q=${record.checkInLatitude},${record.checkInLongitude}`, '_blank')}
+                                  className="text-blue-600 hover:text-blue-800 text-xs mt-1"
+                                >
+                                  Lihat Peta
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                            {record.checkOutLatitude && record.checkOutLongitude ? (
+                              <div className="flex flex-col items-center text-center">
+                                <div className="text-xs text-gray-600">
+                                  {record.checkOutLatitude.toFixed(6)},
+                                  <br />
+                                  {record.checkOutLongitude.toFixed(6)}
+                                </div>
+                                <button
+                                  onClick={() => window.open(`https://maps.google.com/?q=${record.checkOutLatitude},${record.checkOutLongitude}`, '_blank')}
+                                  className="text-blue-600 hover:text-blue-800 text-xs mt-1"
+                                >
+                                  Lihat Peta
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </td>
                           <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                             {record.notes || "-"}
                           </td>
@@ -1649,6 +1897,24 @@ export default function AttendanceManagement() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* AttendanceCapture Modal */}
+      {showAttendanceCapture && (
+        <AttendanceCapture
+          actionType={captureAction}
+          onComplete={handleCaptureComplete}
+          onCancel={handleCaptureCancel}
+          onSuccess={(message) => {
+            // Callback untuk menampilkan pesan sukses di modal
+            console.log('Success message:', message);
+          }}
+          onError={(errorMessage) => {
+            // Tampilkan error GPS di UI utama
+            setError(errorMessage);
+            console.error('GPS Error:', errorMessage);
+          }}
+        />
       )}
     </div>
   );

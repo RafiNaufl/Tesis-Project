@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
+import AttendanceCapture from "../attendance/AttendanceCapture";
 
 type AttendanceRecord = {
   id: string;
@@ -47,6 +48,16 @@ export default function EmployeeDashboardMobile() {
   const [isLoading, setIsLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // State untuk AttendanceCapture
+  const [showAttendanceCapture, setShowAttendanceCapture] = useState(false);
+  const [captureAction, setCaptureAction] = useState<'check-in' | 'check-out'>('check-in');
+  const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
+  const [capturedLatitude, setCapturedLatitude] = useState<number | null>(null);
+  const [capturedLongitude, setCapturedLongitude] = useState<number | null>(null);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [isCheckingIn, setIsCheckingIn] = useState(false);
+  const [isCheckingOut, setIsCheckingOut] = useState(false);
 
   // Fungsi untuk format waktu
   const formatTime = (date: Date | null | string): string => {
@@ -188,7 +199,74 @@ export default function EmployeeDashboardMobile() {
     }
   }, [todayRecord]);
 
+  // Fungsi untuk upload foto
+  const uploadPhoto = async (photoBase64: string): Promise<string> => {
+    setIsUploadingPhoto(true);
+    try {
+      // Convert base64 to blob
+      const response = await fetch(photoBase64);
+      const blob = await response.blob();
+      
+      // Create FormData
+      const formData = new FormData();
+      formData.append('file', blob, 'attendance-photo.jpg');
+      
+      // Upload to server
+      const uploadResponse = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
+      
+      if (!uploadResponse.ok) {
+        throw new Error('Failed to upload photo');
+      }
+      
+      const uploadData = await uploadResponse.json();
+      return uploadData.url;
+    } catch (error) {
+      console.error('Error uploading photo:', error);
+      throw error;
+    } finally {
+      setIsUploadingPhoto(false);
+    }
+  };
+
+  // Fungsi untuk menangani hasil capture
+  const handleCaptureComplete = async (photo: string, latitude: number, longitude: number) => {
+    try {
+      // Simpan data yang di-capture
+      setCapturedPhoto(photo);
+      setCapturedLatitude(latitude);
+      setCapturedLongitude(longitude);
+      
+      // Upload foto
+      const photoUrl = await uploadPhoto(photo);
+      
+      // Tutup modal capture
+      setShowAttendanceCapture(false);
+      
+      // Panggil fungsi check-in atau check-out dengan data yang sudah di-capture
+      if (captureAction === 'check-in') {
+        await processCheckIn(photoUrl, latitude, longitude);
+      } else {
+        await processCheckOut(photoUrl, latitude, longitude);
+      }
+    } catch (error) {
+      console.error('Error processing capture:', error);
+      setError('Gagal memproses foto dan lokasi');
+      setShowAttendanceCapture(false);
+      setIsCheckingIn(false);
+      setIsCheckingOut(false);
+    }
+  };
+
   const handleCheckIn = async () => {
+    setCaptureAction('check-in');
+    setIsCheckingIn(true);
+    setShowAttendanceCapture(true);
+  };
+
+  const processCheckIn = async (photoUrl?: string, latitude?: number, longitude?: number) => {
     setActionLoading(true);
     setError(null);
     
@@ -201,7 +279,12 @@ export default function EmployeeDashboardMobile() {
           'Pragma': 'no-cache',
           'Expires': '0'
         },
-        body: JSON.stringify({ action: 'check-in' }),
+        body: JSON.stringify({ 
+          action: 'check-in',
+          photoUrl,
+          latitude,
+          longitude
+        }),
       });
       
       if (!response.ok) {
@@ -234,14 +317,17 @@ export default function EmployeeDashboardMobile() {
       
       setTodayRecord(data);
       
-      if (todayRecord && 
-         ((todayRecord.notes && todayRecord.notes.includes("Di Tolak")) || 
-          (todayRecord.approvedAt && 
-           ((todayRecord.overtime > 0 && !todayRecord.isOvertimeApproved) || 
-            (todayRecord.isSundayWork && !todayRecord.isSundayWorkApproved))))) {
-        alert("✅ Pengajuan ulang absen berhasil dicatat!");
-      } else {
-        alert("✅ Absen masuk berhasil dicatat!");
+      // Tampilkan pesan sukses di modal
+      if (window.showAttendanceSuccess) {
+        if (todayRecord && 
+           ((todayRecord.notes && todayRecord.notes.includes("Di Tolak")) || 
+            (todayRecord.approvedAt && 
+             ((todayRecord.overtime > 0 && !todayRecord.isOvertimeApproved) || 
+              (todayRecord.isSundayWork && !todayRecord.isSundayWorkApproved))))) {
+          window.showAttendanceSuccess("✅ Pengajuan ulang absen berhasil dicatat! Menunggu persetujuan admin.");
+        } else {
+          window.showAttendanceSuccess("✅ Absen masuk berhasil dicatat! Selamat bekerja!");
+        }
       }
       
       localStorage.setItem('attendance-update', Date.now().toString());
@@ -259,6 +345,26 @@ export default function EmployeeDashboardMobile() {
   };
 
   const handleCheckOut = async () => {
+    // Pre-warm GPS sebelum membuka modal check-out
+    if (navigator.geolocation) {
+      console.log('Pre-warming GPS for check-out...');
+      navigator.geolocation.getCurrentPosition(
+        () => console.log('GPS pre-warm successful'),
+        (err) => console.log('GPS pre-warm error:', err.code),
+        {
+          enableHighAccuracy: false,
+          timeout: 5000,
+          maximumAge: 60000
+        }
+      );
+    }
+    
+    setCaptureAction('check-out');
+    setIsCheckingOut(true);
+    setShowAttendanceCapture(true);
+  };
+
+  const processCheckOut = async (photoUrl?: string, latitude?: number, longitude?: number) => {
     setActionLoading(true);
     setError(null);
     
@@ -271,7 +377,12 @@ export default function EmployeeDashboardMobile() {
           'Pragma': 'no-cache',
           'Expires': '0'
         },
-        body: JSON.stringify({ action: 'check-out' }),
+        body: JSON.stringify({ 
+          action: 'check-out',
+          photoUrl,
+          latitude,
+          longitude
+        }),
       });
       
       const data = await response.json();
@@ -296,7 +407,11 @@ export default function EmployeeDashboardMobile() {
       if (data.checkOut) data.checkOut = new Date(data.checkOut);
       
       setTodayRecord(data);
-      alert("✅ Absen keluar berhasil dicatat!");
+      
+      // Tampilkan pesan sukses di modal
+      if (window.showAttendanceSuccess) {
+        window.showAttendanceSuccess("✅ Absen keluar berhasil dicatat! Terima kasih atas kerja keras Anda hari ini!");
+      }
       
       localStorage.setItem('attendance-update', Date.now().toString());
       await fetchAttendanceData();
@@ -552,7 +667,22 @@ export default function EmployeeDashboardMobile() {
                 <div className="flex-shrink-0">
                   <div className="w-8 h-8 bg-yellow-100 rounded-lg flex items-center justify-center">
                     <svg className="w-4 h-4 text-yellow-600" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      {/* Modal untuk AttendanceCapture */}
+                      {showAttendanceCapture && (
+                        <AttendanceCapture
+                          onComplete={handleCaptureComplete}
+                          onCancel={() => {
+                            setShowAttendanceCapture(false);
+                            setIsCheckingIn(false);
+                            setIsCheckingOut(false);
+                          }}
+                          actionType={captureAction}
+                          onSuccess={(message) => {
+                            // Callback untuk menampilkan pesan sukses di modal
+                            console.log('Success message:', message);
+                          }}
+                        />
+                      )}
                     </svg>
                   </div>
                 </div>
@@ -627,6 +757,23 @@ export default function EmployeeDashboardMobile() {
           </div>
         </div>
       </div>
+      
+      {/* Modal untuk AttendanceCapture */}
+      {showAttendanceCapture && (
+        <AttendanceCapture
+          onComplete={handleCaptureComplete}
+          onCancel={() => {
+            setShowAttendanceCapture(false);
+            setIsCheckingIn(false);
+            setIsCheckingOut(false);
+          }}
+          actionType={captureAction}
+          onSuccess={(message) => {
+            // Callback untuk menampilkan pesan sukses di modal
+            console.log('Success message:', message);
+          }}
+        />
+      )}
     </div>
   );
 }

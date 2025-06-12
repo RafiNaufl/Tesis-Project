@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { Status, PayStatus, DeductionType } from "@/generated/prisma";
+import { Status } from "@/generated/prisma/enums";
 
 // Konstanta untuk perhitungan penggajian
 const OVERTIME_RATE_PER_HOUR = 1.5; // 1.5x dari gaji dasar per jam
@@ -70,7 +70,7 @@ const calculateLateDeductions = async (employeeId: string, month: number, year: 
         year,
         reason: `Keterlambatan ${attendance.date.toLocaleDateString()} (${lateMinutes} menit)`,
         amount: deduction,
-        type: DeductionType.LATE,
+        type: "LATE",
       },
     });
   }
@@ -117,7 +117,7 @@ const calculateAbsenceDeductions = async (employeeId: string, month: number, yea
         year,
         reason: `Ketidakhadiran (${absences.length} hari)`,
         amount: totalDeduction,
-        type: DeductionType.ABSENCE,
+        type: "ABSENCE",
       },
     });
   }
@@ -272,7 +272,7 @@ export const generateMonthlyPayroll = async (employeeId: string, month: number, 
       overtimeHours: overtime.hours,
       overtimeAmount: overtime.amount,
       lateDeduction,
-      status: PayStatus.PENDING,
+      status: "PENDING",
     },
   });
 
@@ -344,7 +344,7 @@ export const markPayrollAsPaid = async (payrollId: string) => {
     throw new Error("Slip gaji tidak ditemukan");
   }
 
-  if (payroll.status === PayStatus.PAID) {
+  if (payroll.status === "PAID") {
     throw new Error("Slip gaji ini sudah dibayarkan");
   }
 
@@ -352,7 +352,7 @@ export const markPayrollAsPaid = async (payrollId: string) => {
   const updatedPayroll = await prisma.payroll.update({
     where: { id: payrollId },
     data: {
-      status: PayStatus.PAID,
+      status: "PAID",
       paidAt: new Date(),
     },
   });
@@ -368,4 +368,4 @@ export const markPayrollAsPaid = async (payrollId: string) => {
   });
 
   return updatedPayroll;
-}; 
+};

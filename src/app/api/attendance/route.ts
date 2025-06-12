@@ -4,7 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { format, getDay } from "date-fns";
 import { recordCheckIn, recordCheckOut, getMonthlyAttendanceReport } from "@/lib/attendance";
-import { Status } from "@/generated/prisma";
+import { Status } from "@/generated/prisma/enums";
 import { 
   createCheckInNotification, 
   createLateCheckInAdminNotification,
@@ -310,7 +310,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { action } = body; // action should be "check-in" or "check-out"
+    const { action, photoUrl, latitude, longitude } = body; // action should be "check-in" or "check-out"
     const now = new Date();
     const workdayType = getWorkdayType(now);
     
@@ -365,9 +365,9 @@ export async function POST(req: NextRequest) {
           );
         }
 
-        // Proses check-in
-        const attendance = await recordCheckIn(employee.id);
-        console.log("Check-in recorded:", attendance);
+        // Proses check-in dengan foto dan geolokasi
+        const attendance = await recordCheckIn(employee.id, photoUrl, latitude, longitude);
+        console.log("Check-in recorded with photo and geolocation:", attendance);
         
         // Notifikasi karyawan
         let message = "";
@@ -457,9 +457,9 @@ export async function POST(req: NextRequest) {
         }
         
         try {
-        // Proses check-out
-        const attendance = await recordCheckOut(employee.id);
-        console.log("Check-out recorded:", attendance);
+        // Proses check-out dengan foto dan geolokasi
+        const attendance = await recordCheckOut(employee.id, photoUrl, latitude, longitude);
+        console.log("Check-out recorded with photo and geolocation:", attendance);
           
           // Pastikan data lengkap sebelum dikirim ke klien
           const formattedAttendance = formatAttendanceResponse({

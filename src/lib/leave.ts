@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { LeaveStatus, LeaveType } from "@/generated/prisma";
+import { LeaveStatus } from "@/generated/prisma/enums";
 
 /**
  * Membuat permohonan cuti baru
@@ -9,7 +9,7 @@ export const createLeaveRequest = async (
   startDate: Date,
   endDate: Date,
   reason: string,
-  type: LeaveType
+  type: string
 ) => {
   // Validasi tanggal
   if (startDate > endDate) {
@@ -206,4 +206,4 @@ export const rejectLeaveRequest = async (leaveId: string, adminId: string) => {
   });
 
   return updatedLeave;
-}; 
+};

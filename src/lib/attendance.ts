@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { Status, LeaveStatus } from "@/generated/prisma";
+import { Status, LeaveStatus } from "@/generated/prisma/enums";
 import {
   getWorkdayType,
   WorkdayType,
@@ -62,8 +62,17 @@ export const calculateOvertime = (checkOutTime: Date | null, isOvertimeApproved:
 
 /**
  * Mencatat kehadiran karyawan (check-in)
+ * @param employeeId ID karyawan
+ * @param photoUrl URL foto saat check-in (opsional)
+ * @param latitude Latitude lokasi saat check-in (opsional)
+ * @param longitude Longitude lokasi saat check-in (opsional)
  */
-export const recordCheckIn = async (employeeId: string) => {
+export const recordCheckIn = async (
+  employeeId: string,
+  photoUrl?: string,
+  latitude?: number,
+  longitude?: number
+) => {
   const now = new Date();
   const today = startOfDay(now);
   const tomorrow = endOfDay(now);
@@ -176,6 +185,10 @@ export const recordCheckIn = async (employeeId: string) => {
         isSundayWorkApproved: false,
         // Hapus catatan penolakan sebelumnya jika ada
         notes: existingAttendance.notes?.includes("Di Tolak") ? "" : existingAttendance.notes,
+        // Tambahkan data foto dan geolokasi
+        checkInPhotoUrl: photoUrl,
+        checkInLatitude: latitude,
+        checkInLongitude: longitude,
       },
     });
     
@@ -189,27 +202,84 @@ export const recordCheckIn = async (employeeId: string) => {
     
     return result;
   } else {
-    // Jika belum ada catatan, buat baru
-    return prisma.attendance.create({
-      data: {
-        employeeId,
-        date: today,
-        checkIn: now,
-        status,
-        isLate,
-        lateMinutes,
-        isSundayWork,
-        isOvertimeApproved: false, // Default tidak disetujui
-        isSundayWorkApproved: false, // Default tidak disetujui
+    // Jika belum ada catatan, buat baru dengan upsert untuk menghindari race condition
+    try {
+      return await prisma.attendance.create({
+        data: {
+          employeeId,
+          date: today,
+          checkIn: now,
+          status,
+          isLate,
+          lateMinutes,
+          isSundayWork,
+          isOvertimeApproved: false, // Default tidak disetujui
+          isSundayWorkApproved: false, // Default tidak disetujui
+          // Tambahkan data foto dan geolokasi
+          checkInPhotoUrl: photoUrl,
+          checkInLatitude: latitude,
+          checkInLongitude: longitude,
       },
-    });
+      });
+    } catch (error: any) {
+      // Jika terjadi unique constraint error, coba cari record yang sudah ada dan update
+      if (error.code === 'P2002' && error.meta?.target?.includes('employeeId') && error.meta?.target?.includes('date')) {
+        console.log('Unique constraint violation detected, attempting to update existing record');
+        
+        // Cari record yang sudah ada
+        const existingRecord = await prisma.attendance.findFirst({
+          where: {
+            employeeId,
+            date: {
+              gte: today,
+              lt: addDays(today, 1),
+            },
+          },
+        });
+        
+        if (existingRecord) {
+          // Update record yang sudah ada
+          return await prisma.attendance.update({
+            where: { id: existingRecord.id },
+            data: {
+              checkIn: now,
+              checkOut: null,
+              status,
+              isLate,
+              lateMinutes,
+              isSundayWork,
+              approvedAt: null,
+              approvedBy: null,
+              isOvertimeApproved: false,
+              isSundayWorkApproved: false,
+              notes: existingRecord.notes?.includes("Di Tolak") ? "" : existingRecord.notes,
+              checkInPhotoUrl: photoUrl,
+              checkInLatitude: latitude,
+              checkInLongitude: longitude,
+            },
+          });
+        }
+      }
+      
+      // Re-throw error jika bukan unique constraint atau tidak bisa di-handle
+      throw error;
+    }
   }
 };
 
 /**
  * Mencatat kehadiran karyawan (check-out)
+ * @param employeeId ID karyawan
+ * @param photoUrl URL foto saat check-out (opsional)
+ * @param latitude Latitude lokasi saat check-out (opsional)
+ * @param longitude Longitude lokasi saat check-out (opsional)
  */
-export const recordCheckOut = async (employeeId: string) => {
+export const recordCheckOut = async (
+  employeeId: string,
+  photoUrl?: string,
+  latitude?: number,
+  longitude?: number
+) => {
   const now = new Date();
   const today = startOfDay(now);
 
@@ -251,6 +321,10 @@ export const recordCheckOut = async (employeeId: string) => {
     data: {
       checkOut: now,
       overtime: overtimeMinutes, // Simpan overtime meskipun belum disetujui
+      // Tambahkan data foto dan geolokasi
+      checkOutPhotoUrl: photoUrl,
+      checkOutLatitude: latitude,
+      checkOutLongitude: longitude,
     },
   });
   

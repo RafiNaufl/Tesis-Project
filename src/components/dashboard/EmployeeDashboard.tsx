@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
+import AttendanceCapture from "../attendance/AttendanceCapture";
 
 type AttendanceRecord = {
   id: string;
@@ -50,6 +51,16 @@ export default function EmployeeDashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  
+  // State untuk AttendanceCapture
+  const [showAttendanceCapture, setShowAttendanceCapture] = useState(false);
+  const [captureAction, setCaptureAction] = useState<'check-in' | 'check-out'>('check-in');
+  const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
+  const [capturedLatitude, setCapturedLatitude] = useState<number | null>(null);
+  const [capturedLongitude, setCapturedLongitude] = useState<number | null>(null);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [isCheckingIn, setIsCheckingIn] = useState(false);
+  const [isCheckingOut, setIsCheckingOut] = useState(false);
 
   // Fungsi untuk format waktu
   const formatTime = (date: Date | null | string): string => {
@@ -323,7 +334,74 @@ export default function EmployeeDashboard() {
     }
   }, []);
 
-  const handleCheckIn = async () => {
+  // Fungsi untuk mengunggah foto ke server
+  const uploadPhoto = async (photoBase64: string): Promise<string> => {
+    try {
+      // Konversi base64 ke blob
+      const response = await fetch(photoBase64);
+      const blob = await response.blob();
+      
+      // Buat FormData untuk upload
+      const formData = new FormData();
+      formData.append('file', blob, 'photo.jpg');
+      
+      // Upload ke server
+      const uploadResponse = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
+      
+      if (!uploadResponse.ok) {
+        throw new Error('Gagal mengunggah foto');
+      }
+      
+      const uploadResult = await uploadResponse.json();
+      return uploadResult.url;
+    } catch (error) {
+      console.error('Error uploading photo:', error);
+      throw new Error('Gagal mengunggah foto');
+    }
+  };
+  
+  // Fungsi untuk menangani hasil dari AttendanceCapture
+  const handleCaptureComplete = async (photoUrl: string, latitude: number, longitude: number) => {
+    try {
+      // Simpan data yang ditangkap
+      setCapturedPhoto(photoUrl);
+      setCapturedLatitude(latitude);
+      setCapturedLongitude(longitude);
+      
+      // Upload foto dan dapatkan URL
+      setIsUploadingPhoto(true);
+      const uploadedPhotoUrl = await uploadPhoto(photoUrl);
+      
+      // Proses check-in atau check-out berdasarkan captureAction
+      if (captureAction === 'check-in') {
+        await processCheckIn(uploadedPhotoUrl, latitude, longitude);
+      } else {
+        await processCheckOut(uploadedPhotoUrl, latitude, longitude);
+      }
+    } catch (error: any) {
+      console.error('Error in capture workflow:', error);
+      setError(error.message || 'Terjadi kesalahan saat memproses absensi');
+    } finally {
+      // Reset state
+      setShowAttendanceCapture(false);
+      setIsUploadingPhoto(false);
+      setIsCheckingIn(false);
+      setIsCheckingOut(false);
+    }
+  };
+  
+  // Fungsi untuk memulai proses check-in
+  const handleCheckIn = () => {
+    setCaptureAction('check-in');
+    setShowAttendanceCapture(true);
+    setIsCheckingIn(true);
+  };
+  
+  // Fungsi untuk memproses check-in setelah foto dan lokasi ditangkap
+  const processCheckIn = async (photoUrl: string, latitude: number, longitude: number) => {
     setActionLoading(true);
     setError(null);
     
@@ -336,7 +414,12 @@ export default function EmployeeDashboard() {
           'Pragma': 'no-cache',
           'Expires': '0'
         },
-        body: JSON.stringify({ action: 'check-in' }),
+        body: JSON.stringify({ 
+          action: 'check-in',
+          photoUrl,
+          latitude,
+          longitude
+        }),
       });
       
       if (!response.ok) {
@@ -383,15 +466,17 @@ export default function EmployeeDashboard() {
       
       // isCheckedIn akan diperbarui oleh useEffect berdasarkan todayRecord
       
-      // Tampilkan alert berdasarkan status pengajuan
-      if (todayRecord && 
-         ((todayRecord.notes && todayRecord.notes.includes("Di Tolak")) || 
-          (todayRecord.approvedAt && 
-           ((todayRecord.overtime > 0 && !todayRecord.isOvertimeApproved) || 
-            (todayRecord.isSundayWork && !todayRecord.isSundayWorkApproved))))) {
-        window.alert("✅ Pengajuan ulang absen berhasil dicatat! Menunggu persetujuan admin.");
-      } else {
-        window.alert("✅ Absen masuk berhasil dicatat! Selamat bekerja!");
+      // Tampilkan pesan sukses di modal
+      if (window.showAttendanceSuccess) {
+        if (todayRecord && 
+           ((todayRecord.notes && todayRecord.notes.includes("Di Tolak")) || 
+            (todayRecord.approvedAt && 
+             ((todayRecord.overtime > 0 && !todayRecord.isOvertimeApproved) || 
+              (todayRecord.isSundayWork && !todayRecord.isSundayWorkApproved))))) {
+          window.showAttendanceSuccess("✅ Pengajuan ulang absen berhasil dicatat! Menunggu persetujuan admin.");
+        } else {
+          window.showAttendanceSuccess("✅ Absen masuk berhasil dicatat! Selamat bekerja!");
+        }
       }
       
       // Trigger storage event untuk refresh di tab lain
@@ -444,7 +529,29 @@ export default function EmployeeDashboard() {
     }
   };
 
-  const handleCheckOut = async () => {
+  // Fungsi untuk memulai proses check-out
+  const handleCheckOut = () => {
+    // Pre-warm GPS sebelum membuka modal check-out
+    if (navigator.geolocation) {
+      console.log('Pre-warming GPS for check-out...');
+      navigator.geolocation.getCurrentPosition(
+        () => console.log('GPS pre-warm successful'),
+        (err) => console.log('GPS pre-warm error:', err.code),
+        {
+          enableHighAccuracy: false,
+          timeout: 5000,
+          maximumAge: 60000
+        }
+      );
+    }
+    
+    setCaptureAction('check-out');
+    setShowAttendanceCapture(true);
+    setIsCheckingOut(true);
+  };
+  
+  // Fungsi untuk memproses check-out setelah foto dan lokasi ditangkap
+  const processCheckOut = async (photoUrl: string, latitude: number, longitude: number) => {
     setActionLoading(true);
     setError(null);
     
@@ -457,7 +564,12 @@ export default function EmployeeDashboard() {
           'Pragma': 'no-cache',
           'Expires': '0'
         },
-        body: JSON.stringify({ action: 'check-out' }),
+        body: JSON.stringify({ 
+          action: 'check-out',
+          photoUrl,
+          latitude,
+          longitude
+        }),
       });
       
       // Ambil data respons terlebih dahulu
@@ -498,8 +610,10 @@ export default function EmployeeDashboard() {
       
       // isCheckedIn akan diperbarui oleh useEffect berdasarkan todayRecord
       
-      // Tampilkan alert untuk check out
-      window.alert("✅ Absen keluar berhasil dicatat! Terima kasih atas kerja keras Anda hari ini!");
+      // Tampilkan pesan sukses di modal
+      if (window.showAttendanceSuccess) {
+        window.showAttendanceSuccess("✅ Absen keluar berhasil dicatat! Terima kasih atas kerja keras Anda hari ini!");
+      }
       
       // Trigger storage event untuk refresh di tab lain
       localStorage.setItem('attendance-update', Date.now().toString());
@@ -1266,6 +1380,23 @@ export default function EmployeeDashboard() {
           </div>
         )}
       </div>
+      
+      {/* Modal untuk AttendanceCapture */}
+      {showAttendanceCapture && (
+        <AttendanceCapture
+          onComplete={handleCaptureComplete}
+          onCancel={() => {
+            setShowAttendanceCapture(false);
+            setIsCheckingIn(false);
+            setIsCheckingOut(false);
+          }}
+          actionType={captureAction}
+          onSuccess={(message) => {
+            // Callback untuk menampilkan pesan sukses di modal
+            console.log('Success message:', message);
+          }}
+        />
+      )}
     </div>
   );
 }

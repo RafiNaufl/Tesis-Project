@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
   output   = "../src/generated/prisma"
@@ -14,25 +8,22 @@ datasource db {
   url      = "file:./dev.db"
 }
 
-// User model for authentication
 model User {
   id              String         @id @default(cuid())
   name            String
   email           String         @unique
   hashedPassword  String
-  profileImageUrl String?        // Added field for profile image
-  role            Role           @default(EMPLOYEE)
+  profileImageUrl String?
+  role            String         @default("EMPLOYEE")
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
   employee        Employee?
-  // Relationships
-  sessions        Session[]
   notifications   Notification[]
+  sessions        Session[]
 
   @@map("users")
 }
 
-// Session model for NextAuth
 model Session {
   id           String   @id @default(cuid())
   sessionToken String   @unique
@@ -43,116 +34,106 @@ model Session {
   @@map("sessions")
 }
 
-// Employee model
 model Employee {
-  id             String       @id @default(cuid())
-  employeeId     String       @unique
-  userId         String       @unique
-  position       String
-  department     String
-  basicSalary    Float
-  joiningDate    DateTime
-  contactNumber  String?
-  address        String?
-  isActive       Boolean      @default(true)
-  
-  // Relationships
-  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  attendances    Attendance[]
-  payrolls       Payroll[]
-  deductions     Deduction[]
-  allowances     Allowance[]
-  leaveRequests  Leave[]      // Added relationship to Leave model
+  id            String       @id @default(cuid())
+  employeeId    String       @unique
+  userId        String       @unique
+  position      String
+  department    String
+  basicSalary   Float
+  joiningDate   DateTime
+  contactNumber String?
+  address       String?
+  isActive      Boolean      @default(true)
+  allowances    Allowance[]
+  attendances   Attendance[]
+  deductions    Deduction[]
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  leaveRequests Leave[]
+  payrolls      Payroll[]
 
   @@map("employees")
 }
 
-// Notification model
 model Notification {
   id        String   @id @default(cuid())
   userId    String
   title     String
   message   String
-  type      String   // info, success, warning, error
+  type      String
   read      Boolean  @default(false)
   createdAt DateTime @default(now())
-  
-  // Relationships
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("notifications")
 }
 
-// Attendance model
 model Attendance {
-  id                 String    @id @default(cuid())
-  employeeId         String
-  date               DateTime  @default(now())
-  checkIn            DateTime?
-  checkOut           DateTime?
-  status             Status    @default(ABSENT)
-  notes              String?
-  isLate             Boolean   @default(false)   // Flag for late check-in
-  lateMinutes        Int       @default(0)      // Minutes late if check-in is after 8:30 AM
-  overtime           Int       @default(0)      // Minutes of overtime if check-out is after 4:30 PM
-  isOvertimeApproved Boolean   @default(false)  // Apakah lembur disetujui oleh admin
-  isSundayWork       Boolean   @default(false)  // Flag untuk kerja di hari Minggu
-  isSundayWorkApproved Boolean @default(false)  // Apakah kerja hari Minggu disetujui admin
-  approvedBy         String?                     // ID admin yang menyetujui
-  approvedAt         DateTime?                   // Waktu persetujuan
-  
-  // Relationships
-  employee    Employee  @relation(fields: [employeeId], references: [id])
+  id                   String    @id @default(cuid())
+  employeeId           String
+  date                 DateTime  @default(now())
+  checkIn              DateTime?
+  checkOut             DateTime?
+  status               String    @default("ABSENT")
+  notes                String?
+  isLate               Boolean   @default(false)
+  lateMinutes          Int       @default(0)
+  overtime             Int       @default(0)
+  isOvertimeApproved   Boolean   @default(false)
+  isSundayWork         Boolean   @default(false)
+  isSundayWorkApproved Boolean   @default(false)
+  approvedBy           String?
+  approvedAt           DateTime?
+  checkInPhotoUrl      String?
+  checkInLatitude      Float?
+  checkInLongitude     Float?
+  checkOutPhotoUrl     String?
+  checkOutLatitude     Float?
+  checkOutLongitude    Float?
+  employee             Employee  @relation(fields: [employeeId], references: [id])
 
   @@unique([employeeId, date])
   @@map("attendances")
 }
 
-// Payroll model
 model Payroll {
-  id               String      @id @default(cuid())
-  employeeId       String
-  month            Int
-  year             Int
-  baseSalary       Float
-  totalAllowances  Float       @default(0)
-  totalDeductions  Float       @default(0)
-  netSalary        Float
-  daysPresent      Int
-  daysAbsent       Int
-  daysLate         Int         @default(0)  // Count of late days
-  overtimeHours    Float       @default(0)
-  overtimeAmount   Float       @default(0)
-  lateDeduction    Float       @default(0)  // Amount deducted for late arrivals
-  status           PayStatus   @default(PENDING)
-  createdAt        DateTime    @default(now())
-  paidAt           DateTime?
-  
-  // Relationships
-  employee         Employee    @relation(fields: [employeeId], references: [id])
+  id              String    @id @default(cuid())
+  employeeId      String
+  month           Int
+  year            Int
+  baseSalary      Float
+  totalAllowances Float     @default(0)
+  totalDeductions Float     @default(0)
+  netSalary       Float
+  daysPresent     Int
+  daysAbsent      Int
+  daysLate        Int       @default(0)
+  overtimeHours   Float     @default(0)
+  overtimeAmount  Float     @default(0)
+  lateDeduction   Float     @default(0)
+  status          String    @default("PENDING")
+  createdAt       DateTime  @default(now())
+  paidAt          DateTime?
+  employee        Employee  @relation(fields: [employeeId], references: [id])
 
   @@unique([employeeId, month, year])
   @@map("payrolls")
 }
 
-// Deduction model
 model Deduction {
-  id         String       @id @default(cuid())
+  id         String   @id @default(cuid())
   employeeId String
   month      Int
   year       Int
   reason     String
   amount     Float
-  date       DateTime     @default(now())
-  type       DeductionType @default(OTHER)
-  
-  // Relationships
-  employee   Employee     @relation(fields: [employeeId], references: [id])
+  date       DateTime @default(now())
+  type       String   @default("OTHER")
+  employee   Employee @relation(fields: [employeeId], references: [id])
 
   @@map("deductions")
 }
 
-// Allowance model
 model Allowance {
   id         String   @id @default(cuid())
   employeeId String
@@ -161,68 +142,23 @@ model Allowance {
   type       String
   amount     Float
   date       DateTime @default(now())
-  
-  // Relationships
   employee   Employee @relation(fields: [employeeId], references: [id])
 
   @@map("allowances")
 }
 
-// Leave model for managing employee leave requests
 model Leave {
-  id            String      @id @default(cuid())
-  employeeId    String
-  startDate     DateTime
-  endDate       DateTime
-  reason        String
-  type          LeaveType
-  status        LeaveStatus @default(PENDING)
-  approvedBy    String?     // ID of admin who approved/rejected
-  approvedAt    DateTime?
-  createdAt     DateTime    @default(now())
-  
-  // Relationships
-  employee      Employee    @relation(fields: [employeeId], references: [id])
+  id         String    @id @default(cuid())
+  employeeId String
+  startDate  DateTime
+  endDate    DateTime
+  reason     String
+  type       String
+  status     String    @default("PENDING")
+  approvedBy String?
+  approvedAt DateTime?
+  createdAt  DateTime  @default(now())
+  employee   Employee  @relation(fields: [employeeId], references: [id])
 
   @@map("leaves")
-}
-
-// Enums
-enum Role {
-  ADMIN
-  EMPLOYEE
-}
-
-enum Status {
-  PRESENT
-  ABSENT
-  LATE
-  HALFDAY
-  LEAVE     // Added LEAVE status
-}
-
-enum PayStatus {
-  PENDING
-  PAID
-  CANCELLED
-}
-
-enum LeaveType {
-  SICK
-  VACATION
-  PERSONAL
-  OTHER
-}
-
-enum LeaveStatus {
-  PENDING
-  APPROVED
-  REJECTED
-}
-
-enum DeductionType {
-  LATE
-  ABSENCE
-  TAX
-  OTHER
 }

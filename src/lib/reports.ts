@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { Status } from "@/generated/prisma";
+import { Status } from "@/generated/prisma/enums";
 
 /**
  * Membuat laporan kehadiran harian untuk semua karyawan
@@ -299,4 +299,4 @@ export const generateMonthlyPayrollReport = async (year: number, month: number) 
     summary,
     details,
   };
-}; 
+};
