@@ -84,12 +84,12 @@ model Attendance {
   isSundayWorkApproved Boolean   @default(false)
   approvedBy           String?
   approvedAt           DateTime?
-  checkInPhotoUrl      String?
   checkInLatitude      Float?
   checkInLongitude     Float?
-  checkOutPhotoUrl     String?
+  checkInPhotoUrl      String?
   checkOutLatitude     Float?
   checkOutLongitude    Float?
+  checkOutPhotoUrl     String?
   employee             Employee  @relation(fields: [employeeId], references: [id])
 
   @@unique([employeeId, date])

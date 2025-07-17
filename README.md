@@ -190,3 +190,33 @@ The database consists of the following tables:
 - **allowances**: Salary allowances
 - **notifications**: System notifications
 
+## Development Tools
+
+### Authentication Checker Scripts
+
+The project includes several utility scripts to verify authentication functionality:
+
+- **check-user.js**: Verifies admin user authentication
+  ```bash
+  node check-user.js
+  ```
+
+- **check-employee.js**: Verifies employee user authentication
+  ```bash
+  node check-employee.js
+  ```
+
+- **check-all-users.js**: Comprehensive authentication checker that tests:
+  - Admin user authentication
+  - Employee user authentication
+  - Invalid password handling
+  - Non-existent user handling
+  ```bash
+  node check-all-users.js
+  ```
+
+- **test-nextauth-session.js**: Tests NextAuth.js session endpoints
+  ```bash
+  node test-nextauth-session.js
+  ```
+
