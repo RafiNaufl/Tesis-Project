@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { format, getDay } from "date-fns";
-import { recordCheckIn, recordCheckOut, getMonthlyAttendanceReport } from "@/lib/attendance";
+ 
+import { checkIn, checkOut, getMonthlyAttendanceReport, startOvertime, endOvertime } from "@/lib/attendance";
+import { getWorkdayType, WorkdayType, getWorkEndTime, isOvertimeCheckOut, isOvertimeCheckIn } from "@/lib/attendanceRules";
+import { calculateOvertimeDuration } from "@/lib/overtimeCalculator";
 import { Status } from "@/generated/prisma/enums";
 import { 
   createCheckInNotification, 
@@ -12,43 +14,25 @@ import {
   createOvertimeAdminNotification,
   addNotificationUpdateHeader
 } from "@/lib/notification";
-import {
-  getWorkdayType,
-  WorkdayType,
-  isOvertimeCheckIn,
-  isOvertimeCheckOut
-} from "@/lib/attendanceRules";
+// removed duplicate import of attendanceRules
 
-// Tipe untuk data attendance
-interface AttendanceData {
-  id: string;
-  employeeId: string;
-  date: Date;
-  checkIn: Date | null;
-  checkOut: Date | null;
-  status: Status;
-  notes: string | null;
-  isLate: boolean;
-  lateMinutes: number;
-  overtime: number;
-}
 
 /**
  * Fungsi untuk memformat data attendance untuk respons API
  */
 function formatAttendanceResponse(attendance: any): any {
   // Pastikan properti overtime ada
-  if (attendance && !attendance.hasOwnProperty('overtime')) {
+  if (attendance && !Object.prototype.hasOwnProperty.call(attendance, 'overtime')) {
     attendance.overtime = 0;
   }
   
   // Pastikan properti isLate ada
-  if (attendance && !attendance.hasOwnProperty('isLate')) {
+  if (attendance && !Object.prototype.hasOwnProperty.call(attendance, 'isLate')) {
     attendance.isLate = attendance.status === 'LATE';
   }
   
   // Pastikan properti lateMinutes ada
-  if (attendance && !attendance.hasOwnProperty('lateMinutes')) {
+  if (attendance && !Object.prototype.hasOwnProperty.call(attendance, 'lateMinutes')) {
     attendance.lateMinutes = 0;
   }
   
@@ -76,7 +60,7 @@ export async function GET(req: NextRequest) {
     const limitNum = limit ? parseInt(limit) : undefined;
 
     // Special case: If limit is provided without month/year, return recent activities for admin dashboard
-    if (limitNum && session.user.role === "ADMIN" && !month && !year) {
+    if (limitNum && (session.user.role === "ADMIN" || session.user.role === "MANAGER") && !month && !year) {
       // Get recent attendance records across all employees for admin dashboard
       const recentAttendances = await prisma.attendance.findMany({
         where: {
@@ -157,11 +141,19 @@ export async function GET(req: NextRequest) {
     }
 
     // Admins can see all records, employees can only see their own
-    if (session.user.role !== "ADMIN" && !employeeId) {
+    if (session.user.role !== "ADMIN" && session.user.role !== "MANAGER" && !employeeId) {
       // For employees, find their employee ID
       const employee = await prisma.employee.findFirst({
         where: {
           userId: session.user.id,
+        },
+        include: {
+          user: {
+            select: {
+              name: true,
+              profileImageUrl: true,
+            },
+          },
         },
       });
 
@@ -179,9 +171,27 @@ export async function GET(req: NextRequest) {
         monthNum
       );
       
-      // Format attendances
+      // Format attendances and attach employee details
       if (attendanceReport && attendanceReport.attendances) {
-        attendanceReport.attendances = attendanceReport.attendances.map(formatAttendanceResponse);
+        attendanceReport.attendances = attendanceReport.attendances.map((a: any) => {
+          const formatted = formatAttendanceResponse(a);
+          return {
+            ...formatted,
+            employee: {
+              id: employee.id,
+              employeeId: employee.employeeId,
+              position: employee.position,
+              division: employee.division,
+              organization: employee.organization ?? null,
+              workScheduleType: employee.workScheduleType ?? null,
+              name: employee.user?.name ?? session.user.name ?? "",
+              user: {
+                name: employee.user?.name ?? session.user.name ?? "",
+                profileImageUrl: employee.user?.profileImageUrl ?? undefined,
+              },
+            },
+          };
+        });
       }
       
       // Create response with cache control headers
@@ -195,8 +205,17 @@ export async function GET(req: NextRequest) {
       return response;
     }
 
-    // For admins with specific employee query
+    // For admins/managers with specific employee query
     if (employeeId) {
+      if (session.user.role !== "ADMIN" && session.user.role !== "MANAGER") {
+        const employee = await prisma.employee.findUnique({
+          where: { id: employeeId },
+          select: { userId: true },
+        });
+        if (!employee || employee.userId !== session.user.id) {
+          return NextResponse.json({ error: "Tidak diizinkan" }, { status: 403 });
+        }
+      }
       const attendanceReport = await getMonthlyAttendanceReport(
         employeeId,
         yearNum,
@@ -219,7 +238,7 @@ export async function GET(req: NextRequest) {
       return response;
     }
 
-    // For admins requesting all employees
+    // For admins/managers requesting all employees
     // Fetch all active employees
     const employees = await prisma.employee.findMany({
       where: { isActive: true },
@@ -228,6 +247,7 @@ export async function GET(req: NextRequest) {
           select: {
             name: true,
             email: true,
+            profileImageUrl: true,
           },
         },
       },
@@ -254,7 +274,13 @@ export async function GET(req: NextRequest) {
             name: employee.user.name,
             email: employee.user.email,
             position: employee.position,
-            department: employee.department,
+            division: employee.division,
+            organization: employee.organization ?? null,
+            workScheduleType: employee.workScheduleType ?? null,
+            user: {
+              name: employee.user.name,
+              profileImageUrl: employee.user.profileImageUrl ?? undefined,
+            },
           },
           report,
         };
@@ -310,11 +336,19 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { action, photoUrl, latitude, longitude } = body; // action should be "check-in" or "check-out"
+      const { action, photoUrl, latitude, longitude, locationNote, reason, consentConfirmed } = body;
     const now = new Date();
     const workdayType = getWorkdayType(now);
     
     try {
+      // Validasi input umum
+      if (!photoUrl || typeof latitude !== "number" || typeof longitude !== "number") {
+        return NextResponse.json(
+          { error: "Foto dan lokasi wajib disertakan untuk presensi" },
+          { status: 400 }
+        );
+      }
+
       // Validasi berdasarkan aturan kehadiran dan jam kerja
       if (action === "check-in") {
         // Cek apakah ini pengajuan ulang setelah ditolak
@@ -365,8 +399,7 @@ export async function POST(req: NextRequest) {
           );
         }
 
-        // Proses check-in dengan foto dan geolokasi
-        const attendance = await recordCheckIn(employee.id, photoUrl, latitude, longitude);
+        const attendance = await checkIn(employee.id, photoUrl, latitude, longitude);
         console.log("Check-in recorded with photo and geolocation:", attendance);
         
         // Notifikasi karyawan
@@ -445,21 +478,99 @@ export async function POST(req: NextRequest) {
           }, { status: 400 });
         }
         
-        // Cek apakah checkout menghasilkan lembur
-        if (isOvertimeCheckOut(now, now)) {
-          // Notifikasi admin untuk persetujuan lembur
-          await createOvertimeAdminNotification(
-            employee.id,
-            employee.user.name,
-            "Check-out pada jam lembur",
-            now
-          );
-        }
+        // Opsional: beri tahu admin jika checkout melewati jam kerja
+        // (tanpa menghitung lembur otomatis)
         
         try {
-        // Proses check-out dengan foto dan geolokasi
-        const attendance = await recordCheckOut(employee.id, photoUrl, latitude, longitude);
+        let attendance = await checkOut(employee.id, photoUrl, latitude, longitude);
         console.log("Check-out recorded with photo and geolocation:", attendance);
+
+          const confirmOvertime = body.confirmOvertime === true;
+          const overtimeReason = typeof body.overtimeReason === 'string' ? body.overtimeReason : '';
+          const consentConfirmedFlag = body.consentConfirmed === true;
+
+          const outside = isOvertimeCheckOut(now, now);
+          if (outside && !todayAttendance.overtimeStart && confirmOvertime && consentConfirmedFlag) {
+            const workdayType = getWorkdayType(now);
+            let overtimeStart: Date;
+            if (workdayType === WorkdayType.SUNDAY) {
+              overtimeStart = todayAttendance.checkIn ? new Date(todayAttendance.checkIn) : new Date(`${now.toLocaleDateString('en-CA')}T08:00:00`);
+            } else {
+              const endStr = getWorkEndTime(workdayType);
+              overtimeStart = new Date(`${now.toLocaleDateString('en-CA')}T${endStr}:00`);
+            }
+            const overtimeMinutes = calculateOvertimeDuration(overtimeStart, now);
+
+            const updated = await prisma.attendance.update({
+              where: { id: todayAttendance.id },
+              data: {
+                overtimeStart,
+                overtimeEnd: now,
+                overtime: overtimeMinutes,
+                overtimeEndAddressNote: body.locationNote || null,
+                overtimeEndPhotoUrl: photoUrl,
+                overtimeEndLatitude: latitude,
+                overtimeEndLongitude: longitude,
+                // Populate start fields as well since this is implicit overtime
+                overtimeStartPhotoUrl: photoUrl,
+                overtimeStartLatitude: latitude,
+                overtimeStartLongitude: longitude,
+                overtimeStartAddressNote: body.locationNote || null,
+              },
+            });
+
+            try {
+              const existingRequest = await prisma.overtimeRequest.findFirst({
+                where: { employeeId: employee.id, date: todayAttendance.date, start: overtimeStart },
+              });
+              if (existingRequest) {
+                await prisma.overtimeRequest.update({
+                  where: { id: existingRequest.id },
+                  data: { end: now, reason: overtimeReason || existingRequest.reason },
+                });
+              } else {
+                await prisma.overtimeRequest.create({
+                  data: {
+                    employeeId: employee.id,
+                    date: todayAttendance.date,
+                    start: overtimeStart,
+                    end: now,
+                    reason: overtimeReason,
+                    status: "PENDING",
+                  },
+                });
+              }
+              await prisma.approvalLog.create({
+                data: {
+                  attendanceId: todayAttendance.id,
+                  action: "REQUEST_SUBMITTED",
+                  actorUserId: session.user.id,
+                  note: (overtimeReason || '').slice(0, 255) || null,
+                },
+              });
+              await prisma.attendanceAuditLog.create({
+                data: {
+                  attendanceId: todayAttendance.id,
+                  userId: session.user.id,
+                  action: "OVERTIME_REQUESTED",
+                  oldValue: { overtimeStart: null },
+                  newValue: { overtimeStart },
+                },
+              });
+              await prisma.attendanceAuditLog.create({
+                data: {
+                  attendanceId: todayAttendance.id,
+                  userId: session.user.id,
+                  action: "OVERTIME_ENDED",
+                  oldValue: { overtimeEnd: null },
+                  newValue: { overtimeEnd: now },
+                },
+              });
+            } catch (err) {
+              console.error("Failed to sync overtime request on checkout:", err);
+            }
+            attendance = updated;
+          }
           
           // Pastikan data lengkap sebelum dikirim ke klien
           const formattedAttendance = formatAttendanceResponse({
@@ -480,21 +591,12 @@ export async function POST(req: NextRequest) {
         
         // Notifikasi karyawan
         let message = "Absen keluar berhasil dicatat.";
-        if (isOvertimeCheckOut(now, now)) {
-          const overtimeHours = Math.floor(attendance.overtime / 60);
-          const overtimeMinutes = attendance.overtime % 60;
-          message = `Absen keluar berhasil dicatat. Anda lembur ${overtimeHours} jam ${overtimeMinutes} menit.`;
-        } else if (attendance.overtime > 0) {
-          const overtimeHours = Math.floor(attendance.overtime / 60);
-          const overtimeMinutes = attendance.overtime % 60;
-          message += ` Anda lembur ${overtimeHours} jam ${overtimeMinutes} menit.`;
-        }
-        
-        await createCheckOutNotification(employee.id, message);
+        message = `${message} [#ref:ATTENDANCE:${attendance.id}]`;
+        await createCheckOutNotification(employee.id, message, { refType: "ATTENDANCE", refId: attendance.id });
         
         // Kirim respons dengan header notifikasi dan cache control
           const response = NextResponse.json(formattedAttendance);
-        addNotificationUpdateHeader(response);
+          addNotificationUpdateHeader(response);
         response.headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
         response.headers.set('Pragma', 'no-cache');
         response.headers.set('Expires', '0');
@@ -506,9 +608,151 @@ export async function POST(req: NextRequest) {
             { status: 500 }
           );
         }
+      } else if (action === "overtime-start") {
+        const todayStart = new Date(now);
+        todayStart.setHours(0, 0, 0, 0);
+        const todayEnd = new Date(now);
+        todayEnd.setHours(23, 59, 59, 999);
+
+        const todayAttendance = await prisma.attendance.findFirst({
+          where: {
+            employeeId: employee.id,
+            date: {
+              gte: todayStart,
+              lte: todayEnd,
+            },
+          },
+        });
+
+        if (todayAttendance && !todayAttendance.checkOut) {
+          return NextResponse.json(
+            { error: "Anda harus melakukan absen keluar (check-out) terlebih dahulu sebelum mulai lembur." },
+            { status: 400 }
+          );
+        }
+
+        // Jika belum ada attendance, pastikan ini di luar jam kerja (atau hari libur)
+        // Jika masih jam kerja normal, arahkan untuk menggunakan Absen Masuk
+        if (!todayAttendance && !isOvertimeCheckIn(now, now)) {
+          return NextResponse.json(
+            { error: "Saat ini masih jam kerja normal. Silakan gunakan tombol Absen Masuk." },
+            { status: 400 }
+          );
+        }
+
+        if (todayAttendance && todayAttendance.overtimeStart) {
+          return NextResponse.json(
+            { error: "Anda sudah memulai lembur hari ini" },
+            { status: 400 }
+          );
+        }
+
+        // Validasi form lembur
+        if (typeof reason !== 'string' || reason.trim().length < 20) {
+          return NextResponse.json(
+            { error: "Alasan lembur minimal 20 karakter" },
+            { status: 400 }
+          );
+        }
+        if (consentConfirmed !== true) {
+          return NextResponse.json(
+            { error: "Anda harus menyetujui kebijakan lembur perusahaan" },
+            { status: 400 }
+          );
+        }
+
+        const attendance = await startOvertime(employee.id, photoUrl, latitude, longitude, locationNote, reason);
+
+        await createOvertimeAdminNotification(
+          employee.id,
+          employee.user.name,
+          "Pengajuan lembur dimulai (menunggu persetujuan)",
+          now
+        );
+
+        // Audit & approval logs
+        await prisma.approvalLog.create({
+          data: {
+            attendanceId: attendance.id,
+            action: "REQUEST_SUBMITTED",
+            actorUserId: session.user.id,
+            note: (reason || '').slice(0, 255) || null,
+          },
+        });
+        await prisma.attendanceAuditLog.create({
+          data: {
+            attendanceId: attendance.id,
+            userId: session.user.id,
+            action: "OVERTIME_REQUESTED",
+            oldValue: { overtimeStart: null },
+            newValue: { overtimeStart: attendance.overtimeStart },
+          },
+        });
+
+        const response = NextResponse.json(formatAttendanceResponse(attendance));
+        addNotificationUpdateHeader(response);
+        response.headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+        response.headers.set('Pragma', 'no-cache');
+        response.headers.set('Expires', '0');
+        return response;
+      } else if (action === "overtime-end") {
+        const todayStart = new Date(now);
+        todayStart.setHours(0, 0, 0, 0);
+        const todayEnd = new Date(now);
+        todayEnd.setHours(23, 59, 59, 999);
+
+        const todayAttendance = await prisma.attendance.findFirst({
+          where: {
+            employeeId: employee.id,
+            date: {
+              gte: todayStart,
+              lte: todayEnd,
+            },
+          },
+        });
+
+        if (!todayAttendance || !todayAttendance.overtimeStart) {
+          return NextResponse.json(
+            { error: "Selesai lembur hanya boleh setelah mulai lembur" },
+            { status: 400 }
+          );
+        }
+
+        if (todayAttendance.overtimeEnd) {
+          return NextResponse.json(
+            { error: "Anda sudah menyelesaikan lembur hari ini" },
+            { status: 400 }
+          );
+        }
+
+        const attendance = await endOvertime(employee.id, photoUrl, latitude, longitude, locationNote);
+
+        // Validasi backend: jika sistem memangkas waktu lembur di atas pukul 07:00
+        // tambahkan catatan agar pengguna mengetahui pemangkasan otomatis
+        const nextDayLimit = new Date();
+        nextDayLimit.setHours(7, 0, 0, 0);
+        const attendanceDate = new Date(attendance.date);
+        attendanceDate.setHours(0,0,0,0);
+        const limit = new Date(attendanceDate.getTime() + 24*60*60*1000);
+        limit.setHours(7,0,0,0);
+        if (attendance.overtimeEnd && new Date(attendance.overtimeEnd) > limit) {
+          await prisma.attendance.update({
+            where: { id: attendance.id },
+            data: {
+              notes: `${attendance.notes ?? ""} Lembur dipangkas hingga 07:00.`.trim()
+            }
+          });
+        }
+
+        const response = NextResponse.json(formatAttendanceResponse(attendance));
+        addNotificationUpdateHeader(response);
+        response.headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+        response.headers.set('Pragma', 'no-cache');
+        response.headers.set('Expires', '0');
+        return response;
       } else {
         return NextResponse.json(
-          { error: "Tindakan tidak valid. Gunakan 'check-in' atau 'check-out'." },
+          { error: "Tindakan tidak valid. Gunakan 'check-in', 'check-out', 'overtime-start', atau 'overtime-end'." },
           { status: 400 }
         );
       }

@@ -2,9 +2,57 @@
 
 import { Fragment, useState, useEffect, useCallback, useRef } from "react";
 import { Menu, Transition } from "@headlessui/react";
-import { BellIcon } from "@heroicons/react/24/outline";
+import { BellIcon, XMarkIcon } from "@heroicons/react/24/outline";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+
+export const getNotificationTarget = (
+  type: string,
+  title: string,
+  message: string,
+  role?: string
+): string => {
+  const t = `${title} ${message}`.toLowerCase();
+  const isAdmin = role === 'ADMIN' || role === 'MANAGER' || role === 'FOREMAN' || role === 'ASSISTANT_FOREMAN';
+  if (t.includes('cuti') || t.includes('permohonan cuti')) {
+    return isAdmin ? '/leave' : '/leave';
+  }
+  if (t.includes('lembur') || t.includes('overtime')) {
+    return isAdmin ? '/approvals/overtime' : '/attendance';
+  }
+  if (t.includes('check-in') || t.includes('check-out') || t.includes('absen')) {
+    return '/attendance';
+  }
+  if (t.includes('gaji') || t.includes('payroll') || t.includes('slip gaji')) {
+    return '/payroll';
+  }
+  if (t.includes('kasbon') || t.includes('advance') || t.includes('pinjaman lunak') || t.includes('soft loan')) {
+    return t.includes('soft loan') ? '/soft-loan' : '/advance';
+  }
+  return '/notifications';
+};
+
+export const getNotificationHref = (
+  type: string,
+  title: string,
+  message: string,
+  role?: string
+): string => {
+  const m = message || '';
+  const match = m.match(/\[#ref:([A-Z_]+):([a-zA-Z0-9_-]+)\]$/);
+  if (match) {
+    const refType = match[1];
+    const refId = match[2];
+    if (refType === 'LEAVE') return `/leave?selectedId=${refId}`;
+    if (refType === 'OVERTIME') return `/approvals/overtime?requestId=${refId}`;
+    if (refType === 'ATTENDANCE') return `/attendance?attendanceId=${refId}`;
+    if (refType === 'PAYROLL') return `/payroll?payrollId=${refId}`;
+    if (refType === 'ADVANCE') return `/advance?id=${refId}`;
+    if (refType === 'SOFT_LOAN') return `/soft-loan?loanId=${refId}`;
+  }
+  return getNotificationTarget(type, title, message, role);
+};
 
 type Notification = {
   id: string;
@@ -13,6 +61,8 @@ type Notification = {
   type: string;
   read: boolean;
   createdAt: string;
+  refType?: string;
+  refId?: string;
 };
 
 // Create a custom event name for notification updates
@@ -20,6 +70,7 @@ export const NOTIFICATION_UPDATE_EVENT = 'notification-update';
 
 export default function NotificationDropdown() {
   const { data: session } = useSession();
+  const router = useRouter();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState<number>(0);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -76,6 +127,8 @@ export default function NotificationDropdown() {
   const cacheNotifications = useCallback((data: { notifications: Notification[], unreadCount: number }) => {
     try {
       localStorage.setItem('cached_notifications', JSON.stringify(data));
+      const unreadIds = (data.notifications || []).filter(n => !n.read).map(n => n.id);
+      localStorage.setItem('unread_notifications', JSON.stringify(unreadIds));
     } catch (error) {
       console.error("Error caching notifications:", error);
     }
@@ -402,12 +455,48 @@ export default function NotificationDropdown() {
 
     if (diffInHours < 1) {
       const minutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60));
-      return `${minutes} min${minutes !== 1 ? 's' : ''} ago`;
+      const absolute = new Intl.DateTimeFormat('id-ID', { dateStyle: 'long', timeStyle: 'short' }).format(date);
+      return `${absolute} • ${minutes} menit lalu`;
     } else if (diffInHours < 24) {
       const hours = Math.floor(diffInHours);
-      return `${hours} hour${hours !== 1 ? 's' : ''} ago`;
+      const absolute = new Intl.DateTimeFormat('id-ID', { dateStyle: 'long', timeStyle: 'short' }).format(date);
+      return `${absolute} • ${hours} jam lalu`;
     } else {
-      return date.toLocaleDateString();
+      return new Intl.DateTimeFormat('id-ID', { dateStyle: 'long', timeStyle: 'short' }).format(date);
+    }
+  };
+
+
+  const hrefFromRef = (notification: Notification, role?: string) => {
+    const { refType, refId, type, title, message } = notification;
+    if (refType && refId) {
+      if (refType === 'LEAVE') return `/leave?selectedId=${refId}`;
+      if (refType === 'OVERTIME') return `/approvals/overtime?requestId=${refId}`;
+      if (refType === 'ATTENDANCE') return `/attendance?attendanceId=${refId}`;
+      if (refType === 'PAYROLL') return `/payroll?payrollId=${refId}`;
+      if (refType === 'ADVANCE') return `/advance?id=${refId}`;
+      if (refType === 'SOFT_LOAN') return `/soft-loan?loanId=${refId}`;
+    }
+    return getNotificationHref(type, title, message, role);
+  };
+
+  const handleItemClick = async (n: Notification) => {
+    try {
+      const target = hrefFromRef(n, session?.user?.role);
+      const unreadRaw = localStorage.getItem('unread_notifications');
+      const unreadIds = unreadRaw ? JSON.parse(unreadRaw) as string[] : [];
+      if (unreadIds.includes(n.id)) {
+        const nextUnread = unreadIds.filter(id => id !== n.id);
+        localStorage.setItem('unread_notifications', JSON.stringify(nextUnread));
+      }
+      if (!n.read) {
+        await markAsRead(n.id);
+      }
+      setTimeout(() => {
+        router.push(target);
+      }, 150);
+    } catch (e) {
+      console.error('Error handling notification click:', e);
     }
   };
 
@@ -435,19 +524,25 @@ export default function NotificationDropdown() {
   return (
     <Menu as="div" className="relative ml-3">
       {({ open }) => {
-        // Call the handleOpen function when the open state changes
-        useEffect(() => {
-          handleOpen(open);
-        }, [open]);
+        const MenuOpenEffect = ({ isOpen }: { isOpen: boolean }) => {
+          useEffect(() => {
+            handleOpen(isOpen);
+          }, [isOpen]);
+          return null;
+        };
         
         return (
           <>
+            <MenuOpenEffect isOpen={open} />
+            {open && (
+              <div className="fixed inset-0 z-40 bg-gray-900/50 backdrop-blur-sm transition-opacity sm:hidden" aria-hidden="true" />
+            )}
             <div>
-              <Menu.Button className="relative flex rounded-full bg-white p-1 text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2">
+              <Menu.Button className="relative flex rounded-full bg-white p-2 text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 min-h-[44px] min-w-[44px] items-center justify-center">
                 <span className="sr-only">Lihat notifikasi</span>
                 <BellIcon className="h-6 w-6" aria-hidden="true" />
                 {unreadCount > 0 && (
-                  <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-600 flex items-center justify-center text-xs font-medium text-white animate-pulse shadow-lg">
+                  <span className="absolute top-1 right-1 h-5 w-5 rounded-full bg-red-600 flex items-center justify-center text-xs font-medium text-white animate-pulse shadow-lg">
                     {unreadCount > 9 ? "9+" : unreadCount}
                   </span>
                 )}
@@ -462,13 +557,13 @@ export default function NotificationDropdown() {
               leaveFrom="transform opacity-100 scale-100"
               leaveTo="transform opacity-0 scale-95"
             >
-              <Menu.Items className="absolute right-0 z-10 mt-2 w-80 origin-top-right rounded-md bg-white py-1 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
-                <div className="px-4 py-2 border-b border-gray-200">
+              <Menu.Items className="fixed inset-x-4 top-20 z-50 mt-0 origin-top rounded-xl bg-white py-1 shadow-2xl ring-1 ring-black ring-opacity-5 focus:outline-none sm:absolute sm:inset-auto sm:right-0 sm:mt-2 sm:w-96 sm:origin-top-right sm:rounded-md sm:shadow-lg overflow-hidden">
+                <div className="sticky top-0 z-20 bg-white px-4 py-3 border-b border-gray-200 shadow-sm">
                   <div className="flex justify-between items-center">
-                    <h3 className="text-sm font-medium text-gray-900">Notifikasi</h3>
-                    <div className="flex items-center">
+                    <h3 className="text-base font-medium text-gray-900">Notifikasi</h3>
+                    <div className="flex items-center gap-2">
                       {isRefreshing && (
-                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <svg className="animate-spin h-4 w-4 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                         </svg>
@@ -476,11 +571,22 @@ export default function NotificationDropdown() {
                       {unreadCount > 0 && (
                         <button
                           onClick={markAllAsRead}
-                          className="text-xs text-indigo-600 hover:text-indigo-900"
+                          className="text-xs text-indigo-600 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 py-1.5 px-3 rounded-full font-medium transition-colors shadow-sm"
                         >
-                          Tandai semua dibaca
+                          Tandai dibaca
                         </button>
                       )}
+                      <Menu.Item>
+                        {({ close }: { close: () => void }) => (
+                          <button
+                            onClick={close}
+                            className="p-1 rounded-full text-gray-400 hover:text-gray-500 hover:bg-gray-100 transition-colors"
+                            aria-label="Tutup notifikasi"
+                          >
+                            <XMarkIcon className="h-5 w-5" />
+                          </button>
+                        )}
+                      </Menu.Item>
                     </div>
                   </div>
                 </div>
@@ -502,7 +608,7 @@ export default function NotificationDropdown() {
                   </div>
                 )}
 
-                <div className="max-h-80 overflow-y-auto">
+                <div className="max-h-[60vh] sm:max-h-80 overflow-y-auto overscroll-y-contain">
                   {isLoading ? (
                     <div className="px-4 py-6 text-center text-sm text-gray-500">
                       Memuat notifikasi...
@@ -521,7 +627,7 @@ export default function NotificationDropdown() {
                             } px-4 py-3 border-b border-gray-100 cursor-pointer ${
                               !notification.read ? "bg-indigo-50" : ""
                             }`}
-                            onClick={() => !notification.read && markAsRead(notification.id)}
+                            onClick={() => handleItemClick(notification)}
                           >
                             <div className="flex items-start">
                               <div className="flex-shrink-0 mr-3">
@@ -556,8 +662,16 @@ export default function NotificationDropdown() {
                                 </div>
                               </div>
                               <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-gray-900">
-                                  {notification.title}
+                                <p className="text-sm font-medium text-gray-900 flex items-center gap-2">
+                                  <span>{notification.title}</span>
+                                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-medium ${
+                                    notification.type === 'info' ? 'bg-blue-100 text-blue-800' :
+                                    notification.type === 'success' ? 'bg-green-100 text-green-800' :
+                                    notification.type === 'warning' ? 'bg-yellow-100 text-yellow-800' :
+                                    'bg-red-100 text-red-800'
+                                  }`}>
+                                    {notification.type === 'info' ? 'Info' : notification.type === 'warning' ? 'Peringatan' : notification.type === 'success' ? 'Sukses' : 'Penting'}
+                                  </span>
                                 </p>
                                 <p className="text-sm text-gray-500 truncate">
                                   {notification.message}

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
+import DashboardNavigation from "./DashboardNavigation";
 import { NOTIFICATION_UPDATE_EVENT } from "../notifications/NotificationDropdown";
 
 // Buat custom event baru khusus untuk aktivitas 
@@ -37,7 +38,7 @@ export default function AdminDashboard() {
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const retryCountRef = useRef<number>(0);
   const MAX_RETRIES = 3;
-  const POLLING_INTERVAL = 15000; // Turunkan ke 15 detik agar lebih responsif
+  const _POLLING_INTERVAL = 15000; // Turunkan ke 15 detik agar lebih responsif
 
   // Fungsi untuk memformat tanggal dengan aman
   const formatDateSafely = (dateInput: string | Date | null | undefined): string => {
@@ -307,20 +308,22 @@ export default function AdminDashboard() {
     window.addEventListener(ACTIVITY_UPDATE_EVENT, handleActivityUpdate);
     
     // Juga dengarkan event khusus browser
-    window.addEventListener('storage', (e) => {
+    const handleStorageEvent = (e: StorageEvent) => {
       if (e.key === 'attendance-update' || e.key === 'notification-update') {
         handleActivityUpdate();
       }
-    });
+    };
+    window.addEventListener('storage', handleStorageEvent);
+    const interval = pollingIntervalRef.current;
     
     // Clean up on unmount
     return () => {
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current);
+      if (interval) {
+        clearInterval(interval);
       }
       window.removeEventListener(NOTIFICATION_UPDATE_EVENT, handleActivityUpdate);
       window.removeEventListener(ACTIVITY_UPDATE_EVENT, handleActivityUpdate);
-      window.removeEventListener('storage', handleActivityUpdate);
+      window.removeEventListener('storage', handleStorageEvent);
       
       // Hapus pembersihan event listener untuk aktivitas user
       // activityEvents.forEach(event => {
@@ -348,7 +351,8 @@ export default function AdminDashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 sm:gap-0">
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">Dashboard Admin</h1>
           <p className="mt-1 text-sm text-gray-500">
@@ -357,7 +361,7 @@ export default function AdminDashboard() {
         </div>
         <button 
           onClick={() => fetchDashboardData(false)}
-          className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+          className="inline-flex w-full sm:w-auto justify-center items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
           disabled={isRefreshing}
         >
           {isRefreshing ? (
@@ -579,6 +583,7 @@ export default function AdminDashboard() {
       </div>
 
       {/* Quick Actions */}
+      <DashboardNavigation userRole="ADMIN" />
       <div className="overflow-hidden bg-white shadow sm:rounded-lg">
         <div className="px-4 py-5 sm:p-6">
           <h3 className="text-lg font-medium leading-6 text-gray-900">

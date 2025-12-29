@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
+import DashboardNavigation from "./DashboardNavigation";
 import { useSession } from "next-auth/react";
 import AttendanceCapture from "../attendance/AttendanceCapture";
+import { getWorkdayType, WorkdayType, getWorkEndTime } from "@/lib/attendanceRules";
 
 type AttendanceRecord = {
   id: string;
@@ -22,6 +24,8 @@ type TodayAttendanceRecord = {
   date: Date;
   checkIn: Date | null;
   checkOut: Date | null;
+  overtimeStart?: Date | null;
+  overtimeEnd?: Date | null;
   status: "PRESENT" | "ABSENT" | "LATE" | "HALFDAY";
   isLate: boolean;
   lateMinutes: number;
@@ -35,8 +39,7 @@ type TodayAttendanceRecord = {
 
 export default function EmployeeDashboardMobile() {
   const { data: session } = useSession();
-  const [isCheckedIn, setIsCheckedIn] = useState(false);
-  const [checkInTime, setCheckInTime] = useState<string | null>(null);
+  
   const [attendanceStats, setAttendanceStats] = useState<AttendanceStats>({
     present: 0,
     absent: 0,
@@ -51,13 +54,10 @@ export default function EmployeeDashboardMobile() {
   
   // State untuk AttendanceCapture
   const [showAttendanceCapture, setShowAttendanceCapture] = useState(false);
-  const [captureAction, setCaptureAction] = useState<'check-in' | 'check-out'>('check-in');
-  const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
-  const [capturedLatitude, setCapturedLatitude] = useState<number | null>(null);
-  const [capturedLongitude, setCapturedLongitude] = useState<number | null>(null);
-  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
-  const [isCheckingIn, setIsCheckingIn] = useState(false);
-  const [isCheckingOut, setIsCheckingOut] = useState(false);
+  const [captureAction, setCaptureAction] = useState<'check-in' | 'check-out' | 'overtime-start' | 'overtime-end'>('check-in');
+  const [_isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [_isCheckingIn, setIsCheckingIn] = useState(false);
+  const [_isCheckingOut, setIsCheckingOut] = useState(false);
 
   // Fungsi untuk format waktu
   const formatTime = (date: Date | null | string): string => {
@@ -70,7 +70,7 @@ export default function EmployeeDashboardMobile() {
   };
 
   // Fungsi untuk memuat data kehadiran
-  const fetchAttendanceData = async () => {
+  const fetchAttendanceData = useCallback(async () => {
     if (!session) return;
     
     setIsLoading(true);
@@ -135,16 +135,10 @@ export default function EmployeeDashboardMobile() {
           ...todayRecord,
           date: new Date(todayRecord.date),
           checkIn: todayRecord.checkIn ? new Date(todayRecord.checkIn) : null,
-          checkOut: todayRecord.checkOut ? new Date(todayRecord.checkOut) : null
+          checkOut: todayRecord.checkOut ? new Date(todayRecord.checkOut) : null,
+          overtimeStart: todayRecord.overtimeStart ? new Date(todayRecord.overtimeStart) : undefined,
+          overtimeEnd: todayRecord.overtimeEnd ? new Date(todayRecord.overtimeEnd) : undefined
         };
-        
-        if (processedTodayRecord.checkIn) {
-          setCheckInTime(new Date(processedTodayRecord.checkIn).toLocaleTimeString([], {
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false
-          }));
-        }
         
         setTodayRecord(processedTodayRecord);
       } else {
@@ -156,13 +150,13 @@ export default function EmployeeDashboardMobile() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [session]);
 
   useEffect(() => {
     if (session) {
       fetchAttendanceData();
     }
-  }, [session]);
+  }, [session, fetchAttendanceData]);
 
   useEffect(() => {
     const handleStorageChange = (e: StorageEvent) => {
@@ -180,24 +174,9 @@ export default function EmployeeDashboardMobile() {
       window.removeEventListener('storage', handleStorageChange);
       clearInterval(intervalId);
     };
-  }, []);
+  }, [fetchAttendanceData]);
 
-  useEffect(() => {
-    if (todayRecord) {
-      const isPengajuanUlang = todayRecord.notes && 
-                             todayRecord.notes.includes("Di Tolak") || 
-                             (todayRecord.approvedAt && 
-                             ((todayRecord.overtime > 0 && !todayRecord.isOvertimeApproved) || 
-                             (todayRecord.isSundayWork && !todayRecord.isSundayWorkApproved)));
-      
-      const shouldBeCheckedIn = !isPengajuanUlang && !!todayRecord.checkIn && !todayRecord.checkOut;
-      setIsCheckedIn(shouldBeCheckedIn);
-      localStorage.setItem('isCheckedInToday', shouldBeCheckedIn ? 'true' : 'false');
-    } else {
-      setIsCheckedIn(false);
-      localStorage.removeItem('isCheckedInToday');
-    }
-  }, [todayRecord]);
+  
 
   // Fungsi untuk upload foto
   const uploadPhoto = async (photoBase64: string): Promise<string> => {
@@ -232,12 +211,9 @@ export default function EmployeeDashboardMobile() {
   };
 
   // Fungsi untuk menangani hasil capture
-  const handleCaptureComplete = async (photo: string, latitude: number, longitude: number) => {
+  const handleCaptureComplete = async (photo: string, latitude: number, longitude: number, locationNote?: string) => {
     try {
       // Simpan data yang di-capture
-      setCapturedPhoto(photo);
-      setCapturedLatitude(latitude);
-      setCapturedLongitude(longitude);
       
       // Upload foto
       const photoUrl = await uploadPhoto(photo);
@@ -245,11 +221,16 @@ export default function EmployeeDashboardMobile() {
       // Tutup modal capture
       setShowAttendanceCapture(false);
       
-      // Panggil fungsi check-in atau check-out dengan data yang sudah di-capture
       if (captureAction === 'check-in') {
         await processCheckIn(photoUrl, latitude, longitude);
-      } else {
+      } else if (captureAction === 'check-out') {
         await processCheckOut(photoUrl, latitude, longitude);
+      } else if (captureAction === 'overtime-start') {
+        const reason = (window as any).overtimeReason || '';
+        const consentConfirmed = (window as any).overtimeConsentConfirmed === true;
+        await processOvertimeStart(photoUrl, latitude, longitude, locationNote, reason, consentConfirmed);
+      } else if (captureAction === 'overtime-end') {
+        await processOvertimeEnd(photoUrl, latitude, longitude, locationNote);
       }
     } catch (error) {
       console.error('Error processing capture:', error);
@@ -364,6 +345,16 @@ export default function EmployeeDashboardMobile() {
     setShowAttendanceCapture(true);
   };
 
+  const handleOvertimeStart = async () => {
+    setCaptureAction('overtime-start');
+    setShowAttendanceCapture(true);
+  };
+
+  const handleOvertimeEnd = async () => {
+    setCaptureAction('overtime-end');
+    setShowAttendanceCapture(true);
+  };
+
   const processCheckOut = async (photoUrl?: string, latitude?: number, longitude?: number) => {
     setActionLoading(true);
     setError(null);
@@ -427,6 +418,85 @@ export default function EmployeeDashboardMobile() {
     }
   };
 
+  const processOvertimeStart = async (photoUrl?: string, latitude?: number, longitude?: number, locationNote?: string, reason?: string, consentConfirmed?: boolean) => {
+    setActionLoading(true);
+    setError(null);
+    try {
+      const response = await fetch('/api/attendance', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        },
+        body: JSON.stringify({
+          action: 'overtime-start',
+          photoUrl,
+          latitude,
+          longitude,
+          locationNote,
+          reason,
+          consentConfirmed
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Gagal memulai lembur');
+      }
+      if (data.date) data.date = new Date(data.date);
+      if (data.checkIn) data.checkIn = new Date(data.checkIn);
+      if (data.checkOut) data.checkOut = new Date(data.checkOut);
+      if (data.overtimeStart) data.overtimeStart = new Date(data.overtimeStart);
+      setTodayRecord(data);
+      localStorage.setItem('attendance-update', Date.now().toString());
+      await fetchAttendanceData();
+    } catch (error: any) {
+      setError(error.message || 'Gagal memulai lembur');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const processOvertimeEnd = async (photoUrl?: string, latitude?: number, longitude?: number, locationNote?: string) => {
+    setActionLoading(true);
+    setError(null);
+    try {
+      const response = await fetch('/api/attendance', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        },
+        body: JSON.stringify({
+          action: 'overtime-end',
+          photoUrl,
+          latitude,
+          longitude,
+          locationNote
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Gagal menyelesaikan lembur');
+      }
+      if (data.date) data.date = new Date(data.date);
+      if (data.checkIn) data.checkIn = new Date(data.checkIn);
+      if (data.checkOut) data.checkOut = new Date(data.checkOut);
+      if (data.overtimeStart) data.overtimeStart = new Date(data.overtimeStart);
+      if (data.overtimeEnd) data.overtimeEnd = new Date(data.overtimeEnd);
+      setTodayRecord(data);
+      localStorage.setItem('attendance-update', Date.now().toString());
+      await fetchAttendanceData();
+    } catch (error: any) {
+      setError(error.message || 'Gagal menyelesaikan lembur');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   // Mobile-optimized attendance action card
   const renderMobileAttendanceCard = () => {
     if (isLoading) {
@@ -480,20 +550,40 @@ export default function EmployeeDashboardMobile() {
                 <p className="text-xs text-blue-700">Silakan absen masuk kembali</p>
               </div>
             )}
-            <button
-              onClick={handleCheckIn}
-              disabled={actionLoading}
-              className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium text-sm hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {actionLoading ? "Memproses..." : "Absen Masuk"}
-            </button>
+            {(() => {
+              const now = new Date();
+              const workdayType = getWorkdayType(now);
+              const endStr = getWorkEndTime(workdayType);
+              const endDate = workdayType === WorkdayType.SUNDAY ? null : new Date(`${now.toLocaleDateString('en-CA')}T${endStr}:00`);
+              const outside = workdayType === WorkdayType.SUNDAY || (endDate ? now > endDate : true);
+              if (outside) {
+                return (
+                  <button
+                    onClick={handleOvertimeStart}
+                    disabled={actionLoading}
+                    className="w-full bg-orange-600 text-white py-3 px-4 rounded-lg font-medium text-sm hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {actionLoading ? "Memproses..." : "Mulai Lembur"}
+                  </button>
+                );
+              }
+              return (
+                <button
+                  onClick={handleCheckIn}
+                  disabled={actionLoading}
+                  className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium text-sm hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {actionLoading ? "Memproses..." : "Absen Masuk"}
+                </button>
+              );
+            })()}
           </div>
         </div>
       );
     }
 
     // Sudah check-in tapi belum check-out
-    if (todayRecord.checkIn && !todayRecord.checkOut) {
+    if (todayRecord.checkIn && !todayRecord.checkOut && !todayRecord.overtimeStart) {
       return (
         <div className="bg-white rounded-lg shadow-sm border p-4">
           <div className="text-center">
@@ -537,7 +627,7 @@ export default function EmployeeDashboardMobile() {
     }
 
     // Sudah check-in dan check-out
-    if (todayRecord.checkIn && todayRecord.checkOut) {
+    if (todayRecord.checkIn && (todayRecord.checkOut || todayRecord.overtimeStart)) {
       return (
         <div className="bg-white rounded-lg shadow-sm border p-4">
           <div className="text-center">
@@ -572,8 +662,35 @@ export default function EmployeeDashboardMobile() {
                 )}
               </div>
             )}
-            <div className="bg-green-50 text-green-700 py-2 px-3 rounded-lg text-xs font-medium">
-              Terima kasih atas kerja keras Anda!
+            <div className="mt-3">
+              {(() => {
+                const now = new Date();
+                const workdayType = getWorkdayType(now);
+                const endStr = getWorkEndTime(workdayType);
+                const endDate = workdayType === WorkdayType.SUNDAY ? null : new Date(`${now.toLocaleDateString('en-CA')}T${endStr}:00`);
+                const outside = workdayType === WorkdayType.SUNDAY || (endDate ? now > endDate : true);
+                return !todayRecord.overtimeStart && outside;
+              })() && (
+                <button
+                  onClick={handleOvertimeStart}
+                  disabled={actionLoading}
+                  className="w-full bg-orange-600 text-white py-3 px-4 rounded-lg font-medium text-sm hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {actionLoading ? "Memproses..." : "Mulai Lembur"}
+                </button>
+              )}
+              {todayRecord.overtimeStart && !todayRecord.overtimeEnd && (
+                <button
+                  onClick={handleOvertimeEnd}
+                  disabled={actionLoading}
+                  className="w-full bg-green-600 text-white py-3 px-4 rounded-lg font-medium text-sm hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {actionLoading ? "Memproses..." : "Selesai Lembur"}
+                </button>
+              )}
+              {todayRecord.overtimeStart && todayRecord.overtimeEnd && (
+                <div className="bg-green-50 text-green-700 py-2 px-3 rounded-lg text-xs font-medium">Kehadiran hari ini sudah lengkap</div>
+              )}
             </div>
           </div>
         </div>
@@ -603,6 +720,7 @@ export default function EmployeeDashboardMobile() {
       </div>
 
       <div className="px-4 py-4 space-y-4">
+        
         {/* Error Message */}
         {error && (
           <div className={`rounded-lg p-3 ${
@@ -621,12 +739,14 @@ export default function EmployeeDashboardMobile() {
           <h2 className="text-base font-medium text-gray-900 mb-3">Kehadiran Hari Ini</h2>
           {renderMobileAttendanceCard()}
         </div>
+        
+        <DashboardNavigation userRole={session?.user?.role} />
 
         {/* Stats Grid */}
         <div>
           <h2 className="text-base font-medium text-gray-900 mb-3">Statistik Bulan Ini</h2>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-white rounded-lg shadow-sm border p-3">
+          <div className="grid grid-cols-2 gap-4 transition-all duration-300 ease-in-out">
+            <div className="bg-white rounded-lg shadow-sm border p-3 transition-all duration-300 hover:shadow-md">
               <div className="flex items-center">
                 <div className="flex-shrink-0">
                   <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
@@ -644,7 +764,7 @@ export default function EmployeeDashboardMobile() {
               </div>
             </div>
 
-            <div className="bg-white rounded-lg shadow-sm border p-3">
+            <div className="bg-white rounded-lg shadow-sm border p-3 transition-all duration-300 hover:shadow-md">
               <div className="flex items-center">
                 <div className="flex-shrink-0">
                   <div className="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center">
@@ -662,7 +782,7 @@ export default function EmployeeDashboardMobile() {
               </div>
             </div>
 
-            <div className="bg-white rounded-lg shadow-sm border p-3">
+            <div className="bg-white rounded-lg shadow-sm border p-3 transition-all duration-300 hover:shadow-md">
               <div className="flex items-center">
                 <div className="flex-shrink-0">
                   <div className="w-8 h-8 bg-yellow-100 rounded-lg flex items-center justify-center">
@@ -683,6 +803,7 @@ export default function EmployeeDashboardMobile() {
                           }}
                         />
                       )}
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                   </div>
                 </div>
@@ -695,7 +816,7 @@ export default function EmployeeDashboardMobile() {
               </div>
             </div>
 
-            <div className="bg-white rounded-lg shadow-sm border p-3">
+            <div className="bg-white rounded-lg shadow-sm border p-3 transition-all duration-300 hover:shadow-md">
               <div className="flex items-center">
                 <div className="flex-shrink-0">
                   <div className="w-8 h-8 bg-orange-100 rounded-lg flex items-center justify-center">
@@ -717,7 +838,7 @@ export default function EmployeeDashboardMobile() {
 
         {/* Recent Attendance */}
         <div>
-          <h2 className="text-base font-medium text-gray-900 mb-3">Kehadiran Terbaru</h2>
+          <h2 className="text-base font-medium text-gray-900 mb-3 mt-6">Kehadiran Terbaru</h2>
           <div className="bg-white rounded-lg shadow-sm border">
             {isLoading ? (
               <div className="p-4 text-center text-sm text-gray-500">
@@ -725,7 +846,7 @@ export default function EmployeeDashboardMobile() {
               </div>
             ) : recentAttendance.length > 0 ? (
               <div className="divide-y divide-gray-200">
-                {recentAttendance.map((record, index) => (
+                {recentAttendance.map((record) => (
                   <div key={record.id} className="p-3">
                     <div className="flex items-center justify-between">
                       <div className="flex-1">
@@ -768,6 +889,15 @@ export default function EmployeeDashboardMobile() {
             setIsCheckingOut(false);
           }}
           actionType={captureAction}
+          requireOvertimeConfirmation={(() => {
+            if (captureAction !== 'check-out') return false;
+            const now = new Date();
+            const workdayType = getWorkdayType(now);
+            const endStr = getWorkEndTime(workdayType);
+            const endDate = workdayType === WorkdayType.SUNDAY ? null : new Date(`${now.toLocaleDateString('en-CA')}T${endStr}:00`);
+            const outside = workdayType === WorkdayType.SUNDAY || (endDate ? now > endDate : true);
+            return outside && !(todayRecord && todayRecord.overtimeStart);
+          })()}
           onSuccess={(message) => {
             // Callback untuk menampilkan pesan sukses di modal
             console.log('Success message:', message);

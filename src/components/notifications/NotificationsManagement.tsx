@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
-import { format } from "date-fns";
+import { useRouter } from "next/navigation";
+import { getNotificationHref } from "./NotificationDropdown";
 
 type Notification = {
   id: string;
@@ -11,48 +12,36 @@ type Notification = {
   type: string;
   read: boolean;
   createdAt: string;
+  refType?: string;
+  refId?: string;
 };
 
 export default function NotificationsManagement() {
   const { data: session } = useSession();
+  const router = useRouter();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [filter, setFilter] = useState<"all" | "unread" | "read">("all");
 
-  useEffect(() => {
-    fetchNotifications();
-  }, [filter]);
-
-  const fetchNotifications = async () => {
+  const fetchNotifications = useCallback(async () => {
     try {
       setIsLoading(true);
-      const queryParams = new URLSearchParams();
-      
-      if (filter === "unread") {
-        queryParams.append("unreadOnly", "true");
-      }
-      
-      const response = await fetch(`/api/notifications?${queryParams}`);
+      const response = await fetch(`/api/notifications`);
       if (!response.ok) {
         throw new Error("Failed to fetch notifications");
       }
       
       const data = await response.json();
-      
-      let filteredNotifications = data.notifications;
-      if (filter === "read") {
-        filteredNotifications = data.notifications.filter(
-          (notification: Notification) => notification.read
-        );
-      }
-      
-      setNotifications(filteredNotifications);
+      setNotifications(data.notifications);
     } catch (error) {
       console.error("Error fetching notifications:", error);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchNotifications();
+  }, [fetchNotifications]);
 
   const markAsRead = async (id: string) => {
     try {
@@ -123,44 +112,24 @@ export default function NotificationsManagement() {
     }
   };
 
-  const markAllAsRead = async () => {
-    try {
-      const promises = notifications
-        .filter((notification) => !notification.read)
-        .map((notification) =>
-          fetch(`/api/notifications/${notification.id}`, {
-            method: "PATCH",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ read: true }),
-          })
-        );
 
-      await Promise.all(promises);
-
-      // Update local state
-      setNotifications(
-        notifications.map((notification) => ({ ...notification, read: true }))
-      );
-    } catch (error) {
-      console.error("Error marking all notifications as read:", error);
-    }
-  };
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
-    return format(date, "PPP p"); // e.g., "Apr 29, 2023, 3:30 PM"
+    return new Intl.DateTimeFormat("id-ID", {
+      dateStyle: "long",
+      timeStyle: "short",
+    }).format(date);
   };
 
   const getTypeLabel = (type: string) => {
     switch (type) {
       case "info":
-        return "Information";
+        return "Informasi";
       case "success":
-        return "Success";
+        return "Sukses";
       case "warning":
-        return "Warning";
+        return "Peringatan";
       case "error":
         return "Error";
       default:
@@ -189,9 +158,9 @@ export default function NotificationsManagement() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="sm:flex sm:items-center">
             <div className="sm:flex-auto">
-              <h1 className="text-2xl font-semibold text-gray-900">Notifications</h1>
+              <h1 className="text-2xl font-semibold text-gray-900">Notifikasi</h1>
               <p className="mt-2 text-sm text-gray-700">
-                Please sign in to view your notifications.
+                Silakan masuk untuk melihat notifikasi Anda.
               </p>
             </div>
           </div>
@@ -201,61 +170,59 @@ export default function NotificationsManagement() {
   }
 
   return (
-    <div className="py-6">
+    <div className="py-3">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="sm:flex sm:items-center">
-          <div className="sm:flex-auto">
-            <h1 className="text-2xl font-semibold text-gray-900">Notifications</h1>
-            <p className="mt-2 text-sm text-gray-700">
-              View and manage your notifications.
-            </p>
-          </div>
-          <div className="mt-4 sm:mt-0 sm:ml-16 sm:flex-none">
-            <div className="flex space-x-3">
-              <select
-                id="filter"
-                name="filter"
-                className="block w-full rounded-md border-gray-300 py-2 pl-3 pr-10 text-base focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm"
-                value={filter}
-                onChange={(e) => setFilter(e.target.value as "all" | "unread" | "read")}
-              >
-                <option value="all">All Notifications</option>
-                <option value="unread">Unread</option>
-                <option value="read">Read</option>
-              </select>
-              <button
-                type="button"
-                onClick={markAllAsRead}
-                className="inline-flex items-center justify-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 sm:w-auto"
-              >
-                Mark All as Read
-              </button>
-            </div>
-          </div>
-        </div>
 
-        <div className="mt-8 bg-white shadow sm:rounded-lg">
+
+        <div className="mt-2">
           {isLoading ? (
-            <div className="px-4 py-6 text-center text-sm text-gray-500">
-              Loading notifications...
+            <div className="bg-white shadow rounded-xl px-4 py-6 text-center text-sm text-gray-500">
+              Memuat notifikasi...
             </div>
           ) : notifications.length === 0 ? (
-            <div className="px-4 py-6 text-center text-sm text-gray-500">
-              No notifications found.
+            <div className="bg-white shadow rounded-xl px-4 py-6 text-center text-sm text-gray-500">
+              Tidak ada notifikasi ditemukan.
             </div>
           ) : (
-            <div className="divide-y divide-gray-200">
+            <div className="space-y-4">
               {notifications.map((notification) => (
                 <div
                   key={notification.id}
-                  className={`px-4 py-5 sm:px-6 ${
-                    !notification.read ? "bg-indigo-50" : ""
+                  onClick={() => {
+                    const href = notification.refType && notification.refId
+                      ? (notification.refType === 'LEAVE' ? `/leave?selectedId=${notification.refId}`
+                        : notification.refType === 'OVERTIME' ? `/approvals/overtime?requestId=${notification.refId}`
+                        : notification.refType === 'ATTENDANCE' ? `/attendance?attendanceId=${notification.refId}`
+                        : notification.refType === 'PAYROLL' ? `/payroll?payrollId=${notification.refId}`
+                        : notification.refType === 'ADVANCE' ? `/advance?id=${notification.refId}`
+                        : notification.refType === 'SOFT_LOAN' ? `/soft-loan?loanId=${notification.refId}`
+                        : getNotificationHref(notification.type, notification.title, notification.message, session?.user?.role))
+                      : getNotificationHref(notification.type, notification.title, notification.message, session?.user?.role);
+                    router.push(href);
+                  }}
+                  className={`px-4 py-5 sm:px-6 relative cursor-pointer group transition-colors duration-200 shadow rounded-xl ${
+                    !notification.read ? "bg-indigo-50 hover:bg-indigo-100" : "bg-white hover:bg-gray-50"
                   }`}
                 >
-                  <div className="flex items-start">
-                    <div className="flex-shrink-0 mr-4">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deleteNotification(notification.id);
+                    }}
+                    className="absolute top-4 right-4 p-2 rounded-full text-gray-400 hover:text-red-500 hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-500 z-10 transition-colors"
+                    title="Hapus notifikasi"
+                  >
+                    <span className="sr-only">Hapus</span>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+
+                  <div className="flex flex-row items-start pr-8 sm:pr-10">
+                    <div className="flex-shrink-0 mr-3 sm:mr-4">
                       <div
-                        className={`h-10 w-10 rounded-full flex items-center justify-center ${
+                        className={`h-12 w-12 sm:h-10 sm:w-10 rounded-full flex items-center justify-center ${
                           notification.type === "info"
                             ? "bg-blue-100 text-blue-500"
                             : notification.type === "success"
@@ -284,49 +251,48 @@ export default function NotificationsManagement() {
                         )}
                       </div>
                     </div>
-                    <div className="flex-1">
-                      <div className="flex justify-between items-center mb-1">
-                        <h3 className="text-lg font-medium text-gray-900">
+                    <div className="flex-1 w-full">
+                      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-2 sm:mb-1">
+                        <h3 className="text-lg font-medium text-gray-900 mb-2 sm:mb-0">
                           {notification.title}
                         </h3>
                         <span
-                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getTypeColor(
+                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium self-start sm:self-auto ${getTypeColor(
                             notification.type
                           )}`}
                         >
                           {getTypeLabel(notification.type)}
                         </span>
                       </div>
-                      <p className="text-sm text-gray-500">{notification.message}</p>
-                      <div className="mt-2 flex justify-between items-center">
+                      <p className="text-sm text-gray-500 mb-3 sm:mb-2">{notification.message}</p>
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center space-y-3 sm:space-y-0">
                         <p className="text-xs text-gray-400">
                           {formatDate(notification.createdAt)}
                         </p>
-                        <div className="flex space-x-2">
+                        <div className="flex flex-col sm:flex-row w-full sm:w-auto space-y-2 sm:space-y-0 sm:space-x-2">
                           {notification.read ? (
                             <button
                               type="button"
-                              onClick={() => markAsUnread(notification.id)}
-                              className="inline-flex items-center px-2.5 py-1.5 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                markAsUnread(notification.id);
+                              }}
+                              className="inline-flex items-center justify-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 w-full sm:w-auto min-h-[44px] z-10"
                             >
-                              Mark as Unread
+                              Tandai Belum Dibaca
                             </button>
                           ) : (
                             <button
                               type="button"
-                              onClick={() => markAsRead(notification.id)}
-                              className="inline-flex items-center px-2.5 py-1.5 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                markAsRead(notification.id);
+                              }}
+                              className="inline-flex items-center justify-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 w-full sm:w-auto min-h-[44px] z-10"
                             >
-                              Mark as Read
+                              Tandai Sudah Dibaca
                             </button>
                           )}
-                          <button
-                            type="button"
-                            onClick={() => deleteNotification(notification.id)}
-                            className="inline-flex items-center px-2.5 py-1.5 border border-transparent text-xs font-medium rounded text-red-700 bg-red-100 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
-                          >
-                            Delete
-                          </button>
                         </div>
                       </div>
                     </div>

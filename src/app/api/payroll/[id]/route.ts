@@ -4,7 +4,6 @@ import { db } from "@/lib/db";
 import { authOptions } from "@/lib/auth";
 import { createPayrollPaidNotification } from "@/lib/notification";
 
-type PayrollStatus = "PENDING" | "PAID" | "CANCELLED";
 
 // GET: Fetch a single payroll record by ID
 export async function GET(
@@ -49,8 +48,8 @@ export async function GET(
       );
     }
     
-    // Check if the user is admin or the employee associated with this payroll
-    if (session.user.role !== "ADMIN") {
+    // Check if the user is admin/manager or the employee associated with this payroll
+    if (session.user.role !== "ADMIN" && session.user.role !== "MANAGER") {
       const employee = await db.employee.findUnique({
         where: { userId: session.user.id },
       });
@@ -116,7 +115,7 @@ export async function GET(
   }
 }
 
-// PATCH: Update a payroll record (admin only)
+// PATCH: Update a payroll record (admin/manager only)
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -124,7 +123,7 @@ export async function PATCH(
   try {
     const session = await getServerSession(authOptions);
     
-    if (!session || session.user.role !== "ADMIN") {
+    if (!session || (session.user.role !== "ADMIN" && session.user.role !== "MANAGER")) {
       return NextResponse.json(
         { error: "Unauthorized. Admin access required." },
         { status: 403 }
@@ -220,6 +219,17 @@ export async function PATCH(
           updatedPayroll.year,
           updatedPayroll.netSalary
         );
+        await db.notification.create({
+          data: {
+            userId: updatedPayroll.employee.userId,
+            title: "Gaji Telah Dibayarkan",
+            message: `Gaji Anda untuk periode ${new Date(updatedPayroll.year, updatedPayroll.month - 1).toLocaleDateString('id-ID', { year: 'numeric', month: 'long' })} telah dibayarkan. [#ref:PAYROLL:${updatedPayroll.id}]`,
+            type: "success",
+            read: false,
+            refType: "PAYROLL",
+            refId: updatedPayroll.id,
+          }
+        });
       } catch (notifError) {
         console.error("Error creating payment notification:", notifError);
         // Tidak perlu menghentikan proses jika notifikasi gagal

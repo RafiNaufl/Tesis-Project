@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { requireAuth } from "@/lib/session";
+import { getSoftLoanById, updateSoftLoanStatus } from "@/lib/softloan";
+import { createEmployeeSuccessNotification, createEmployeeErrorNotification } from "@/lib/notification";
 
 // GET: Get specific soft loan details
 export async function GET(
@@ -11,27 +12,15 @@ export async function GET(
   try {
     const user = await requireAuth();
 
-    const softLoan = await prisma.softLoan.findUnique({
-      where: {
-        id: id,
-      },
-      include: {
-        employee: true,
-      },
-    });
-
-    if (!softLoan) {
-      return NextResponse.json({ message: 'Soft loan not found' }, { status: 404 });
-    }
-
-    // Restrict access: only the employee who requested it or an admin can view
-    if (!user.isAdmin && user.employeeId !== softLoan.employeeId) {
-      return NextResponse.json({ message: 'Unauthorized' }, { status: 403 });
-    }
+    // Use the centralized function to get soft loan by ID
+    const softLoan = await getSoftLoanById(id, user.role === "ADMIN", user.id);
 
     return NextResponse.json(softLoan);
   } catch (error) {
     console.error('Error fetching soft loan:', error);
+    if (error instanceof Error) {
+      return NextResponse.json({ message: error.message }, { status: 400 });
+    }
     return NextResponse.json({ message: 'Error fetching soft loan' }, { status: 500 });
   }
 }
@@ -41,7 +30,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   try {
     const user = await requireAuth();
 
-    if (!user.isAdmin) {
+    if (user.role !== "ADMIN") {
       return NextResponse.json({ message: 'Unauthorized' }, { status: 403 });
     }
 
@@ -51,33 +40,33 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       return NextResponse.json({ message: 'Invalid status' }, { status: 400 });
     }
 
-    const updatedSoftLoan = await prisma.softLoan.update({
-      where: {
-        id,
-      },
-      data: {
-        status,
-      },
-      include: {
-        employee: true,
-      },
-    });
+    // Use the centralized function to update soft loan status
+    const updatedSoftLoan = await updateSoftLoanStatus(id, status);
 
     // Create notification for the employee
     const message = status === 'APPROVED' ? `Your soft loan request has been approved.` : `Your soft loan request has been rejected.`;
-
-    await prisma.notification.create({
-      data: {
-        userId: updatedSoftLoan.employee.userId,
-        title: status === 'APPROVED' ? 'Soft Loan Approved' : 'Soft Loan Rejected',
-        message,
-        type: status === 'APPROVED' ? 'SUCCESS' : 'ERROR',
-      },
-    });
+    const title = status === 'APPROVED' ? 'Soft Loan Approved' : 'Soft Loan Rejected';
+    
+    if (status === 'APPROVED') {
+      await createEmployeeSuccessNotification(
+        updatedSoftLoan.employeeId,
+        title,
+        message
+      );
+    } else {
+      await createEmployeeErrorNotification(
+        updatedSoftLoan.employeeId,
+        title,
+        message
+      );
+    }
 
     return NextResponse.json(updatedSoftLoan);
   } catch (error) {
     console.error('Error updating soft loan status:', error);
+    if (error instanceof Error) {
+      return NextResponse.json({ message: error.message }, { status: 400 });
+    }
     return NextResponse.json({ message: 'Error updating soft loan status' }, { status: 500 });
   }
 }

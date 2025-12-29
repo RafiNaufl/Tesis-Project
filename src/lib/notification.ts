@@ -1,30 +1,62 @@
 import { prisma } from "./prisma";
-import { db } from "./db";
 
-export type NotificationType = "info" | "success" | "warning" | "error";
+/**
+ * Enum untuk tipe notifikasi
+ * Menggunakan enum untuk memastikan konsistensi tipe di seluruh aplikasi
+ */
+export enum NotificationType {
+  INFO = "info",
+  SUCCESS = "success",
+  WARNING = "warning",
+  ERROR = "error"
+}
+
+// Type untuk kompatibilitas dengan kode lama
+export type NotificationTypeString = "info" | "success" | "warning" | "error";
+
 
 /**
  * Fungsi untuk membuat notifikasi baru
  * @param userId ID pengguna yang akan menerima notifikasi
  * @param title Judul notifikasi
  * @param message Isi pesan notifikasi
- * @param type Tipe notifikasi (info, success, warning, error)
+ * @param type Tipe notifikasi (menggunakan enum NotificationType)
  * @returns Objek notifikasi yang dibuat
  */
 export const createNotification = async (
   userId: string,
   title: string,
   message: string,
-  type: NotificationType
+  type: NotificationType | NotificationTypeString,
+  opts?: { refType?: string; refId?: string }
 ) => {
   try {
+    // Pastikan tipe notifikasi selalu menggunakan nilai dari enum
+    let normalizedType: string;
+    
+    if (typeof type === 'string') {
+      // Konversi string ke nilai enum yang sesuai
+      switch(type.toLowerCase()) {
+        case 'info': normalizedType = NotificationType.INFO; break;
+        case 'success': normalizedType = NotificationType.SUCCESS; break;
+        case 'warning': normalizedType = NotificationType.WARNING; break;
+        case 'error': normalizedType = NotificationType.ERROR; break;
+        default: normalizedType = NotificationType.INFO; // Default ke INFO jika tidak valid
+      }
+    } else {
+      // Gunakan nilai enum langsung
+      normalizedType = type;
+    }
+    
     const notification = await prisma.notification.create({
       data: {
         userId,
         title,
         message,
-        type,
+        type: normalizedType,
         read: false,
+        refType: opts?.refType,
+        refId: opts?.refId,
       },
     });
 
@@ -33,6 +65,38 @@ export const createNotification = async (
     console.error("Error creating notification:", error);
     throw new Error(`Gagal membuat notifikasi: ${error}`);
   }
+};
+
+/**
+ * Helper functions untuk membuat notifikasi dengan tipe spesifik
+ */
+
+/**
+ * Membuat notifikasi informasi
+ */
+export const createInfoNotification = async (userId: string, title: string, message: string) => {
+  return createNotification(userId, title, message, NotificationType.INFO);
+};
+
+/**
+ * Membuat notifikasi sukses
+ */
+export const createSuccessNotification = async (userId: string, title: string, message: string) => {
+  return createNotification(userId, title, message, NotificationType.SUCCESS);
+};
+
+/**
+ * Membuat notifikasi peringatan
+ */
+export const createWarningNotification = async (userId: string, title: string, message: string) => {
+  return createNotification(userId, title, message, NotificationType.WARNING);
+};
+
+/**
+ * Membuat notifikasi error
+ */
+export const createErrorNotification = async (userId: string, title: string, message: string) => {
+  return createNotification(userId, title, message, NotificationType.ERROR);
 };
 
 /**
@@ -47,7 +111,8 @@ export const createEmployeeNotification = async (
   employeeId: string,
   title: string,
   message: string, 
-  type: NotificationType
+  type: NotificationType | NotificationTypeString,
+  opts?: { refType?: string; refId?: string }
 ) => {
   try {
     // Dapatkan user ID dari employee ID
@@ -60,11 +125,43 @@ export const createEmployeeNotification = async (
       throw new Error(`Karyawan dengan ID ${employeeId} tidak ditemukan`);
     }
 
-    return createNotification(employee.userId, title, message, type);
+    return createNotification(employee.userId, title, message, type, opts);
   } catch (error) {
     console.error("Error creating employee notification:", error);
     throw new Error(`Gagal membuat notifikasi karyawan: ${error}`);
   }
+};
+
+/**
+ * Helper functions untuk membuat notifikasi karyawan dengan tipe spesifik
+ */
+
+/**
+ * Membuat notifikasi informasi untuk karyawan
+ */
+export const createEmployeeInfoNotification = async (employeeId: string, title: string, message: string) => {
+  return createEmployeeNotification(employeeId, title, message, NotificationType.INFO);
+};
+
+/**
+ * Membuat notifikasi sukses untuk karyawan
+ */
+export const createEmployeeSuccessNotification = async (employeeId: string, title: string, message: string) => {
+  return createEmployeeNotification(employeeId, title, message, NotificationType.SUCCESS);
+};
+
+/**
+ * Membuat notifikasi peringatan untuk karyawan
+ */
+export const createEmployeeWarningNotification = async (employeeId: string, title: string, message: string) => {
+  return createEmployeeNotification(employeeId, title, message, NotificationType.WARNING);
+};
+
+/**
+ * Membuat notifikasi error untuk karyawan
+ */
+export const createEmployeeErrorNotification = async (employeeId: string, title: string, message: string) => {
+  return createEmployeeNotification(employeeId, title, message, NotificationType.ERROR);
 };
 
 /**
@@ -77,7 +174,7 @@ export const createEmployeeNotification = async (
 export const createAdminNotifications = async (
   title: string,
   message: string,
-  type: NotificationType
+  type: NotificationType | NotificationTypeString
 ) => {
   try {
     // Dapatkan semua pengguna dengan peran ADMIN
@@ -102,6 +199,39 @@ export const createAdminNotifications = async (
     throw new Error(`Gagal membuat notifikasi admin: ${error}`);
   }
 };
+
+/**
+ * Helper functions untuk membuat notifikasi admin dengan tipe spesifik
+ */
+
+/**
+ * Membuat notifikasi informasi untuk semua admin
+ */
+export const createAdminInfoNotifications = async (title: string, message: string) => {
+  return createAdminNotifications(title, message, NotificationType.INFO);
+};
+
+/**
+ * Membuat notifikasi sukses untuk semua admin
+ */
+export const createAdminSuccessNotifications = async (title: string, message: string) => {
+  return createAdminNotifications(title, message, NotificationType.SUCCESS);
+};
+
+/**
+ * Membuat notifikasi peringatan untuk semua admin
+ */
+export const createAdminWarningNotifications = async (title: string, message: string) => {
+  return createAdminNotifications(title, message, NotificationType.WARNING);
+};
+
+/**
+ * Membuat notifikasi error untuk semua admin
+ */
+export const createAdminErrorNotifications = async (title: string, message: string) => {
+  return createAdminNotifications(title, message, NotificationType.ERROR);
+};
+
 
 /**
  * Format tanggal untuk pesan notifikasi
@@ -212,9 +342,10 @@ export const createCheckInNotification = async (
  */
 export const createCheckOutNotification = async (
   employeeId: string,
-  message: string
+  message: string,
+  opts?: { refType?: string; refId?: string }
 ) => {
-  return createEmployeeNotification(employeeId, "Check-out Berhasil", message, "success");
+  return createEmployeeNotification(employeeId, "Check-out Berhasil", message, "success", opts);
 };
 
 /**
@@ -323,4 +454,4 @@ export const createEmployeeNotificationWithResponse = async (
 ) => {
   await createEmployeeNotification(employeeId, title, message, type);
   return addNotificationUpdateHeader(response);
-}; 
+};

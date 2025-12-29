@@ -6,7 +6,7 @@ import { db } from "@/lib/db";
 /**
  * POST: Menandai semua notifikasi pengguna sebagai dibaca
  */
-export async function POST(request: NextRequest) {
+export async function POST(_request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
     

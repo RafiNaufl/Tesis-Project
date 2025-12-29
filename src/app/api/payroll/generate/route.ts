@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { createPayslipGeneratedNotification } from "@/lib/notification";
+import { ensureAttendanceRecords } from "@/lib/attendance";
 
 // POST: Generate payroll for employees (admin only)
 export async function POST(request: NextRequest) {
@@ -109,6 +110,9 @@ export async function POST(request: NextRequest) {
           });
           continue;
         }
+
+        // Pastikan record absensi lengkap (isi kekosongan dengan ABSENT)
+        await ensureAttendanceRecords(employee.id, startDate, endDate);
         
         // Get attendance records for the employee in the specified month
         const attendanceRecords = await db.attendance.findMany({
@@ -126,7 +130,10 @@ export async function POST(request: NextRequest) {
           record.status === "PRESENT" || record.status === "LATE" || record.status === "HALFDAY"
         ).length;
         
-        const daysAbsent = endDate.getDate() - daysPresent;
+        // Hitung hari tidak hadir berdasarkan record ABSENT yang sudah digenerate
+        const daysAbsent = attendanceRecords.filter(record => 
+          record.status === "ABSENT"
+        ).length;
         
         // Calculate overtime hours
         const overtimeHours = attendanceRecords.reduce((total, record) => {

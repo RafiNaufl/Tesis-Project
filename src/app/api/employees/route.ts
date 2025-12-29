@@ -5,7 +5,7 @@ import prisma from "@/lib/prisma";
 import { hash } from "bcrypt";
 
 // GET all employees
-export async function GET(req: NextRequest) {
+export async function GET(_req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
 
@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    if (session.user.role !== "ADMIN") {
+    if (session.user.role !== "ADMIN" && session.user.role !== "MANAGER") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -23,6 +23,7 @@ export async function GET(req: NextRequest) {
           select: {
             name: true,
             email: true,
+            profileImageUrl: true,
           },
         },
       },
@@ -57,10 +58,13 @@ export async function POST(req: NextRequest) {
       email,
       password,
       position,
-      department,
+      division,
+      organization,
       basicSalary,
       contactNumber,
       address,
+      bpjsKesehatan,
+      bpjsKetenagakerjaan,
     } = body;
 
     // Check if email already exists
@@ -99,12 +103,15 @@ export async function POST(req: NextRequest) {
         data: {
           employeeId,
           position,
-          department,
+          division,
+          organization,
           basicSalary,
           contactNumber,
           address,
           joiningDate: new Date(),
           userId: user.id,
+          bpjsKesehatan: bpjsKesehatan || 0,
+          bpjsKetenagakerjaan: bpjsKetenagakerjaan || 0,
         },
       });
 

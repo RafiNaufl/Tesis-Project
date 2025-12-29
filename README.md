@@ -38,8 +38,11 @@ A comprehensive employee management system that handles attendance tracking, pay
 ### Reporting
 - Employee attendance reports
 - Payroll summary reports
-- Department-wise reporting
+- Division-wise reporting
 - Exportable data formats
+
+## Recent Changes & Migration
+**Update (Dec 2025):** The system has been refactored to use **"Division"** instead of "Department". If you are upgrading from an older version, please refer to [MIGRATION_GUIDE.md](./MIGRATION_GUIDE.md) for detailed instructions on database schema updates and code changes.
 
 ## Tech Stack
 

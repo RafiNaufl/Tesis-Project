@@ -1,16 +1,14 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
 interface Advance {
   id: string;
   employeeId: string;
-  employee?: {
-    name: string;
-    employeeId: string;
-  };
+  employeeName: string;
+  empId: string;
   amount: number;
   reason: string;
   month: number;
@@ -31,8 +29,11 @@ export default function AdvanceReport() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [monthFilter, setMonthFilter] = useState<number>(0);
   const [yearFilter, setYearFilter] = useState<number>(new Date().getFullYear());
+  const [queryAdvanceId, setQueryAdvanceId] = useState<string | null>(null);
+  const [highlightAdvanceId, setHighlightAdvanceId] = useState<string | null>(null);
+  const [visibleCount, setVisibleCount] = useState(10);
 
-  const fetchAdvances = async () => {
+  const fetchAdvances = useCallback(async () => {
     try {
       setLoading(true);
       let url = `/api/payroll/advances?`;
@@ -59,13 +60,32 @@ export default function AdvanceReport() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [statusFilter, monthFilter, yearFilter]);
 
   useEffect(() => {
     if (session?.user) {
       fetchAdvances();
     }
-  }, [session, statusFilter, monthFilter, yearFilter]);
+  }, [session, fetchAdvances]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const aid = params.get('advanceId');
+      if (aid) setQueryAdvanceId(aid);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (queryAdvanceId && advances.length > 0) {
+      const el = document.getElementById(`advance-report-row-${queryAdvanceId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setHighlightAdvanceId(queryAdvanceId);
+        setTimeout(() => setHighlightAdvanceId(null), 3000);
+      }
+    }
+  }, [queryAdvanceId, advances]);
 
   const getStatusBadge = (status: string) => {
     const statusConfig = {
@@ -149,8 +169,8 @@ export default function AdvanceReport() {
 
     for (const advance of advances) {
       const row = [
-        advance.employee?.employeeId || "",
-        `"${advance.employee?.name || ""}"`,
+        advance.empId || "",
+        `"${advance.employeeName || ""}"`,
         advance.amount,
         `"${advance.reason.replace(/"/g, '""')}"`,
         `${getMonthName(advance.month)} ${advance.year}`,
@@ -287,74 +307,133 @@ export default function AdvanceReport() {
             </p>
           </div>
         ) : (
-          <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
-            <table className="min-w-full divide-y divide-gray-300">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Karyawan
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Jumlah
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Alasan
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Periode
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Pemotongan
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Tanggal Pengajuan
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {advances.map((advance) => (
-                  <tr key={advance.id}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      <div className="font-medium">{advance.employee?.name}</div>
-                      <div className="text-xs text-gray-500">{advance.employee?.employeeId}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {formatCurrency(advance.amount)}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-900 max-w-xs">
-                      <div className="truncate" title={advance.reason}>
-                        {advance.reason}
-                      </div>
-                      {advance.status === "REJECTED" && advance.rejectionReason && (
-                        <div className="mt-1 text-xs text-red-600">
-                          Alasan penolakan: {advance.rejectionReason}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {getMonthName(advance.month)} {advance.year}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+          <>
+            {/* Mobile Card View */}
+            <div className="md:hidden space-y-4">
+              {advances.slice(0, visibleCount).map((advance) => (
+                <div 
+                  key={advance.id} 
+                  id={`advance-report-card-${advance.id}`}
+                  className={`bg-white border rounded-lg shadow-sm p-4 space-y-3 border-gray-200 ${highlightAdvanceId === advance.id ? 'ring-2 ring-indigo-500' : ''}`}
+                >
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h3 className="text-base font-bold text-gray-900">{advance.employeeName}</h3>
+                      <p className="text-sm text-gray-500">{advance.empId}</p>
+                    </div>
+                    <div className="flex-shrink-0">
                       {getStatusBadge(advance.status)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {advance.status === "APPROVED" && advance.deductionMonth && advance.deductionYear ? (
-                        <span>{getMonthName(advance.deductionMonth)} {advance.deductionYear}</span>
-                      ) : (
-                        <span className="text-gray-500">-</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {formatDate(advance.createdAt)}
-                    </td>
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <p className="text-gray-500 text-xs">Jumlah</p>
+                      <p className="font-semibold text-gray-900">{formatCurrency(advance.amount)}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-500 text-xs">Periode</p>
+                      <p className="font-medium">{getMonthName(advance.month)} {advance.year}</p>
+                    </div>
+                    <div className="col-span-2">
+                      <p className="text-gray-500 text-xs">Alasan</p>
+                      <p className="text-gray-700">{advance.reason}</p>
+                    </div>
+                    {advance.status === "REJECTED" && advance.rejectionReason && (
+                      <div className="col-span-2 bg-red-50 p-2 rounded text-xs text-red-700">
+                        <strong>Ditolak:</strong> {advance.rejectionReason}
+                      </div>
+                    )}
+                    {advance.status === "APPROVED" && advance.deductionMonth && (
+                      <div className="col-span-2">
+                        <p className="text-gray-500 text-xs">Jadwal Potong</p>
+                        <p className="font-medium">{getMonthName(advance.deductionMonth)} {advance.deductionYear}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+              
+              {advances.length > visibleCount && (
+                <button
+                  onClick={() => setVisibleCount(prev => prev + 10)}
+                  className="w-full py-3 bg-gray-50 text-gray-600 font-medium rounded-lg border border-gray-200 hover:bg-gray-100 active:bg-gray-200 transition-colors min-h-[48px]"
+                >
+                  Muat Lebih Banyak ({advances.length - visibleCount} lagi)
+                </button>
+              )}
+            </div>
+
+            {/* Desktop Table View */}
+            <div className="hidden md:block overflow-x-auto shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
+              <table className="min-w-full divide-y divide-gray-300">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Karyawan
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Jumlah
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Alasan
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Periode
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Status
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Pemotongan
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Tanggal Pengajuan
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {advances.map((advance) => (
+                    <tr key={advance.id} id={`advance-report-row-${advance.id}`} className={highlightAdvanceId === advance.id ? 'bg-indigo-50' : ''}>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <div className="font-medium">{advance.employeeName}</div>
+                        <div className="text-xs text-gray-500">{advance.empId}</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {formatCurrency(advance.amount)}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-900 max-w-xs">
+                        <div className="truncate" title={advance.reason}>
+                          {advance.reason}
+                        </div>
+                        {advance.status === "REJECTED" && advance.rejectionReason && (
+                          <div className="mt-1 text-xs text-red-600">
+                            Alasan penolakan: {advance.rejectionReason}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {getMonthName(advance.month)} {advance.year}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        {getStatusBadge(advance.status)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {advance.status === "APPROVED" && advance.deductionMonth && advance.deductionYear ? (
+                          <span>{getMonthName(advance.deductionMonth)} {advance.deductionYear}</span>
+                        ) : (
+                          <span className="text-gray-500">-</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {formatDate(advance.createdAt)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
     </div>

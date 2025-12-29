@@ -1,16 +1,14 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
 interface SoftLoan {
   id: string;
   employeeId: string;
-  employee: {
-    name: string;
-    employeeId: string;
-  };
+  empId: string;
+  employeeName: string;
   totalAmount: number;
   monthlyAmount: number;
   remainingAmount: number;
@@ -20,7 +18,7 @@ interface SoftLoan {
   reason: string;
   status: string;
   createdAt: string;
-  updatedAt: string;
+  completedAt?: string;
 }
 
 export default function SoftLoanApproval() {
@@ -31,8 +29,10 @@ export default function SoftLoanApproval() {
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [selectedLoans, setSelectedLoans] = useState<string[]>([]);
   const [filterStatus, setFilterStatus] = useState("PENDING");
+  const [querySoftLoanId, setQuerySoftLoanId] = useState<string | null>(null);
+  const [highlightSoftLoanId, setHighlightSoftLoanId] = useState<string | null>(null);
 
-  const fetchSoftLoans = async () => {
+  const fetchSoftLoans = useCallback(async () => {
     try {
       setLoading(true);
       const params = new URLSearchParams();
@@ -52,13 +52,32 @@ export default function SoftLoanApproval() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [filterStatus]);
 
   useEffect(() => {
     if (session?.user?.role === "ADMIN") {
       fetchSoftLoans();
     }
-  }, [session, filterStatus]);
+  }, [session, fetchSoftLoans]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const sid = params.get('softLoanId');
+      if (sid) setQuerySoftLoanId(sid);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (querySoftLoanId && softLoans.length > 0) {
+      const el = document.getElementById(`softloan-approval-row-${querySoftLoanId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setHighlightSoftLoanId(querySoftLoanId);
+        setTimeout(() => setHighlightSoftLoanId(null), 3000);
+      }
+    }
+  }, [querySoftLoanId, softLoans]);
 
   const handleApproval = async (loanId: string, action: "APPROVED" | "REJECTED", reason?: string) => {
     try {
@@ -244,7 +263,90 @@ export default function SoftLoanApproval() {
             </p>
           </div>
         ) : (
-          <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
+          <>
+            {/* Mobile Card View */}
+            <div className="md:hidden space-y-4">
+              {softLoans.map((loan) => (
+                <div 
+                  key={loan.id} 
+                  id={`softloan-approval-card-${loan.id}`}
+                  className={`bg-white border rounded-lg p-4 shadow-sm space-y-3 ${selectedLoans.includes(loan.id) ? 'ring-2 ring-indigo-500' : ''} ${highlightSoftLoanId === loan.id ? 'bg-indigo-50' : ''}`}
+                >
+                  <div className="flex justify-between items-start">
+                    <div className="flex items-start space-x-3">
+                      {filterStatus === "PENDING" && (
+                        <div className="pt-1">
+                          <input
+                            type="checkbox"
+                            className="h-6 w-6 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                            checked={selectedLoans.includes(loan.id)}
+                            onChange={() => handleSelectLoan(loan.id)}
+                          />
+                        </div>
+                      )}
+                      <div>
+                        <div className="text-base font-medium text-gray-900">{loan.employeeName}</div>
+                        <div className="text-sm text-gray-500">ID: {loan.empId}</div>
+                      </div>
+                    </div>
+                    <div>{getStatusBadge(loan.status)}</div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-sm border-t border-b border-gray-100 py-3">
+                    <div>
+                      <p className="text-gray-500">Total Pinjaman</p>
+                      <p className="font-medium text-gray-900">{formatCurrency(loan.totalAmount)}</p>
+                      {loan.status === "APPROVED" && loan.remainingAmount < loan.totalAmount && (
+                        <p className="text-xs text-gray-500">Sisa: {formatCurrency(loan.remainingAmount)}</p>
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-gray-500">Potongan/Bulan</p>
+                      <p className="font-medium text-gray-900">{formatCurrency(loan.monthlyAmount)}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-500">Durasi</p>
+                      <p className="font-medium text-gray-900">{loan.durationMonths} bulan</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-500">Mulai</p>
+                      <p className="font-medium text-gray-900">{getMonthName(loan.startMonth)} {loan.startYear}</p>
+                    </div>
+                  </div>
+
+                  <div className="text-sm">
+                    <p className="text-gray-500 mb-1">Alasan:</p>
+                    <p className="text-gray-900 italic bg-gray-50 p-2 rounded">{loan.reason}</p>
+                  </div>
+
+                  <div className="text-xs text-gray-500 flex justify-between items-center">
+                    <span>Diajukan: {formatDate(loan.createdAt)}</span>
+                  </div>
+
+                  {filterStatus === "PENDING" && (
+                    <div className="pt-2 flex space-x-3">
+                      <button
+                        onClick={() => handleApproval(loan.id, "APPROVED")}
+                        disabled={processingId === loan.id}
+                        className="flex-1 bg-green-600 text-white py-2 px-4 rounded-md text-sm font-medium hover:bg-green-700 disabled:opacity-50 min-h-[48px]"
+                      >
+                        {processingId === loan.id ? "Memproses..." : "Setujui"}
+                      </button>
+                      <button
+                        onClick={() => handleApproval(loan.id, "REJECTED")}
+                        disabled={processingId === loan.id}
+                        className="flex-1 bg-red-600 text-white py-2 px-4 rounded-md text-sm font-medium hover:bg-red-700 disabled:opacity-50 min-h-[48px]"
+                      >
+                        Tolak
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Desktop Table View */}
+            <div className="hidden md:block overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
             <table className="min-w-full divide-y divide-gray-300">
               <thead className="bg-gray-50">
                 <tr>
@@ -291,7 +393,7 @@ export default function SoftLoanApproval() {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {softLoans.map((loan) => (
-                  <tr key={loan.id} className={selectedLoans.includes(loan.id) ? "bg-gray-50" : ""}>
+                  <tr key={loan.id} id={`softloan-approval-row-${loan.id}`} className={`${selectedLoans.includes(loan.id) ? 'bg-gray-50' : ''} ${highlightSoftLoanId === loan.id ? 'bg-indigo-50' : ''}`}>
                     {filterStatus === "PENDING" && (
                       <td className="relative w-12 px-6 sm:w-16 sm:px-8">
                         <input
@@ -305,8 +407,8 @@ export default function SoftLoanApproval() {
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
                         <div>
-                          <div className="text-sm font-medium text-gray-900">{loan.employee.name}</div>
-                          <div className="text-sm text-gray-500">ID: {loan.employee.employeeId}</div>
+                          <div className="text-sm font-medium text-gray-900">{loan.employeeName}</div>
+                          <div className="text-sm text-gray-500">ID: {loan.empId}</div>
                         </div>
                       </div>
                     </td>
@@ -365,6 +467,7 @@ export default function SoftLoanApproval() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
     </div>

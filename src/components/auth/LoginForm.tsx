@@ -8,8 +8,13 @@ import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 
 const loginSchema = z.object({
-  email: z.string().email("Please enter a valid email address"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
+  identifier: z
+    .string()
+    .min(3, "Masukkan email atau nomor HP")
+    .refine((v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) || /^\+?\d{8,15}$/.test(v), {
+      message: "Masukkan email atau nomor HP yang valid",
+    }),
+  password: z.string().min(8, "Password minimal 8 karakter"),
 });
 
 type LoginFormValues = z.infer<typeof loginSchema>;
@@ -34,19 +39,19 @@ export default function LoginForm() {
     try {
       const result = await signIn("credentials", {
         redirect: false,
-        email: data.email,
+        identifier: data.identifier,
         password: data.password,
       });
       
       if (result?.error) {
-        setError("Invalid email or password");
+        setError("Email/Nomor HP atau password tidak valid");
         return;
       }
       
       router.push("/dashboard");
       router.refresh();
-    } catch (error) {
-      setError("Something went wrong. Please try again.");
+    } catch {
+      setError("Terjadi kesalahan. Silakan coba lagi.");
     } finally {
       setLoading(false);
     }
@@ -61,19 +66,19 @@ export default function LoginForm() {
       )}
       
       <div>
-        <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-          Email address
+        <label htmlFor="identifier" className="block text-sm font-medium text-gray-700">
+          Email atau Nomor HP
         </label>
         <div className="mt-1">
           <input
-            id="email"
-            type="email"
-            autoComplete="email"
+            id="identifier"
+            type="text"
+            autoComplete="username"
             className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-            {...register("email")}
+            {...register("identifier")}
           />
-          {errors.email && (
-            <p className="mt-1 text-sm text-red-600">{errors.email.message}</p>
+          {errors.identifier && (
+            <p className="mt-1 text-sm text-red-600">{errors.identifier.message}</p>
           )}
         </div>
       </div>
@@ -102,7 +107,7 @@ export default function LoginForm() {
           disabled={loading}
           className="flex w-full justify-center rounded-md border border-transparent bg-indigo-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
         >
-          {loading ? "Signing in..." : "Sign in"}
+          {loading ? "Sedang masuk..." : "Masuk"}
         </button>
       </div>
     </form>

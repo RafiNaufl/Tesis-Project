@@ -12,8 +12,15 @@ export async function POST(
   try {
     const session = await getServerSession(authOptions);
     
-    // Pastikan pengguna sudah login dan memiliki role ADMIN
-    if (!session || session.user.role !== "ADMIN") {
+    if (!session) {
+      return NextResponse.json(
+        { error: "Anda tidak memiliki izin untuk melakukan tindakan ini" },
+        { status: 403 }
+      );
+    }
+    const role = session.user.role;
+    const allowedRoles = ["ADMIN", "MANAGER", "FOREMAN", "ASSISTANT_FOREMAN"];
+    if (!allowedRoles.includes(role)) {
       return NextResponse.json(
         { error: "Anda tidak memiliki izin untuk melakukan tindakan ini" },
         { status: 403 }
@@ -54,6 +61,9 @@ export async function POST(
       );
     }
     
+    const body = await req.json().catch(() => ({}));
+    const note = typeof body?.note === "string" ? body.note : undefined;
+
     // Menolak overtime/Sunday work
     const updatedAttendance = await rejectOvertime(
       attendanceId,
@@ -82,6 +92,40 @@ export async function POST(
     console.log("Rejected attendance:", updatedAttendance);
     
     // Persiapkan response dengan header khusus
+    await prisma.approvalLog.create({
+      data: {
+        attendanceId,
+        action: "REJECT",
+        actorUserId: session.user.id,
+        note: note || null,
+      },
+    });
+
+    // Audit log
+    await prisma.attendanceAuditLog.create({
+      data: {
+        attendanceId,
+        userId: session.user.id,
+        action: "OVERTIME_REJECTED",
+        oldValue: { isOvertimeApproved: attendance.isOvertimeApproved },
+        newValue: { isOvertimeApproved: false },
+      },
+    });
+
+    // Notifikasi ke semua pihak terkait (ADMIN, MANAGER, FOREMAN, ASSISTANT_FOREMAN)
+    const approverUsers = await prisma.user.findMany({
+      where: { role: { in: ["ADMIN", "MANAGER", "FOREMAN", "ASSISTANT_FOREMAN"] } },
+      select: { id: true, name: true, role: true },
+    });
+    const actor = approverUsers.find(u => u.id === session.user.id);
+    const employeeName = attendance.employee?.user?.name || "Karyawan";
+    const broadcastMsg = `Status persetujuan lembur untuk ${employeeName} diubah menjadi Ditolak oleh ${actor?.name || "-"} (${actor?.role || "-"}).`;
+    await Promise.all(
+      approverUsers
+        .filter(u => u.id !== session.user.id)
+        .map(u => createNotification(u.id, "Pembaruan Persetujuan Lembur", broadcastMsg, "info"))
+    );
+
     const response = NextResponse.json(updatedAttendance);
     // Tambahkan header khusus untuk notify klien
     response.headers.set('X-Attendance-Rejected', 'true');

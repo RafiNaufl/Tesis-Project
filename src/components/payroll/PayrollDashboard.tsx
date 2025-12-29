@@ -2,10 +2,9 @@
 
 import { useState } from "react";
 import PayrollManagement from "@/components/payroll/PayrollManagement";
-import AdvanceRequest from "@/components/payroll/AdvanceRequest";
-import SoftLoanRequest from "@/components/payroll/SoftLoanRequest";
-import AdvanceApproval from "@/components/payroll/AdvanceApproval";
-import SoftLoanApproval from "@/components/payroll/SoftLoanApproval";
+import AdvanceApproval from "@/components/payroll/advanceapproval";
+import SoftLoanApproval from "@/components/payroll/softloanapproval";
+import AdvanceReport from "@/components/payroll/advancereport";
 
 interface PayrollDashboardProps {
   user: {
@@ -21,14 +20,13 @@ export default function PayrollDashboard({ user }: PayrollDashboardProps) {
 
   const employeeTabs = [
     { id: 'overview', name: 'Ringkasan Gaji', component: <PayrollManagement /> },
-    { id: 'advance', name: 'Input Kasbon', component: <AdvanceRequest onSuccess={() => {}} /> },
-    { id: 'softloan', name: 'Input Pinjaman Lunak', component: <SoftLoanRequest onSuccess={() => {}} /> },
   ];
 
   const adminTabs = [
     { id: 'overview', name: 'Manajemen Gaji', component: <PayrollManagement /> },
-    { id: 'advance-approval', name: 'Approval Kasbon', component: <AdvanceApproval /> },
-    { id: 'softloan-approval', name: 'Approval Pinjaman Lunak', component: <SoftLoanApproval /> },
+    { id: 'advance-approval', name: 'Persetujuan Kasbon', component: <AdvanceApproval /> },
+    { id: 'advance-report', name: 'Laporan Kasbon', component: <AdvanceReport /> },
+    { id: 'softloan-approval', name: 'Persetujuan Pinjaman Lunak', component: <SoftLoanApproval /> },
   ];
 
   const tabs = isAdmin ? adminTabs : employeeTabs;

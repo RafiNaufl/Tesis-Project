@@ -1,25 +1,21 @@
 import { prisma } from "@/lib/prisma";
-import { Status, LeaveStatus } from "@/generated/prisma/enums";
+import { Status } from "@/generated/prisma/enums";
 import {
   getWorkdayType,
   WorkdayType,
   AttendanceStatus,
   calculateLateMinutes as calculateLateMinutesRule,
-  calculateOvertimeMinutes,
   getAttendanceStatus as getAttendanceStatusRule,
-  calculateLatePenalty,
-  isOvertimeCheckIn,
-  isOvertimeCheckOut,
   isWorkday,
   isSunday,
-  generateApprovalMessage
 } from "./attendanceRules";
+import { calculateOvertimeDuration } from "./overtimeCalculator";
 
 // Import fungsi terkait tanggal
-import { format, startOfDay, endOfDay, addDays } from "date-fns";
+import { startOfDay, addDays, isBefore } from "date-fns";
 
 /**
- * Mengonversi AttendanceStatus ke Status Prisma
+ * Konversi status internal ke enum Prisma
  */
 const mapAttendanceStatus = (status: AttendanceStatus): Status => {
   switch (status) {
@@ -35,130 +31,82 @@ const mapAttendanceStatus = (status: AttendanceStatus): Status => {
 };
 
 /**
- * Menentukan status kehadiran berdasarkan waktu check-in
+ * Memastikan record absensi lengkap untuk rentang tanggal tertentu
+ * Mengisi kekosongan dengan status ABSENT pada hari kerja
  */
-export const getAttendanceStatus = (checkInTime: Date | null): Status => {
-  if (!checkInTime) return Status.ABSENT;
+export const ensureAttendanceRecords = async (
+  employeeId: string,
+  startDate: Date,
+  endDate: Date
+) => {
+  let currentDate = new Date(startDate);
+  // Clone endDate to avoid mutation issues if passed by reference (though unlikely here)
+  const finalDate = new Date(endDate);
+  const now = new Date();
   
-  const status = getAttendanceStatusRule(checkInTime, new Date(checkInTime));
-  return mapAttendanceStatus(status);
+  while (currentDate <= finalDate) {
+    // Skip if future date
+    if (isBefore(now, currentDate)) {
+        currentDate = addDays(currentDate, 1);
+        continue;
+    }
+
+    const date = startOfDay(currentDate);
+
+    // Check existing record
+    const existing = await prisma.attendance.findUnique({
+      where: {
+        employeeId_date: {
+          employeeId,
+          date,
+        },
+      },
+    });
+
+    if (!existing) {
+      // Cek apakah hari kerja
+      if (isWorkday(currentDate)) {
+          await prisma.attendance.create({
+            data: {
+              employeeId,
+              date,
+              status: Status.ABSENT,
+              isLate: false,
+              lateMinutes: 0,
+              isSundayWork: isSunday(currentDate),
+            },
+          });
+      }
+    }
+    
+    currentDate = addDays(currentDate, 1);
+  }
 };
 
 /**
- * Menghitung keterlambatan dalam menit
+ * Mencatat kehadiran karyawan (Check-In)
  */
-export const calculateLateMinutes = (checkInTime: Date | null): number => {
-  if (!checkInTime) return 0;
-  return calculateLateMinutesRule(checkInTime, new Date(checkInTime));
-};
-
-/**
- * Menghitung lembur dalam menit
- */
-export const calculateOvertime = (checkOutTime: Date | null, isOvertimeApproved: boolean = false, isSundayWorkApproved: boolean = false): number => {
-  if (!checkOutTime) return 0;
-  return calculateOvertimeMinutes(checkOutTime, new Date(checkOutTime), isOvertimeApproved, isSundayWorkApproved);
-};
-
-/**
- * Mencatat kehadiran karyawan (check-in)
- * @param employeeId ID karyawan
- * @param photoUrl URL foto saat check-in (opsional)
- * @param latitude Latitude lokasi saat check-in (opsional)
- * @param longitude Longitude lokasi saat check-in (opsional)
- */
-export const recordCheckIn = async (
+export const checkIn = async (
   employeeId: string,
   photoUrl?: string,
   latitude?: number,
   longitude?: number
 ) => {
   const now = new Date();
-  const today = startOfDay(now);
-  const tomorrow = endOfDay(now);
+  const date = startOfDay(now);
 
-  // Cek apakah sudah ada catatan kehadiran untuk hari ini
-  const existingAttendance = await prisma.attendance.findFirst({
+  // Cek apakah sudah ada absen hari ini
+  const existingAttendance = await prisma.attendance.findUnique({
     where: {
-      employeeId,
-      date: {
-        gte: today,
-        lt: addDays(today, 1),
+      employeeId_date: {
+        employeeId,
+        date,
       },
     },
   });
 
-  // Jika sudah ada catatan dengan check-in, cek apakah pengajuan sebelumnya ditolak
-  if (existingAttendance && existingAttendance.checkIn) {
-    // Jika catatan sebelumnya menunjukkan penolakan, izinkan check-in kembali
-    const notesDitolak = existingAttendance.notes && existingAttendance.notes.includes("Di Tolak");
-    const sudahDitolak = (existingAttendance.isSundayWorkApproved === false && existingAttendance.approvedAt !== null) ||
-                          (existingAttendance.isOvertimeApproved === false && existingAttendance.approvedAt !== null);
-    
-    // Log untuk debugging
-    console.log("Existing attendance:", {
-      id: existingAttendance.id,
-      checkIn: existingAttendance.checkIn,
-      checkOut: existingAttendance.checkOut,
-      notes: existingAttendance.notes,
-      approvedAt: existingAttendance.approvedAt,
-      isOvertimeApproved: existingAttendance.isOvertimeApproved,
-      isSundayWorkApproved: existingAttendance.isSundayWorkApproved
-    });
-    console.log("Rejected status:", { notesDitolak, sudahDitolak });
-    
-    if (!notesDitolak && !sudahDitolak) {
-      throw new Error("Anda sudah melakukan check-in hari ini");
-    }
-    // Jika sudah ditolak, lanjutkan dengan proses check-in baru
-  }
-
-  // Cek apakah karyawan memiliki izin cuti yang disetujui untuk hari ini
-  const approvedLeave = await prisma.leave.findFirst({
-    where: {
-      employeeId,
-      status: LeaveStatus.APPROVED,
-      startDate: { lte: today },
-      endDate: { gte: today },
-    },
-  });
-
-  if (approvedLeave) {
-    // Jika karyawan memiliki izin cuti, catat sebagai LEAVE
-    if (existingAttendance) {
-      return prisma.attendance.update({
-        where: { id: existingAttendance.id },
-        data: { 
-          status: Status.LEAVE, 
-          notes: `Approved leave: ${approvedLeave.type}`,
-          // Reset status persetujuan sebelumnya jika ada
-          approvedAt: null,
-          approvedBy: null,
-          isOvertimeApproved: false,
-          isSundayWorkApproved: false 
-        },
-      });
-    } else {
-      return prisma.attendance.create({
-        data: {
-          employeeId,
-          date: today,
-          status: Status.LEAVE,
-          notes: `Approved leave: ${approvedLeave.type}`,
-        },
-      });
-    }
-  }
-
-  // Cek apakah hari ini adalah hari kerja
   const workdayType = getWorkdayType(now);
-  const isSundayWorkday = workdayType === WorkdayType.SUNDAY;
-  
-  // Tentukan apakah check-in ini adalah lembur
-  const isOvertimeEntry = isOvertimeCheckIn(now, now);
-  
-  // Flag untuk Sunday work
-  const isSundayWork = isSundayWorkday;
+  const isSundayWork = workdayType === WorkdayType.SUNDAY;
 
   // Hitung status kehadiran dan keterlambatan - jika hari Minggu dan tidak disetujui, status ABSENT
   const attendanceStatus = getAttendanceStatusRule(now, now, false); // Belum disetujui
@@ -201,247 +149,394 @@ export const recordCheckIn = async (
     });
     
     return result;
-  } else {
-    // Jika belum ada catatan, buat baru dengan upsert untuk menghindari race condition
-    try {
-      return await prisma.attendance.create({
-        data: {
-          employeeId,
-          date: today,
-          checkIn: now,
-          status,
-          isLate,
-          lateMinutes,
-          isSundayWork,
-          isOvertimeApproved: false, // Default tidak disetujui
-          isSundayWorkApproved: false, // Default tidak disetujui
-          // Tambahkan data foto dan geolokasi
-          checkInPhotoUrl: photoUrl,
-          checkInLatitude: latitude,
-          checkInLongitude: longitude,
-      },
-      });
-    } catch (error: any) {
-      // Jika terjadi unique constraint error, coba cari record yang sudah ada dan update
-      if (error.code === 'P2002' && error.meta?.target?.includes('employeeId') && error.meta?.target?.includes('date')) {
-        console.log('Unique constraint violation detected, attempting to update existing record');
-        
-        // Cari record yang sudah ada
-        const existingRecord = await prisma.attendance.findFirst({
-          where: {
-            employeeId,
-            date: {
-              gte: today,
-              lt: addDays(today, 1),
-            },
-          },
-        });
-        
-        if (existingRecord) {
-          // Update record yang sudah ada
-          return await prisma.attendance.update({
-            where: { id: existingRecord.id },
-            data: {
-              checkIn: now,
-              checkOut: null,
-              status,
-              isLate,
-              lateMinutes,
-              isSundayWork,
-              approvedAt: null,
-              approvedBy: null,
-              isOvertimeApproved: false,
-              isSundayWorkApproved: false,
-              notes: existingRecord.notes?.includes("Di Tolak") ? "" : existingRecord.notes,
-              checkInPhotoUrl: photoUrl,
-              checkInLatitude: latitude,
-              checkInLongitude: longitude,
-            },
-          });
-        }
-      }
-      
-      // Re-throw error jika bukan unique constraint atau tidak bisa di-handle
-      throw error;
-    }
   }
+
+  // Buat catatan baru
+  return prisma.attendance.create({
+    data: {
+      employeeId,
+      date,
+      checkIn: now,
+      status,
+      isLate,
+      lateMinutes,
+      isSundayWork,
+      checkInPhotoUrl: photoUrl,
+      checkInLatitude: latitude,
+      checkInLongitude: longitude,
+    },
+  });
 };
 
 /**
- * Mencatat kehadiran karyawan (check-out)
- * @param employeeId ID karyawan
- * @param photoUrl URL foto saat check-out (opsional)
- * @param latitude Latitude lokasi saat check-out (opsional)
- * @param longitude Longitude lokasi saat check-out (opsional)
+ * Mencatat jam keluar karyawan (Check-Out)
  */
-export const recordCheckOut = async (
+export const checkOut = async (
   employeeId: string,
   photoUrl?: string,
   latitude?: number,
   longitude?: number
 ) => {
   const now = new Date();
-  const today = startOfDay(now);
+  const date = startOfDay(now);
 
-  // Cari catatan kehadiran hari ini
-  const attendance = await prisma.attendance.findFirst({
+  const attendance = await prisma.attendance.findUnique({
     where: {
-      employeeId,
-      date: {
-        gte: today,
-        lt: addDays(today, 1),
+      employeeId_date: {
+        employeeId,
+        date,
       },
     },
   });
 
   if (!attendance) {
-    throw new Error("No check-in record found for today");
+    throw new Error("Anda belum melakukan check-in hari ini.");
   }
 
-  // Cek apakah sudah checkout sebelumnya
-  if (attendance.checkOut) {
-    throw new Error("Anda sudah melakukan check-out hari ini");
-  }
-
-  // Cek apakah hari ini adalah hari kerja
-  const workdayType = getWorkdayType(now);
-  const isSundayWorkday = workdayType === WorkdayType.SUNDAY;
-  
-  // Hitung overtime berdasarkan persetujuan yang ada
-  const isOvertimeApproved = attendance.isOvertimeApproved;
-  const isSundayWorkApproved = attendance.isSundayWorkApproved;
-  
-  // Untuk saat ini, hitung overtime tanpa memperhitungkan persetujuan
-  // Nanti admin bisa menyetujui dan overtime akan dihitung ulang
-  const overtimeMinutes = calculateOvertimeMinutes(now, today, false, false);
-  
-  // Update catatan dengan check-out dan overtime
-  const updatedAttendance = await prisma.attendance.update({
+  // Update attendance with checkout info only; overtime dihitung dari overtimeStart→overtimeEnd
+  return prisma.attendance.update({
     where: { id: attendance.id },
     data: {
       checkOut: now,
-      overtime: overtimeMinutes, // Simpan overtime meskipun belum disetujui
-      // Tambahkan data foto dan geolokasi
+      // Jangan set lembur di checkout; akan ditetapkan saat endOvertime
+      // Overtime tetap sesuai nilai sebelumnya (jika ada)
       checkOutPhotoUrl: photoUrl,
       checkOutLatitude: latitude,
       checkOutLongitude: longitude,
     },
   });
-  
-  // Log untuk debugging
-  console.log("Updated attendance after checkout:", {
-    id: updatedAttendance.id,
-    checkIn: updatedAttendance.checkIn,
-    checkOut: updatedAttendance.checkOut,
-    overtime: updatedAttendance.overtime
+};
+
+/**
+ * Mencatat mulai lembur
+ */
+export const startOvertime = async (
+  employeeId: string,
+  photoUrl?: string,
+  latitude?: number,
+  longitude?: number,
+  notes?: string,
+  reason?: string
+) => {
+  const now = new Date();
+  const date = startOfDay(now);
+
+  const attendance = await prisma.attendance.findUnique({
+    where: {
+      employeeId_date: {
+        employeeId,
+        date,
+      },
+    },
   });
+
+  if (!attendance) {
+    // Jika belum ada data absensi, buat baru (untuk kasus lembur di hari libur atau tanpa shift normal)
+    const newAttendance = await prisma.attendance.create({
+      data: {
+        employeeId,
+        date,
+        checkIn: now, // Set checkIn sama dengan waktu mulai lembur
+        status: Status.PRESENT,
+        isLate: false,
+        lateMinutes: 0,
+        isSundayWork: isSunday(date),
+        overtimeStart: now,
+        overtimeStartPhotoUrl: photoUrl,
+        overtimeStartLatitude: latitude,
+        overtimeStartLongitude: longitude,
+        overtimeStartAddressNote: notes || reason,
+      },
+    });
+
+    // Create OvertimeRequest entry
+    try {
+        await prisma.overtimeRequest.create({
+          data: {
+            employeeId,
+            date: date,
+            start: now,
+            end: now, // Will be updated on endOvertime
+            reason: reason || notes,
+            status: "PENDING",
+          }
+        });
+    } catch (error) {
+        console.error("Failed to create OvertimeRequest:", error);
+    }
+    
+    return newAttendance;
+  }
+  
+  if (!attendance.checkOut) {
+    throw new Error("Anda harus check-out terlebih dahulu sebelum mulai lembur.");
+  }
+
+  const updatedAttendance = await prisma.attendance.update({
+    where: { id: attendance.id },
+    data: {
+      overtimeStart: now,
+      overtimeStartPhotoUrl: photoUrl,
+      overtimeStartLatitude: latitude,
+      overtimeStartLongitude: longitude,
+      overtimeStartAddressNote: notes || reason,
+    },
+  });
+
+  // Create OvertimeRequest entry
+  try {
+      await prisma.overtimeRequest.create({
+        data: {
+          employeeId,
+          date: date,
+          start: now,
+          end: now, // Will be updated on endOvertime
+          reason: reason || notes,
+          status: "PENDING",
+        }
+      });
+  } catch (error) {
+      console.error("Failed to create OvertimeRequest:", error);
+  }
   
   return updatedAttendance;
 };
 
 /**
- * Menyetujui lembur atau kerja hari Minggu
+ * Menyetujui lembur
  */
-export const approveOvertime = async (attendanceId: string, adminId: string) => {
+export const approveOvertime = async (attendanceId: string, approverId: string) => {
   const attendance = await prisma.attendance.findUnique({
     where: { id: attendanceId },
   });
 
   if (!attendance) {
-    throw new Error("Attendance record not found");
+    throw new Error("Data kehadiran tidak ditemukan");
   }
 
-  // Cek apakah ini hari Minggu
-  const isSundayWorkday = isSunday(new Date(attendance.date));
-  
-  // Cek apakah ada lembur atau bekerja di hari Minggu
-  const isOvertime = attendance.overtime > 0;
-
-  // Hitung ulang overtime dengan persetujuan jika ada checkout
-  let overtimeMinutes = attendance.overtime;
-  if (attendance.checkOut) {
-    overtimeMinutes = calculateOvertimeMinutes(
-      new Date(attendance.checkOut), 
-      new Date(attendance.date), 
-      true, // Lembur disetujui
-      isSundayWorkday // Jika hari Minggu, persetujuan Sunday work
-    );
-  }
-
-  // Update status persetujuan
-  return prisma.attendance.update({
+  const updatedAttendance = await prisma.attendance.update({
     where: { id: attendanceId },
     data: {
-      isOvertimeApproved: isOvertime,
-      isSundayWorkApproved: isSundayWorkday,
-      overtime: overtimeMinutes, // Update overtime dengan perhitungan baru
-      approvedBy: adminId,
+      isOvertimeApproved: true,
       approvedAt: new Date(),
-      // Jika hari Minggu dan disetujui, update status menjadi PRESENT
-      status: isSundayWorkday ? Status.PRESENT : attendance.status,
+      approvedBy: approverId,
     },
   });
+
+  // Approve associated OvertimeRequest
+  if (updatedAttendance.overtimeStart) {
+      try {
+        await prisma.overtimeRequest.updateMany({
+            where: {
+                employeeId: updatedAttendance.employeeId,
+                date: updatedAttendance.date,
+                start: updatedAttendance.overtimeStart
+            },
+            data: {
+                status: "APPROVED",
+                approvedBy: approverId,
+                approvedAt: new Date()
+            }
+        });
+      } catch (error) {
+          console.error("Failed to approve OvertimeRequest:", error);
+      }
+  }
+
+  return updatedAttendance;
 };
 
 /**
- * Menolak lembur atau kerja hari Minggu
+ * Menolak lembur
  */
-export const rejectOvertime = async (attendanceId: string, adminId: string) => {
+export const rejectOvertime = async (attendanceId: string, approverId: string, rejectionReason?: string) => {
   const attendance = await prisma.attendance.findUnique({
     where: { id: attendanceId },
   });
 
   if (!attendance) {
-    throw new Error("Attendance record not found");
+    throw new Error("Data kehadiran tidak ditemukan");
   }
 
-  // Cek apakah ini hari Minggu
-  const isSundayWorkday = isSunday(new Date(attendance.date));
-  
-  // Tambahkan catatan penolakan
-  let notes = attendance.notes || "";
-  if (notes) {
-    notes += " (Di Tolak)";
-  } else {
-    notes = "(Di Tolak)";
-  }
-
-  // Tentukan status absensi yang akan digunakan
-  let statusAbsensi = attendance.status;
-  
-  // Jika hari Minggu dan ditolak, status menjadi ABSENT
-  if (isSundayWorkday) {
-    statusAbsensi = Status.ABSENT;
-  } else {
-    // Jika bukan hari Minggu, kembalikan ke status berdasarkan waktu check-in
-    if (attendance.checkIn) {
-      const status = getAttendanceStatusRule(new Date(attendance.checkIn), new Date(attendance.date));
-      statusAbsensi = mapAttendanceStatus(status);
-    }
-  }
-
-  // Update status persetujuan
-  return prisma.attendance.update({
+  const updatedAttendance = await prisma.attendance.update({
     where: { id: attendanceId },
     data: {
       isOvertimeApproved: false,
-      isSundayWorkApproved: false,
-      overtime: 0, // Reset overtime karena ditolak
-      checkOut: null, // Reset checkout untuk memungkinkan pengajuan ulang
-      notes, // Tambahkan catatan penolakan
-      approvedBy: adminId,
       approvedAt: new Date(),
-      status: statusAbsensi, // Gunakan status yang sudah ditentukan
+      approvedBy: approverId,
+      // Opsional: simpan alasan penolakan di notes atau field khusus jika ada
+      notes: rejectionReason ? (attendance.notes ? `${attendance.notes}. Ditolak: ${rejectionReason}` : `Ditolak: ${rejectionReason}`) : attendance.notes,
+    },
+  });
+
+  // Reject associated OvertimeRequest
+  if (updatedAttendance.overtimeStart) {
+      try {
+        await prisma.overtimeRequest.updateMany({
+            where: {
+                employeeId: updatedAttendance.employeeId,
+                date: updatedAttendance.date,
+                start: updatedAttendance.overtimeStart
+            },
+            data: {
+                status: "REJECTED",
+                approvedBy: approverId,
+                approvedAt: new Date(),
+                notes: rejectionReason
+            }
+        });
+      } catch (error) {
+          console.error("Failed to reject OvertimeRequest:", error);
+      }
+  }
+
+  return updatedAttendance;
+};
+
+/**
+ * Menyelesaikan lembur
+ */
+export const endOvertime = async (
+  employeeId: string,
+  photoUrl?: string,
+  latitude?: number,
+  longitude?: number,
+  notes?: string
+) => {
+  const now = new Date();
+  const date = startOfDay(now);
+
+  const attendance = await prisma.attendance.findUnique({
+    where: {
+      employeeId_date: {
+        employeeId,
+        date,
+      },
+    },
+  });
+
+  if (!attendance) {
+    throw new Error("Anda belum melakukan check-in hari ini.");
+  }
+
+  if (!attendance.overtimeStart) {
+    throw new Error("Anda belum memulai lembur.");
+  }
+
+  // Gunakan fungsi kalkulasi yang lebih robust dengan validasi dan logging
+  const overtimeDuration = calculateOvertimeDuration(attendance.overtimeStart, now);
+
+  const updatedAttendance = await prisma.attendance.update({
+    where: { id: attendance.id },
+    data: {
+      overtimeEnd: now,
+      overtimeEndPhotoUrl: photoUrl,
+      overtimeEndLatitude: latitude,
+      overtimeEndLongitude: longitude,
+      overtimeEndAddressNote: notes,
+      overtime: overtimeDuration,
+      // Jika belum checkout (implicit overtime), set checkout juga
+      ...(attendance.checkOut ? {} : {
+        checkOut: now,
+        checkOutPhotoUrl: photoUrl,
+        checkOutLatitude: latitude,
+        checkOutLongitude: longitude,
+      }),
+    },
+  });
+
+  // Update OvertimeRequest
+  try {
+      // Find the request that matches this attendance
+      const request = await prisma.overtimeRequest.findFirst({
+        where: {
+            employeeId,
+            date: attendance.date,
+            start: attendance.overtimeStart
+        }
+      });
+
+      if (request) {
+          await prisma.overtimeRequest.update({
+            where: { id: request.id },
+            data: {
+                end: now,
+            }
+          });
+      } else {
+          // If not found (maybe started before this code change), create it
+          await prisma.overtimeRequest.create({
+            data: {
+                employeeId,
+                date: attendance.date,
+                start: attendance.overtimeStart,
+                end: now,
+                reason: attendance.overtimeStartAddressNote,
+                status: "PENDING"
+            }
+          });
+      }
+  } catch (error) {
+      console.error("Failed to update OvertimeRequest:", error);
+  }
+
+  return updatedAttendance;
+};
+
+/**
+ * Menyetujui pengajuan keterlambatan
+ */
+export const approveLateSubmission = async (attendanceId: string, _approverId: string) => {
+  const attendance = await prisma.attendance.findUnique({
+    where: { id: attendanceId },
+  });
+
+  if (!attendance) {
+    throw new Error("Data kehadiran tidak ditemukan");
+  }
+
+  return prisma.attendance.update({
+    where: { id: attendanceId },
+    data: {
+      lateApprovalStatus: "APPROVED",
+      // Jika disetujui, mungkin status berubah jadi ON_TIME/PRESENT atau tetap LATE tapi excused?
+      // Mengikuti pola umum, kita ubah status jadi PRESENT agar tidak dianggap terlambat dalam report
+      // Atau biarkan status LATE tapi ada flag approved.
+      // Berdasarkan LateApprovals.tsx, hanya mengubah status approval.
+      // Namun untuk keperluan payroll/report, mungkin perlu penyesuaian.
+      // Kita asumsikan update status approval cukup.
     },
   });
 };
 
 /**
- * Mendapatkan laporan kehadiran bulanan untuk karyawan
+ * Menolak pengajuan keterlambatan
+ */
+export const rejectLateSubmission = async (attendanceId: string, _approverId: string, rejectionReason?: string) => {
+  const attendance = await prisma.attendance.findUnique({
+    where: { id: attendanceId },
+  });
+
+  if (!attendance) {
+    throw new Error("Data kehadiran tidak ditemukan");
+  }
+
+  return prisma.attendance.update({
+    where: { id: attendanceId },
+    data: {
+      lateApprovalStatus: "REJECTED",
+      notes: rejectionReason ? (attendance.notes ? `${attendance.notes}. Ditolak: ${rejectionReason}` : `Ditolak: ${rejectionReason}`) : attendance.notes,
+    },
+  });
+};
+
+/**
+ * Mendapatkan laporan absensi bulanan
  */
 export const getMonthlyAttendanceReport = async (employeeId: string, year: number, month: number) => {
   const startDate = new Date(year, month - 1, 1);
-  const endDate = new Date(year, month, 0);
+  // Last day of the month
+  const endDate = new Date(year, month, 0, 23, 59, 59);
 
   const attendances = await prisma.attendance.findMany({
     where: {
@@ -452,44 +547,24 @@ export const getMonthlyAttendanceReport = async (employeeId: string, year: numbe
       },
     },
     orderBy: {
-      date: 'desc',
+      date: "asc",
     },
   });
 
-  // Menghitung jumlah hari kerja dalam bulan tersebut
-  let workdays = 0;
-  for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
-    if (isWorkday(new Date(d))) {
-      workdays++;
-    }
-  }
-
-  const totalDays = workdays; // Jumlah hari kerja dalam bulan ini
-  const daysPresent = attendances.filter(a => a.status === Status.PRESENT).length;
-  const daysLate = attendances.filter(a => a.status === Status.LATE).length;
-  const daysAbsent = attendances.filter(a => a.status === Status.ABSENT).length;
-  const daysLeave = attendances.filter(a => a.status === Status.LEAVE).length;
-  
-  // Hitung total overtime yang disetujui
-  const totalApprovedOvertime = attendances.reduce((total, a) => {
-    // Jika overtime disetujui atau hari Minggu disetujui, tambahkan ke total
-    if ((a.isOvertimeApproved || a.isSundayWorkApproved) && a.overtime > 0) {
-      return total + a.overtime;
-    }
-    return total;
-  }, 0);
-  
-  // Hitung total denda keterlambatan
-  const totalLatePenalty = daysLate * calculateLatePenalty(AttendanceStatus.LATE);
+  const summary = {
+    present: attendances.filter((a) => a.status === Status.PRESENT).length,
+    late: attendances.filter((a) => a.status === Status.LATE).length,
+    absent: attendances.filter((a) => a.status === Status.ABSENT).length,
+    sick: attendances.filter((a) => a.status === Status.SICK).length,
+    permit: attendances.filter((a) => a.status === Status.PERMIT).length,
+    totalOvertime: attendances.reduce((acc, curr) => acc + (curr.overtime || 0), 0),
+  };
 
   return {
-    totalDays,
-    daysPresent,
-    daysLate,
-    daysAbsent,
-    daysLeave,
-    totalOvertime: totalApprovedOvertime, // Hanya overtime yang disetujui
-    totalLatePenalty,
+    employeeId,
+    year,
+    month,
+    summary,
     attendances,
   };
 };

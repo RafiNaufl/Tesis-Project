@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { authOptions } from "@/lib/auth";
 
 // GET: Get the current user's profile
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
     
@@ -40,8 +40,13 @@ export async function GET(request: NextRequest) {
             id: true,
             employeeId: true,
             position: true,
-            department: true,
+            division: true,
+            organization: true,
             basicSalary: true,
+            hourlyRate: true,
+            workScheduleType: true,
+            bpjsKesehatan: true,
+            bpjsKetenagakerjaan: true,
             joiningDate: true,
             contactNumber: true,
             address: true,
@@ -69,7 +74,7 @@ export async function GET(request: NextRequest) {
 }
 
 // PATCH: Update the current user's profile
-export async function PATCH(request: NextRequest) {
+export async function PATCH(_request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
     
@@ -80,7 +85,7 @@ export async function PATCH(request: NextRequest) {
       );
     }
     
-    const body = await request.json();
+    const body = await _request.json();
     const { 
       name, 
       email, 

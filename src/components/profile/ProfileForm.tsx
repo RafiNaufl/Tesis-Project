@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useSession, getSession } from "next-auth/react";
+import { organizations, organizationNames } from "@/lib/registrationValidation";
 
 type UserProfile = {
   id: string;
@@ -14,8 +15,13 @@ type UserProfile = {
     id: string;
     employeeId: string;
     position: string;
-    department: string;
+    division: string;
+    organization?: string | null;
     basicSalary: number;
+    hourlyRate?: number | null;
+    workScheduleType?: "SHIFT" | "NON_SHIFT" | null;
+    bpjsKesehatan?: number | null;
+    bpjsKetenagakerjaan?: number | null;
     joiningDate: string;
     contactNumber: string;
     address: string;
@@ -37,7 +43,7 @@ export default function ProfileForm() {
   const [address, setAddress] = useState('');
   const [profileImage, setProfileImage] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
+  const [_uploading, setUploading] = useState(false);
   
   // Password change states
   const [currentPassword, setCurrentPassword] = useState('');
@@ -96,14 +102,14 @@ export default function ProfileForm() {
         if (!response.ok) {
           const errorData = await response.json();
           console.error('Profile API error:', errorData);
-          throw new Error(errorData.error || 'Failed to fetch profile');
+          throw new Error(errorData.error || 'Gagal mengambil profil');
         }
         
         const data = await response.json();
         
         // Pastikan data yang diterima valid
         if (!data || !data.id) {
-          throw new Error('Invalid profile data received');
+          throw new Error('Data profil tidak valid');
         }
         
         setProfile(data);
@@ -124,11 +130,11 @@ export default function ProfileForm() {
       } catch (error) {
         console.error('Error fetching profile:', error);
         setToast({
-          visible: true,
-          title: 'Error',
-          description: 'Failed to load profile information. Please try refreshing the page.',
-          variant: 'destructive',
-        });
+        visible: true,
+        title: 'Error',
+        description: 'Gagal memuat informasi profil. Silakan coba refresh halaman.',
+        variant: 'destructive',
+      });
         
         // Set minimal profile data based on session if available
         if (session?.user) {
@@ -172,7 +178,7 @@ export default function ProfileForm() {
       setToast({
         visible: true,
         title: 'Error',
-        description: 'Please select an image file (JPG, PNG, etc.)',
+        description: 'Silakan pilih file gambar (JPG, PNG, dll.)',
         variant: 'destructive',
       });
       return;
@@ -183,7 +189,7 @@ export default function ProfileForm() {
       setToast({
         visible: true,
         title: 'Error',
-        description: 'Image file is too large. Please select a file under 5MB.',
+        description: 'File gambar terlalu besar. Silakan pilih file di bawah 5MB.',
         variant: 'destructive',
       });
       return;
@@ -220,7 +226,7 @@ export default function ProfileForm() {
         
         if (!uploadResponse.ok) {
           const errorData = await uploadResponse.json();
-          throw new Error(errorData.error || 'Failed to upload profile image');
+          throw new Error(errorData.error || 'Gagal mengunggah foto profil');
         }
         
         const uploadData = await uploadResponse.json();
@@ -252,7 +258,7 @@ export default function ProfileForm() {
       
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to update profile');
+        throw new Error(errorData.error || 'Gagal memperbarui profil');
       }
       
       const data = await response.json();
@@ -275,14 +281,14 @@ export default function ProfileForm() {
           // Force a complete session sync
           await getSession();
         } catch (error) {
-          console.error('Failed to synchronize session:', error);
+          console.error('Gagal menyinkronkan sesi:', error);
         }
       }
       
       setToast({
         visible: true,
-        title: 'Success',
-        description: 'Your profile has been updated successfully.',
+        title: 'Sukses',
+        description: 'Profil Anda berhasil diperbarui.',
         variant: 'default',
       });
     } catch (error: any) {
@@ -290,7 +296,7 @@ export default function ProfileForm() {
       setToast({
         visible: true,
         title: 'Error',
-        description: error.message || 'Failed to update profile',
+        description: error.message || 'Gagal memperbarui profil',
         variant: 'destructive',
       });
     } finally {
@@ -304,7 +310,7 @@ export default function ProfileForm() {
     
     // Validate passwords
     if (newPassword !== confirmPassword) {
-      setPasswordError('New passwords do not match');
+      setPasswordError('Password baru tidak cocok');
       return;
     }
     
@@ -328,7 +334,7 @@ export default function ProfileForm() {
       
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to update password');
+        throw new Error(errorData.error || 'Gagal memperbarui password');
       }
       
       // Reset password fields
@@ -338,8 +344,8 @@ export default function ProfileForm() {
       
       setToast({
         visible: true,
-        title: 'Success',
-        description: 'Your password has been updated successfully.',
+        title: 'Sukses',
+        description: 'Password Anda berhasil diperbarui.',
         variant: 'default',
       });
     } catch (error: any) {
@@ -347,7 +353,7 @@ export default function ProfileForm() {
       setToast({
         visible: true,
         title: 'Error',
-        description: error.message || 'Failed to update password',
+        description: error.message || 'Gagal memperbarui password',
         variant: 'destructive',
       });
     } finally {
@@ -399,14 +405,14 @@ export default function ProfileForm() {
   if (loading) {
     return (
       <div className="flex justify-center items-center h-64">
-        <p>Loading profile information...</p>
+        <p>Memuat informasi profil...</p>
       </div>
     );
   }
 
   return (
     <div className="container mx-auto py-6">
-      <h1 className="text-2xl font-bold mb-6">My Profile</h1>
+      <h1 className="text-2xl font-bold mb-6">Profil Saya</h1>
       
       <div className="mb-4">
         <div className="flex space-x-4 border-b">
@@ -414,13 +420,13 @@ export default function ProfileForm() {
             className={`py-2 px-4 font-medium ${activeTab === 'profile' ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-gray-500'}`}
             onClick={() => setActiveTab('profile')}
           >
-            Profile Information
+            Informasi Profil
           </button>
           <button
             className={`py-2 px-4 font-medium ${activeTab === 'security' ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-gray-500'}`}
             onClick={() => setActiveTab('security')}
           >
-            Security
+            Keamanan
           </button>
         </div>
       </div>
@@ -430,16 +436,18 @@ export default function ProfileForm() {
           {/* Profile Summary Card */}
           <div className="bg-white rounded-lg shadow overflow-hidden">
             <div className="px-4 py-5 sm:px-6">
-              <h3 className="text-lg font-medium leading-6 text-gray-900">Account Summary</h3>
+              <h3 className="text-lg font-medium leading-6 text-gray-900">Ringkasan Akun</h3>
             </div>
             <div className="px-4 py-5 sm:p-6">
               {/* Profile Image */}
               <div className="flex flex-col items-center mb-6">
                 <div className="w-32 h-32 rounded-full overflow-hidden bg-gray-100 mb-4">
                   {previewUrl ? (
-                    <img 
+                    <Image 
                       src={previewUrl} 
-                      alt="Profile" 
+                      alt="Foto Profil" 
+                      width={128}
+                      height={128}
                       className="w-full h-full object-cover"
                     />
                   ) : (
@@ -454,7 +462,7 @@ export default function ProfileForm() {
               
               <div className="flex flex-col space-y-4">
                 <div>
-                  <h3 className="font-medium text-sm text-gray-500">Name</h3>
+                  <h3 className="font-medium text-sm text-gray-500">Nama</h3>
                   <p>{profile?.name}</p>
                 </div>
                 <div>
@@ -462,12 +470,16 @@ export default function ProfileForm() {
                   <p>{profile?.email}</p>
                 </div>
                 <div>
-                  <h3 className="font-medium text-sm text-gray-500">Role</h3>
+                  <h3 className="font-medium text-sm text-gray-500">Peran</h3>
                   <p className="capitalize">{profile?.role?.toLowerCase()}</p>
                 </div>
                 <div>
-                  <h3 className="font-medium text-sm text-gray-500">Member Since</h3>
-                  <p>{profile?.createdAt ? new Date(profile.createdAt).toLocaleDateString() : 'N/A'}</p>
+                  <h3 className="font-medium text-sm text-gray-500">Organisasi</h3>
+                  <p>{profile?.employee?.organization && (organizations as readonly string[]).includes(profile.employee.organization) ? organizationNames[profile.employee.organization as keyof typeof organizationNames] : (profile?.employee?.organization ?? '-')}</p>
+                </div>
+                <div>
+                  <h3 className="font-medium text-sm text-gray-500">Anggota Sejak</h3>
+                  <p>{profile?.createdAt ? new Date(profile.createdAt).toLocaleDateString('id-ID') : 'N/A'}</p>
                 </div>
               </div>
             </div>
@@ -476,19 +488,21 @@ export default function ProfileForm() {
           {/* Profile Edit Form */}
           <div className="bg-white rounded-lg shadow overflow-hidden md:col-span-2">
             <div className="px-4 py-5 sm:px-6">
-              <h3 className="text-lg font-medium leading-6 text-gray-900">Edit Profile</h3>
+              <h3 className="text-lg font-medium leading-6 text-gray-900">Edit Profil</h3>
             </div>
             <div className="px-4 py-5 sm:p-6">
               <form onSubmit={handleProfileUpdate} className="space-y-4">
                 {/* Profile Image Upload */}
                 <div className="space-y-2">
-                  <label className="block text-sm font-medium text-gray-700">Profile Photo</label>
+                  <label className="block text-sm font-medium text-gray-700">Foto Profil</label>
                   <div className="flex items-center space-x-4">
                     <div className="w-16 h-16 rounded-full overflow-hidden bg-gray-100">
                       {previewUrl ? (
-                        <img 
+                        <Image 
                           src={previewUrl} 
-                          alt="Profile Preview" 
+                          alt="Preview Foto Profil" 
+                          width={64}
+                          height={64}
                           className="w-full h-full object-cover"
                         />
                       ) : (
@@ -501,7 +515,7 @@ export default function ProfileForm() {
                     </div>
                     <div className="flex flex-col">
                       <label htmlFor="photo-upload" className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-sm font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-                        Change Photo
+                        Ubah Foto
                       </label>
                       <input
                         id="photo-upload"
@@ -511,14 +525,14 @@ export default function ProfileForm() {
                         className="sr-only"
                         onChange={handleFileChange}
                       />
-                      <p className="mt-1 text-xs text-gray-500">JPG, PNG, GIF up to 5MB</p>
+                      <p className="mt-1 text-xs text-gray-500">JPG, PNG, GIF maksimal 5MB</p>
                       {profileImage && (
                         <button
                           type="button"
                           onClick={() => setProfileImage(null)}
                           className="mt-1 text-xs text-red-600 hover:text-red-800"
                         >
-                          Remove
+                          Hapus
                         </button>
                       )}
                     </div>
@@ -527,7 +541,7 @@ export default function ProfileForm() {
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <label htmlFor="name" className="block text-sm font-medium text-gray-700">Full Name</label>
+                    <label htmlFor="name" className="block text-sm font-medium text-gray-700">Nama Lengkap</label>
                     <input
                       id="name"
                       className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
@@ -537,7 +551,7 @@ export default function ProfileForm() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <label htmlFor="email" className="block text-sm font-medium text-gray-700">Email Address</label>
+                    <label htmlFor="email" className="block text-sm font-medium text-gray-700">Alamat Email</label>
                     <input
                       id="email"
                       type="email"
@@ -551,7 +565,7 @@ export default function ProfileForm() {
                   {profile?.employee && (
                     <>
                       <div className="space-y-2">
-                        <label htmlFor="contactNumber" className="block text-sm font-medium text-gray-700">Contact Number</label>
+                        <label htmlFor="contactNumber" className="block text-sm font-medium text-gray-700">Nomor Telepon</label>
                         <input
                           id="contactNumber"
                           className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
@@ -560,7 +574,7 @@ export default function ProfileForm() {
                         />
                       </div>
                       <div className="space-y-2">
-                        <label htmlFor="address" className="block text-sm font-medium text-gray-700">Address</label>
+                        <label htmlFor="address" className="block text-sm font-medium text-gray-700">Alamat</label>
                         <input
                           id="address"
                           className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
@@ -578,7 +592,7 @@ export default function ProfileForm() {
                     className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-75"
                     disabled={updating}
                   >
-                    {updating ? 'Updating...' : 'Update Profile'}
+                    {updating ? 'Memperbarui...' : 'Perbarui Profil'}
                   </button>
                 </div>
               </form>
@@ -589,29 +603,53 @@ export default function ProfileForm() {
           {profile?.employee && (
             <div className="bg-white rounded-lg shadow overflow-hidden md:col-span-3">
               <div className="px-4 py-5 sm:px-6">
-                <h3 className="text-lg font-medium leading-6 text-gray-900">Employee Information</h3>
+                <h3 className="text-lg font-medium leading-6 text-gray-900">Informasi Karyawan</h3>
               </div>
               <div className="px-4 py-5 sm:p-6">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div>
-                    <h3 className="font-medium text-sm text-gray-500">Employee ID</h3>
+                    <h3 className="font-medium text-sm text-gray-500">ID Karyawan</h3>
                     <p>{profile.employee.employeeId}</p>
                   </div>
                   <div>
-                    <h3 className="font-medium text-sm text-gray-500">Position</h3>
+                    <h3 className="font-medium text-sm text-gray-500">Jabatan</h3>
                     <p>{profile.employee.position}</p>
                   </div>
                   <div>
-                    <h3 className="font-medium text-sm text-gray-500">Department</h3>
-                    <p>{profile.employee.department}</p>
+                    <h3 className="font-medium text-sm text-gray-500">Divisi</h3>
+                    <p>{profile.employee.division}</p>
                   </div>
                   <div>
-                    <h3 className="font-medium text-sm text-gray-500">Basic Salary</h3>
-                    <p>${profile.employee.basicSalary.toFixed(2)}</p>
+                    <h3 className="font-medium text-sm text-gray-500">
+                      {profile.employee.workScheduleType === "NON_SHIFT" ? "Rate Per Jam (Non Shift)" : "Gaji Pokok"}
+                    </h3>
+                    <p>
+                      {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(
+                        profile.employee.workScheduleType === "NON_SHIFT" 
+                          ? (profile.employee.hourlyRate || 0) 
+                          : profile.employee.basicSalary
+                      )}
+                    </p>
                   </div>
                   <div>
-                    <h3 className="font-medium text-sm text-gray-500">Joining Date</h3>
-                    <p>{new Date(profile.employee.joiningDate).toLocaleDateString()}</p>
+                    <h3 className="font-medium text-sm text-gray-500">BPJS Kesehatan</h3>
+                    <p>
+                      {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(
+                        profile.employee.bpjsKesehatan || 0
+                      )}
+                    </p>
+                  </div>
+                  <div>
+                    <h3 className="font-medium text-sm text-gray-500">BPJS Ketenagakerjaan</h3>
+                    <p>
+                      {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(
+                        profile.employee.bpjsKetenagakerjaan || 0
+                      )}
+                    </p>
+                  </div>
+                  <div>
+                    <h3 className="font-medium text-sm text-gray-500">Tanggal Bergabung</h3>
+                    <p>{new Date(profile.employee.joiningDate).toLocaleDateString('id-ID')}</p>
                   </div>
                   <div>
                     <h3 className="font-medium text-sm text-gray-500">Status</h3>
@@ -621,7 +659,7 @@ export default function ProfileForm() {
                           ? 'bg-green-100 text-green-800'
                           : 'bg-red-100 text-red-800'
                       }`}>
-                        {profile.employee.isActive ? 'Active' : 'Inactive'}
+                        {profile.employee.isActive ? 'Aktif' : 'Tidak Aktif'}
                       </span>
                     </p>
                   </div>
@@ -635,12 +673,12 @@ export default function ProfileForm() {
       {activeTab === 'security' && (
         <div className="bg-white rounded-lg shadow overflow-hidden">
           <div className="px-4 py-5 sm:px-6">
-            <h3 className="text-lg font-medium leading-6 text-gray-900">Change Password</h3>
+            <h3 className="text-lg font-medium leading-6 text-gray-900">Ubah Password</h3>
           </div>
           <div className="px-4 py-5 sm:p-6">
             <form onSubmit={handlePasswordUpdate} className="space-y-4">
               <div className="space-y-2">
-                <label htmlFor="currentPassword" className="block text-sm font-medium text-gray-700">Current Password</label>
+                <label htmlFor="currentPassword" className="block text-sm font-medium text-gray-700">Password Saat Ini</label>
                 <input
                   id="currentPassword"
                   type="password"
@@ -654,7 +692,7 @@ export default function ProfileForm() {
               <div className="border-t my-4 border-gray-200"></div>
               
               <div className="space-y-2">
-                <label htmlFor="newPassword" className="block text-sm font-medium text-gray-700">New Password</label>
+                <label htmlFor="newPassword" className="block text-sm font-medium text-gray-700">Password Baru</label>
                 <input
                   id="newPassword"
                   type="password"
@@ -666,7 +704,7 @@ export default function ProfileForm() {
               </div>
               
               <div className="space-y-2">
-                <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700">Confirm New Password</label>
+                <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700">Konfirmasi Password Baru</label>
                 <input
                   id="confirmPassword"
                   type="password"
@@ -686,7 +724,7 @@ export default function ProfileForm() {
                   className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-75"
                   disabled={updating}
                 >
-                  {updating ? 'Updating...' : 'Change Password'}
+                  {updating ? 'Memperbarui...' : 'Ubah Password'}
                 </button>
               </div>
             </form>
@@ -699,3 +737,4 @@ export default function ProfileForm() {
     </div>
   );
 } 
+import Image from "next/image";

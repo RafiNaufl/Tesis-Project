@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
     if (employeeId) {
       conditions.push(`a."employeeId" = $${params.length + 1}`);
       params.push(employeeId);
-    } else if (session.user.role !== "ADMIN") {
+    } else if (session.user.role !== "ADMIN" && session.user.role !== "MANAGER") {
       // If not admin, only show the employee's own allowances
       const employee = await db.employee.findUnique({
         where: { userId: session.user.id },
@@ -93,12 +93,12 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST: Create a new allowance (admin only)
+// POST: Create a new allowance (admin/manager only)
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
     
-    if (!session || session.user.role !== "ADMIN") {
+    if (!session || (session.user.role !== "ADMIN" && session.user.role !== "MANAGER")) {
       return NextResponse.json(
         { error: "Unauthorized. Admin access required." },
         { status: 403 }

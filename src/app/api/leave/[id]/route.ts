@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { approveLeaveRequest, rejectLeaveRequest } from "@/lib/leave";
 import { db } from "@/lib/db";
 
 // Mendapatkan detail permohonan cuti berdasarkan ID
@@ -183,9 +182,11 @@ export async function PATCH(
         title: status === "APPROVED" ? "Permohonan Cuti Disetujui" : "Permohonan Cuti Ditolak",
         message:
           status === "APPROVED"
-            ? `Permohonan cuti Anda dari ${leave.startDate.toLocaleDateString()} hingga ${leave.endDate.toLocaleDateString()} telah disetujui.`
-            : `Permohonan cuti Anda dari ${leave.startDate.toLocaleDateString()} hingga ${leave.endDate.toLocaleDateString()} telah ditolak.`,
+            ? `Permohonan cuti Anda dari ${leave.startDate.toLocaleDateString()} hingga ${leave.endDate.toLocaleDateString()} telah disetujui. [#ref:LEAVE:${id}]`
+            : `Permohonan cuti Anda dari ${leave.startDate.toLocaleDateString()} hingga ${leave.endDate.toLocaleDateString()} telah ditolak. [#ref:LEAVE:${id}]`,
         type: status === "APPROVED" ? "success" : "error",
+        refType: "LEAVE",
+        refId: id,
       },
     });
     

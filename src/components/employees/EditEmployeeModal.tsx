@@ -1,19 +1,38 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { divisions, employmentStatuses, organizations, roles, workSchedules, phoneRegex, optionalNumber } from "@/lib/registrationValidation";
 
 const employeeEditFormSchema = z.object({
-  name: z.string().min(2, { message: "Name must be at least 2 characters" }),
-  email: z.string().email({ message: "Please enter a valid email address" }),
-  position: z.string().min(2, { message: "Position is required" }),
-  department: z.string().min(2, { message: "Department is required" }),
-  basicSalary: z.coerce.number().min(0, { message: "Salary must be a positive number" }),
-  contactNumber: z.string().optional(),
+  name: z.string().min(3, { message: "Nama minimal 3 karakter" }),
+  email: z.string().email({ message: "Email tidak valid" }),
+  role: z.enum(roles, { required_error: "Role jabatan wajib dipilih" }),
+  division: z.enum(divisions, { required_error: "Divisi wajib dipilih" }),
+  organization: z.enum(organizations, { required_error: "Organisasi wajib dipilih" }),
+  employmentStatus: z.enum(employmentStatuses, { required_error: "Status karyawan wajib dipilih" }),
+  workSchedule: z.enum(workSchedules, { required_error: "Jadwal kerja wajib dipilih" }),
+  monthlySalary: optionalNumber("Gaji bulanan harus angka"),
+  hourlyRate: optionalNumber("Rate per jam harus angka"),
+  contactNumber: z.string().regex(phoneRegex, { message: "Nomor HP tidak valid" }).optional(),
   address: z.string().optional(),
   isActive: z.boolean(),
+  bpjsKesehatan: optionalNumber("BPJS Kesehatan harus angka"),
+  bpjsKetenagakerjaan: optionalNumber("BPJS Ketenagakerjaan harus angka"),
+  profileImageUrl: z.union([
+    z.string().url(),
+    z.string().regex(/^\/uploads\/profiles\/[^\s]+$/)
+  ]).optional(),
+}).superRefine((data, ctx) => {
+  if (data.workSchedule === "SHIFT" && typeof data.monthlySalary !== "number") {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Gaji bulanan wajib diisi untuk Shift" });
+  }
+  if (data.workSchedule === "NON_SHIFT" && typeof data.hourlyRate !== "number") {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Rate gaji per jam wajib diisi untuk Non Shift" });
+  }
 });
 
 type EmployeeEditFormValues = z.infer<typeof employeeEditFormSchema>;
@@ -23,12 +42,18 @@ type Employee = {
   employeeId: string;
   name?: string;
   position: string;
-  department: string;
+  division: string;
   isActive: boolean;
   email?: string;
   basicSalary?: number;
   contactNumber?: string;
   address?: string;
+  organization?: string | null;
+  employmentStatus?: string | null;
+  workScheduleType?: "SHIFT" | "NON_SHIFT" | null;
+  hourlyRate?: number | null;
+  bpjsKesehatan?: number;
+  bpjsKetenagakerjaan?: number;
   user?: {
     name: string;
     email: string;
@@ -42,18 +67,6 @@ type EditEmployeeModalProps = {
   employee: Employee | null;
 };
 
-const departments = [
-  "Engineering",
-  "Human Resources",
-  "Finance",
-  "Marketing",
-  "Sales",
-  "Operations",
-  "Customer Support",
-  "Research & Development",
-  "Legal",
-  "Administration"
-];
 
 export default function EditEmployeeModal({
   isOpen,
@@ -62,20 +75,27 @@ export default function EditEmployeeModal({
   employee,
 }: EditEmployeeModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [profileFile, setProfileFile] = useState<File | null>(null as any);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   
   const {
     register,
     handleSubmit,
     reset,
+    watch,
     formState: { errors },
   } = useForm<EmployeeEditFormValues>({
     resolver: zodResolver(employeeEditFormSchema),
     defaultValues: {
       name: "",
       email: "",
-      position: "",
-      department: "",
-      basicSalary: 0,
+      role: roles[0],
+      division: divisions[0],
+      organization: organizations[0],
+      employmentStatus: employmentStatuses[0],
+      workSchedule: workSchedules[0],
+      monthlySalary: 0,
+      hourlyRate: undefined,
       contactNumber: "",
       address: "",
       isActive: true,
@@ -88,21 +108,58 @@ export default function EditEmployeeModal({
       reset({
         name: employee.user?.name || employee.name || "",
         email: employee.user?.email || employee.email || "",
-        position: employee.position,
-        department: employee.department,
-        basicSalary: employee.basicSalary || 0,
+        role: employee.position as any,
+        division: (employee.division as any) || divisions[0],
+        organization: (employee.organization as any) || organizations[0],
+        employmentStatus: (employee.employmentStatus as any) || employmentStatuses[0],
+        workSchedule: (employee.workScheduleType as any) || workSchedules[0],
+        monthlySalary: employee.workScheduleType === "SHIFT" ? (employee.basicSalary || 0) : undefined,
+        hourlyRate: employee.workScheduleType === "NON_SHIFT" ? (employee.hourlyRate ?? undefined) : undefined,
         contactNumber: employee.contactNumber || "",
         address: employee.address || "",
         isActive: employee.isActive,
+        bpjsKesehatan: employee.bpjsKesehatan || 0,
+        bpjsKetenagakerjaan: employee.bpjsKetenagakerjaan || 0,
+        profileImageUrl: (employee as any)?.user?.profileImageUrl,
       });
+      setPreviewUrl((employee as any)?.user?.profileImageUrl || null);
     }
   }, [employee, reset]);
+
+  // Calculate total BPJS
+  const bpjsKesehatan = watch("bpjsKesehatan");
+  const bpjsKetenagakerjaan = watch("bpjsKetenagakerjaan");
+  const totalBpjs = (Number(bpjsKesehatan) || 0) + (Number(bpjsKetenagakerjaan) || 0);
 
   const handleFormSubmit = async (data: EmployeeEditFormValues) => {
     if (employee) {
       setIsSubmitting(true);
       try {
-        await onSubmit(employee.id, data);
+        let profileImageUrl = data.profileImageUrl;
+        if (profileFile) {
+          if (!["image/jpeg", "image/png"].includes(profileFile.type)) {
+            alert("Format gambar harus JPG/PNG");
+            setIsSubmitting(false);
+            return;
+          }
+          if (profileFile.size > 2 * 1024 * 1024) {
+            alert("Ukuran gambar maksimal 2MB");
+            setIsSubmitting(false);
+            return;
+          }
+          const fd = new FormData();
+          fd.append("file", profileFile);
+          const res = await fetch("/api/upload", { method: "POST", body: fd });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            alert(err.error || "Gagal upload gambar");
+            setIsSubmitting(false);
+            return;
+          }
+          const j = await res.json();
+          profileImageUrl = j.url;
+        }
+        await onSubmit(employee.id, { ...data, profileImageUrl });
       } finally {
         setIsSubmitting(false);
         onClose();
@@ -117,7 +174,7 @@ export default function EditEmployeeModal({
       <div className="flex min-h-screen items-center justify-center px-4 pt-4 pb-20 text-center sm:block sm:p-0">
         {/* Background overlay */}
         <div
-          className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
+          className="fixed inset-0 bg-black/50 backdrop-blur-md transition-opacity"
           aria-hidden="true"
           onClick={onClose}
         ></div>
@@ -174,6 +231,31 @@ export default function EditEmployeeModal({
                 <div className="mt-4">
                   <form onSubmit={handleSubmit(handleFormSubmit)}>
                     <div className="grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-2">
+                      <div className="sm:col-span-2">
+                        <label htmlFor="profileImage" className="block text-sm font-medium text-gray-700">Profile Image</label>
+                        <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center">
+                          <div className="h-12 w-12 overflow-hidden rounded-full bg-gray-100">
+                            {previewUrl ? (
+                              <Image src={previewUrl} alt="Preview" width={48} height={48} className="h-12 w-12 object-cover" />
+                            ) : (
+                              <div className="flex h-12 w-12 items-center justify-center text-xs text-gray-400">No Image</div>
+                            )}
+                          </div>
+                          <input
+                            type="file"
+                            accept="image/png,image/jpeg"
+                            onChange={(e) => {
+                              const f = e.target.files?.[0] || null;
+                              setProfileFile(f);
+                              setPreviewUrl(f ? URL.createObjectURL(f) : previewUrl);
+                            }}
+                            id="profileImage"
+                            aria-describedby="profileImageHelp"
+                            className="block w-full sm:flex-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
+                          />
+                          <div id="profileImageHelp" className="text-xs text-gray-500">JPG/PNG maks 2MB</div>
+                        </div>
+                      </div>
                       <div>
                         <label
                           htmlFor="name"
@@ -221,80 +303,118 @@ export default function EditEmployeeModal({
                       </div>
 
                       <div>
-                        <label
-                          htmlFor="position"
-                          className="block text-sm font-medium text-gray-700"
-                        >
-                          Position <span className="text-red-500">*</span>
+                        <label className="block text-sm font-medium text-gray-700">
+                          Role <span className="text-red-500">*</span>
                         </label>
                         <div className="mt-1">
-                          <input
-                            type="text"
-                            id="position"
-                            {...register("position")}
-                            className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm"
-                            placeholder="Software Engineer"
-                          />
-                          {errors.position && (
-                            <p className="mt-2 text-sm text-red-600">
-                              {errors.position.message}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-
-                      <div>
-                        <label
-                          htmlFor="department"
-                          className="block text-sm font-medium text-gray-700"
-                        >
-                          Department <span className="text-red-500">*</span>
-                        </label>
-                        <div className="mt-1">
-                          <select
-                            id="department"
-                            {...register("department")}
-                            className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm"
-                          >
-                            <option value="">Select a department</option>
-                            {departments.map((dept) => (
-                              <option key={dept} value={dept}>
-                                {dept}
-                              </option>
+                          <select {...register("role")} className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm">
+                            {roles.map((r) => (
+                              <option key={r} value={r}>{r}</option>
                             ))}
                           </select>
-                          {errors.department && (
-                            <p className="mt-2 text-sm text-red-600">
-                              {errors.department.message}
-                            </p>
+                          {errors.role && (
+                            <p className="mt-2 text-sm text-red-600">{errors.role.message as any}</p>
                           )}
                         </div>
                       </div>
 
                       <div>
-                        <label
-                          htmlFor="basicSalary"
-                          className="block text-sm font-medium text-gray-700"
-                        >
-                          Basic Salary <span className="text-red-500">*</span>
+                        <label className="block text-sm font-medium text-gray-700">
+                          Organisasi <span className="text-red-500">*</span>
                         </label>
-                        <div className="mt-1 relative rounded-md shadow-sm">
-                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <span className="text-gray-500 sm:text-sm">$</span>
-                          </div>
-                          <input
-                            type="number"
-                            id="basicSalary"
-                            {...register("basicSalary")}
-                            className="block w-full rounded-md border border-gray-300 bg-white pl-7 pr-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm"
-                            placeholder="0.00"
-                          />
-                          {errors.basicSalary && (
-                            <p className="mt-2 text-sm text-red-600">
-                              {errors.basicSalary.message}
-                            </p>
+                        <div className="mt-1">
+                          <select {...register("organization")} className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm">
+                            {organizations.map((o) => (
+                              <option key={o} value={o}>{o}</option>
+                            ))}
+                          </select>
+                          {errors.organization && (
+                            <p className="mt-2 text-sm text-red-600">{errors.organization.message as any}</p>
                           )}
                         </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">
+                          Divisi <span className="text-red-500">*</span>
+                        </label>
+                        <div className="mt-1">
+                          <select {...register("division")} className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm">
+                            {divisions.map((d) => (
+                              <option key={d} value={d}>{d}</option>
+                            ))}
+                          </select>
+                          {errors.division && (
+                            <p className="mt-2 text-sm text-red-600">{errors.division.message as any}</p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">
+                          Jadwal Kerja <span className="text-red-500">*</span>
+                        </label>
+                        <div className="mt-2 flex space-x-4">
+                          {workSchedules.map((ws) => (
+                            <label key={ws} className="inline-flex items-center space-x-2">
+                              <input type="radio" value={ws} {...register("workSchedule")} />
+                              <span>{ws === "SHIFT" ? "Shift" : "Non Shift"}</span>
+                            </label>
+                          ))}
+                        </div>
+                        {errors.workSchedule && (
+                          <p className="mt-2 text-sm text-red-600">{errors.workSchedule.message as any}</p>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">
+                          Gaji Bulanan (Shift)
+                        </label>
+                        <div className="mt-1">
+                          <input type="number" {...register("monthlySalary")} className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm" />
+                          {errors.monthlySalary && (
+                            <p className="mt-2 text-sm text-red-600">{errors.monthlySalary.message as any}</p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">
+                          Rate Per Jam (Non Shift)
+                        </label>
+                        <div className="mt-1">
+                          <input type="number" {...register("hourlyRate")} className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm" />
+                          {errors.hourlyRate && (
+                            <p className="mt-2 text-sm text-red-600">{errors.hourlyRate.message as any}</p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div>
+                        <label htmlFor="bpjsKesehatan" className="block text-sm font-medium text-gray-700">Potongan BPJS Kesehatan</label>
+                        <div className="mt-1">
+                          <input id="bpjsKesehatan" type="number" step="100" min="0" {...register("bpjsKesehatan")} className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm" placeholder="0" />
+                          {errors.bpjsKesehatan && (<p className="mt-2 text-sm text-red-600">{errors.bpjsKesehatan.message as any}</p>)}
+                        </div>
+                      </div>
+
+                      <div>
+                        <label htmlFor="bpjsKetenagakerjaan" className="block text-sm font-medium text-gray-700">Potongan BPJS Ketenagakerjaan</label>
+                        <div className="mt-1">
+                          <input id="bpjsKetenagakerjaan" type="number" step="100" min="0" {...register("bpjsKetenagakerjaan")} className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm" placeholder="0" />
+                          {errors.bpjsKetenagakerjaan && (<p className="mt-2 text-sm text-red-600">{errors.bpjsKetenagakerjaan.message as any}</p>)}
+                        </div>
+                      </div>
+
+                      <div className="sm:col-span-2 mt-2 bg-gray-50 p-4 rounded-md border border-gray-200">
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm font-medium text-gray-700">Total Potongan BPJS:</span>
+                          <span className="text-lg font-bold text-gray-900">
+                            {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(totalBpjs)}
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1">Potongan ini akan mengurangi Gross Salary setiap bulan secara otomatis.</p>
                       </div>
 
                       <div>
@@ -302,7 +422,7 @@ export default function EditEmployeeModal({
                           htmlFor="contactNumber"
                           className="block text-sm font-medium text-gray-700"
                         >
-                          Contact Number
+                          Nomor HP
                         </label>
                         <div className="mt-1">
                           <input
@@ -310,7 +430,7 @@ export default function EditEmployeeModal({
                             id="contactNumber"
                             {...register("contactNumber")}
                             className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm"
-                            placeholder="+1 (555) 123-4567"
+                            placeholder="08123456789"
                           />
                           {errors.contactNumber && (
                             <p className="mt-2 text-sm text-red-600">
@@ -325,7 +445,7 @@ export default function EditEmployeeModal({
                           htmlFor="address"
                           className="block text-sm font-medium text-gray-700"
                         >
-                          Address
+                          Alamat
                         </label>
                         <div className="mt-1">
                           <textarea
@@ -355,11 +475,11 @@ export default function EditEmployeeModal({
                             htmlFor="isActive"
                             className="ml-2 block text-sm text-gray-700"
                           >
-                            Active Employee
+                            Aktif
                           </label>
                         </div>
                         <p className="mt-1 text-sm text-gray-500">
-                          Inactive employees will not be able to login to the system
+                          Karyawan tidak aktif tidak dapat login ke sistem
                         </p>
                       </div>
                     </div>

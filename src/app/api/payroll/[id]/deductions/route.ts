@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { getSoftLoanDeductions } from "@/lib/softloan";
+import { getAdvanceDeductions } from "@/lib/advance";
 
 export async function GET(
   request: NextRequest,
@@ -34,29 +36,13 @@ export async function GET(
     }
 
     // Get advance deductions for this payroll period
-    const advanceDeductions = await prisma.advance.findMany({
-      where: {
-        employeeId: payroll.employeeId,
-        status: "DEDUCTED",
-        deductedAt: {
-          gte: new Date(payroll.year, payroll.month - 1, 1),
-          lt: new Date(payroll.year, payroll.month, 1),
-        },
-      },
-    });
+    const advanceDeduction = await getAdvanceDeductions(payroll.employeeId, payroll.month, payroll.year);
 
     // Get soft loan deductions for this payroll period
-    const softLoanDeductions = await prisma.deduction.findMany({
-      where: {
-        employeeId: payroll.employeeId,
-        type: "SOFT_LOAN",
-        month: payroll.month,
-        year: payroll.year,
-      },
-    });
+    const softLoanDeduction = await getSoftLoanDeductions(payroll.employeeId, payroll.month, payroll.year);
 
     // Get other deductions for this payroll period
-    const otherDeductions = await prisma.deduction.findMany({
+    const deductions = await prisma.deduction.findMany({
       where: {
         employeeId: payroll.employeeId,
         month: payroll.month,
@@ -64,36 +50,23 @@ export async function GET(
       },
     });
 
-    // Calculate totals
-    const advanceDeduction = advanceDeductions.reduce((sum: number, advance: any) => sum + advance.amount, 0);
-    const softLoanDeduction = softLoanDeductions.reduce((sum: number, deduction: any) => sum + deduction.amount, 0);
-    const bpjsDeduction = 155814; // Fixed BPJS amount
-    const otherDeductionsTotal = otherDeductions.reduce((sum: number, deduction: any) => sum + deduction.amount, 0);
+    const absenceDeduction = deductions
+      .filter((d) => d.type === "ABSENCE")
+      .reduce((sum, d) => sum + d.amount, 0);
 
-    // Get late and absence deductions from attendance
-    const attendanceRecords = await prisma.attendance.findMany({
-      where: {
-        employeeId: payroll.employeeId,
-        date: {
-          gte: new Date(payroll.year, payroll.month - 1, 1),
-          lt: new Date(payroll.year, payroll.month, 1),
-        },
-      },
-    });
-
-    const lateMinutes = attendanceRecords.reduce((sum: number, record: any) => sum + (record.lateMinutes || 0), 0);
-    const absentDays = attendanceRecords.filter((record: any) => record.status === "ABSENT").length;
-    
-    // Calculate daily rate for deductions
-    const dailyRate = payroll.baseSalary / 30;
-    const lateDeduction = lateMinutes * 5000; // 5000 per minute late
-    const absenceDeduction = absentDays * dailyRate;
+    const otherDeductionsTotal = deductions
+      .filter(
+        (d) =>
+          !["ABSENCE", "LATE", "BPJS_KESEHATAN", "BPJS_KETENAGAKERJAAN"].includes(d.type)
+      )
+      .reduce((sum, d) => sum + d.amount, 0);
 
     const deductionBreakdown = {
       advanceDeduction,
       softLoanDeduction,
-      bpjsDeduction: payroll.totalDeductions > 0 ? bpjsDeduction : 0, // Only include if there are deductions
-      lateDeduction,
+      bpjsKesehatan: payroll.bpjsKesehatanAmount || 0,
+      bpjsKetenagakerjaan: payroll.bpjsKetenagakerjaanAmount || 0,
+      lateDeduction: payroll.lateDeduction,
       absenceDeduction,
       otherDeductions: otherDeductionsTotal,
       totalDeductions: payroll.totalDeductions,

@@ -1,4 +1,4 @@
-import { prisma } from "./prisma";
+import { db } from "./db";
 
 /**
  * Mengambil informasi kasbon (advance) karyawan
@@ -8,7 +8,7 @@ import { prisma } from "./prisma";
 export const getEmployeeAdvanceInfo = async (employeeId: string) => {
   try {
     // Cari kasbon yang sudah disetujui (APPROVED) dan belum dideduct untuk karyawan
-    const activeLoan = await prisma.advance.findFirst({
+    const activeLoan = await db.advance.findFirst({
       where: {
         employeeId,
         status: "APPROVED",
@@ -21,7 +21,7 @@ export const getEmployeeAdvanceInfo = async (employeeId: string) => {
 
     if (!activeLoan) {
       // Jika tidak ada kasbon aktif dengan status APPROVED, coba cari kasbon dengan status DEDUCTED
-      const deductedLoan = await prisma.advance.findFirst({
+      const deductedLoan = await db.advance.findFirst({
         where: {
           employeeId,
           status: "DEDUCTED",
@@ -78,75 +78,50 @@ export const getAdvances = async (
   userId: string
 ) => {
   try {
-    let conditions = [];
-    let queryParams: any[] = [];
-    
     const { employeeId, month, year, status } = params;
-    
-    if (employeeId) {
-      conditions.push(`a."employeeId" = $${queryParams.length + 1}`);
-      queryParams.push(employeeId);
-    } else if (!isAdmin) {
-      // If not admin, only show the employee's own advances
-      const employee = await prisma.employee.findUnique({
-        where: { userId },
-      });
-      
+    let resolvedEmployeeId = employeeId;
+    if (!resolvedEmployeeId && !isAdmin) {
+      const employee = await db.employee.findUnique({ where: { userId } });
       if (!employee) {
         throw new Error("Employee not found");
       }
-      
-      conditions.push(`a."employeeId" = $${queryParams.length + 1}`);
-      queryParams.push(employee.id);
+      resolvedEmployeeId = employee.id;
     }
-    
-    if (month !== undefined) {
-      conditions.push(`a.month = $${queryParams.length + 1}`);
-      queryParams.push(month);
-    }
-    
-    if (year !== undefined) {
-      conditions.push(`a.year = $${queryParams.length + 1}`);
-      queryParams.push(year);
-    }
-    
-    if (status) {
-      conditions.push(`a.status = $${queryParams.length + 1}`);
-      queryParams.push(status);
-    }
-    
-    // Construct the WHERE clause
-    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-    
-    // Execute the query
-    const query = `
-      SELECT 
-        a.id, 
-        a."employeeId", 
-        a.amount,
-        a.reason,
-        a."rejectionReason",
-        a.month, 
-        a.year, 
-        a.status,
-        a."createdAt",
-        a."deductedAt",
-        a."deductionMonth",
-        a."deductionYear",
-        e."employeeId" AS "empId",
-        u.name AS "employeeName"
-      FROM 
-        advances a
-      JOIN 
-        employees e ON a."employeeId" = e.id
-      JOIN 
-        users u ON e."userId" = u.id
-      ${whereClause}
-      ORDER BY 
-        a."createdAt" DESC
-    `;
-    
-    return await prisma.$queryRawUnsafe(query, ...queryParams);
+
+    const where: any = {};
+    if (resolvedEmployeeId) where.employeeId = resolvedEmployeeId;
+    if (month !== undefined) where.month = month;
+    if (year !== undefined) where.year = year;
+    if (status) where.status = status;
+
+    const advances = await db.advance.findMany({
+      where,
+      include: {
+        employee: {
+          include: {
+            user: { select: { name: true, email: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return advances.map((a) => ({
+      id: a.id,
+      employeeId: a.employeeId,
+      amount: a.amount,
+      reason: a.reason ?? null,
+      rejectionReason: a.rejectionReason ?? null,
+      month: a.month,
+      year: a.year,
+      status: a.status,
+      createdAt: a.createdAt,
+      deductedAt: a.deductedAt ?? null,
+      deductionMonth: a.deductionMonth ?? null,
+      deductionYear: a.deductionYear ?? null,
+      empId: a.employee.employeeId,
+      employeeName: a.employee.user?.name ?? "",
+    }));
   } catch (error) {
     console.error("Error fetching advances:", error);
     throw new Error("Failed to fetch advances");
@@ -176,7 +151,7 @@ export const createAdvance = async (
     
     // If not admin, get employee ID from session
     if (!isAdmin) {
-      const employee = await prisma.employee.findUnique({
+      const employee = await db.employee.findUnique({
         where: { userId },
       });
       
@@ -197,7 +172,7 @@ export const createAdvance = async (
     }
     
     // Check if the employee exists
-    const employee = await prisma.employee.findUnique({
+    const employee = await db.employee.findUnique({
       where: { id: employeeId },
     });
     
@@ -207,7 +182,7 @@ export const createAdvance = async (
     
     // Check if advance already exists for this employee in this month/year
     // Karyawan dapat mengajukan kembali jika pengajuan sebelumnya ditolak (REJECTED)
-    const existingAdvance = await prisma.advance.findFirst({
+    const existingAdvance = await db.advance.findFirst({
       where: {
         employeeId,
         month,
@@ -223,7 +198,7 @@ export const createAdvance = async (
     }
     
     // Jika ada pengajuan yang ditolak, hapus pengajuan tersebut agar tidak menumpuk di database
-    const rejectedAdvance = await prisma.advance.findFirst({
+    const rejectedAdvance = await db.advance.findFirst({
       where: {
         employeeId,
         month,
@@ -233,13 +208,23 @@ export const createAdvance = async (
     });
     
     if (rejectedAdvance) {
-      await prisma.advance.delete({
+      await db.advance.delete({
         where: { id: rejectedAdvance.id }
       });
     }
     
     // Create the advance
-    return await prisma.advance.create({
+    if (amount <= 0) {
+      throw new Error("Amount must be greater than zero");
+    }
+    if (month < 1 || month > 12) {
+      throw new Error("Month must be between 1 and 12");
+    }
+    if (year < 2000 || year > 2100) {
+      throw new Error("Year must be between 2000 and 2100");
+    }
+
+    return await db.advance.create({
       data: {
         employeeId,
         amount,
@@ -247,6 +232,9 @@ export const createAdvance = async (
         year,
         reason: reason || null,
         status: isAdmin ? "ACTIVE" : "PENDING",
+        // Set deduction month and year to the same as application month and year
+        deductionMonth: month,
+        deductionYear: year,
       },
     });
   } catch (error) {
@@ -264,7 +252,7 @@ export const createAdvance = async (
  */
 export const getAdvanceById = async (id: string, isAdmin: boolean, userId: string) => {
   try {
-    const advance = await prisma.advance.findUnique({
+    const advance = await db.advance.findUnique({
       where: { id },
       include: {
         employee: {
@@ -297,6 +285,12 @@ export const getAdvanceById = async (id: string, isAdmin: boolean, userId: strin
  * @param data Data yang akan diperbarui
  * @returns Kasbon yang telah diperbarui
  */
+/**
+ * Memperbarui status kasbon
+ * @param id ID kasbon
+ * @param data Data yang akan diperbarui
+ * @returns Kasbon yang telah diperbarui
+ */
 export const updateAdvanceStatus = async (
   id: string,
   data: {
@@ -319,7 +313,7 @@ export const updateAdvanceStatus = async (
     }
     
     // Check if advance exists
-    const existingAdvance = await prisma.advance.findUnique({
+    const existingAdvance = await db.advance.findUnique({
       where: { id },
       include: {
         employee: {
@@ -339,13 +333,16 @@ export const updateAdvanceStatus = async (
     }
     
     // Update advance status
-    const updatedAdvance = await prisma.advance.update({
+    // Jika status APPROVED, gunakan bulan dan tahun pengajuan sebagai bulan dan tahun pemotongan
+    // Ini untuk memastikan kasbon dipotong pada bulan yang sama dengan pengajuan
+    const updatedAdvance = await db.advance.update({
       where: { id },
       data: {
         status,
         rejectionReason: status === "REJECTED" ? rejectionReason : null,
-        deductionMonth: status === "APPROVED" ? deductionMonth : null,
-        deductionYear: status === "APPROVED" ? deductionYear : null
+        // Gunakan bulan dan tahun dari pengajuan kasbon, bukan dari input admin
+        deductionMonth: status === "APPROVED" ? existingAdvance.month : null,
+        deductionYear: status === "APPROVED" ? existingAdvance.year : null
       },
       include: {
         employee: {
@@ -375,7 +372,7 @@ export const deleteAdvances = async (ids: string[]) => {
     }
     
     // Delete the advances
-    const result = await prisma.advance.deleteMany({
+    const result = await db.advance.deleteMany({
       where: {
         id: {
           in: ids
@@ -399,7 +396,7 @@ export const deleteAdvances = async (ids: string[]) => {
  */
 export const getAdvanceDeductions = async (employeeId: string, month: number, year: number) => {
   try {
-    const advanceDeductions = await prisma.advance.findMany({
+    const advanceDeductions = await db.advance.findMany({
       where: {
         employeeId,
         status: "DEDUCTED",
@@ -424,7 +421,7 @@ export const getAdvanceDeductions = async (employeeId: string, month: number, ye
 export const markAdvancesAsDeducted = async (employeeId: string, month: number, year: number) => {
   try {
     // Find advances that are approved and scheduled for deduction in this month/year
-    const advances = await prisma.advance.findMany({
+    const advances = await db.advance.findMany({
       where: {
         employeeId,
         status: "APPROVED",
@@ -439,7 +436,7 @@ export const markAdvancesAsDeducted = async (employeeId: string, month: number, 
     }
 
     // Update all matching advances to DEDUCTED status
-    const updateResult = await prisma.advance.updateMany({
+    const updateResult = await db.advance.updateMany({
       where: {
         id: { in: advances.map(advance => advance.id) },
       },

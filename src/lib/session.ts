@@ -25,9 +25,17 @@ export async function requireAuth() {
 export async function requireAdmin() {
   const user = await requireAuth();
   
-  if (user.role !== "ADMIN") {
+  if (user.role !== "ADMIN" && user.role !== "MANAGER") {
     redirect("/dashboard");
   }
   
   return user;
-} 
+}
+
+export async function requireRole(roles: string[]) {
+  const user = await requireAuth();
+  if (!roles.includes(user.role)) {
+    redirect("/dashboard");
+  }
+  return user;
+}

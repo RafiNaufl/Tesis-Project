@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { differenceInDays } from "date-fns";
 
 // GET /api/leave - Mendapatkan daftar cuti
-export async function GET(req: NextRequest) {
+export async function GET(_req: NextRequest) {
   try {
     const session = await getServerSession();
     

@@ -39,20 +39,55 @@ model Employee {
   employeeId    String       @unique
   userId        String       @unique
   position      String
-  department    String
+  division      String
   basicSalary   Float
   joiningDate   DateTime
-  contactNumber String?
+  contactNumber String?      @unique
   address       String?
   isActive      Boolean      @default(true)
+  organization  String?
+  employmentStatus String?
+  workScheduleType String?   // SHIFT or NON_SHIFT
+  hourlyRate    Float?
+  bpjsKesehatan Float      @default(0)
+  bpjsKetenagakerjaan Float @default(0)
   allowances    Allowance[]
   attendances   Attendance[]
   deductions    Deduction[]
   user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   leaveRequests Leave[]
   payrolls      Payroll[]
+  advances      Advance[]
+  softLoans     SoftLoan[]
+  auditLogs     AuditLog[]
+  overtimeRequests OvertimeRequest[]
+  employeeIdLogs EmployeeIdLog[]
 
   @@map("employees")
+}
+
+model Organization {
+  id              String   @id @default(cuid())
+  name            String
+  code            String   @unique
+  currentSequence Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("organizations")
+}
+
+model EmployeeIdLog {
+  id            String   @id @default(cuid())
+  employeeId    String
+  oldEmployeeId String?
+  newEmployeeId String
+  changedBy     String?  // User ID who made the change
+  reason        String?
+  createdAt     DateTime @default(now())
+  employee      Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@map("employee_id_logs")
 }
 
 model Notification {
@@ -62,6 +97,8 @@ model Notification {
   message   String
   type      String
   read      Boolean  @default(false)
+  refType   String?
+  refId     String?
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -72,8 +109,11 @@ model Attendance {
   id                   String    @id @default(cuid())
   employeeId           String
   date                 DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt @default(now())
   checkIn              DateTime?
   checkOut             DateTime?
+  overtimeStart        DateTime?
+  overtimeEnd          DateTime?
   status               String    @default("ABSENT")
   notes                String?
   isLate               Boolean   @default(false)
@@ -90,10 +130,53 @@ model Attendance {
   checkOutLatitude     Float?
   checkOutLongitude    Float?
   checkOutPhotoUrl     String?
+  overtimeStartLatitude Float?
+  overtimeStartLongitude Float?
+  overtimeStartPhotoUrl  String?
+  overtimeStartAddressNote String?
+  overtimeEndLatitude   Float?
+  overtimeEndLongitude  Float?
+  overtimeEndPhotoUrl   String?
+  overtimeEndAddressNote String?
+  lateReason            String?
+  latePhotoUrl          String?
+  lateSubmittedAt       DateTime?
+  lateApprovalStatus    String?
   employee             Employee  @relation(fields: [employeeId], references: [id])
+  approvalLogs         ApprovalLog[]
+  auditLogs            AuditLog[]
+  attendanceAuditLogs  AttendanceAuditLog[]
 
   @@unique([employeeId, date])
   @@map("attendances")
+}
+
+model ApprovalLog {
+  id            String   @id @default(cuid())
+  attendanceId  String
+  action        String
+  actorUserId   String
+  note          String?
+  createdAt     DateTime @default(now())
+  attendance    Attendance @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
+
+  @@map("approval_logs")
+}
+
+model AuditLog {
+  id            String    @id @default(cuid())
+  actorUserId   String
+  action        String
+  attendanceId  String?
+  employeeId    String?
+  ip            String?
+  userAgent     String?
+  metadata      Json?
+  createdAt     DateTime  @default(now())
+  attendance    Attendance? @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
+  employee      Employee?  @relation(fields: [employeeId], references: [id])
+
+  @@map("audit_logs")
 }
 
 model Payroll {
@@ -105,19 +188,125 @@ model Payroll {
   totalAllowances Float     @default(0)
   totalDeductions Float     @default(0)
   netSalary       Float
-  daysPresent     Int
-  daysAbsent      Int
+  daysPresent     Float
+  daysAbsent      Float
   daysLate        Int       @default(0)
   overtimeHours   Float     @default(0)
   overtimeAmount  Float     @default(0)
   lateDeduction   Float     @default(0)
+  bpjsKesehatanAmount Float @default(0)
+  bpjsKetenagakerjaanAmount Float @default(0)
   status          String    @default("PENDING")
   createdAt       DateTime  @default(now())
   paidAt          DateTime?
   employee        Employee  @relation(fields: [employeeId], references: [id])
+  auditLogs       PayrollAuditLog[]
 
   @@unique([employeeId, month, year])
   @@map("payrolls")
+}
+
+// Konfigurasi perusahaan untuk jam kerja dan ambang keterlambatan
+model CompanyWorkHours {
+  id               String   @id @default(cuid())
+  weekdayStart     String   @default("08:00")
+  weekdayEnd       String   @default("16:30")
+  saturdayStart    String   @default("08:00")
+  saturdayEnd      String   @default("12:00")
+  lateThreshold    String   @default("08:30")
+  effectiveDate    DateTime @default(now())
+
+  @@map("company_work_hours")
+}
+
+// Konfigurasi denda keterlambatan dan absen
+model PenaltyConfig {
+  id                     String   @id @default(cuid())
+  latePerDayAmount       Float    @default(30000)
+  maxLateDailyPercent    Float    @default(100)
+  absencePenaltyPercent  Float    @default(100)
+  effectiveDate          DateTime @default(now())
+
+  @@map("penalty_config")
+}
+
+// Konfigurasi lembur
+model OvertimeConfig {
+  id                     String   @id @default(cuid())
+  rateMultiplier         Float    @default(1.5)
+  sundayMultiplier       Float    @default(2.0)
+  holidayMultiplier      Float    @default(2.0)
+  maxDailyOvertimeHours  Float    @default(12)
+  effectiveDate          DateTime @default(now())
+
+  @@map("overtime_config")
+}
+
+// Hari libur nasional
+model PublicHoliday {
+  id          String   @id @default(cuid())
+  date        DateTime
+  description String
+
+  @@unique([date])
+  @@map("public_holidays")
+}
+
+// Pengajuan lembur terpisah dari Attendance
+model OvertimeRequest {
+  id          String   @id @default(cuid())
+  employeeId  String
+  date        DateTime
+  start       DateTime
+  end         DateTime
+  reason      String?
+  status      String   @default("PENDING")
+  approvedBy  String?
+  approvedAt  DateTime?
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  employee    Employee @relation(fields: [employeeId], references: [id])
+
+  @@map("overtime_requests")
+}
+
+// Audit khusus payroll
+model PayrollAuditLog {
+  id          String   @id @default(cuid())
+  payrollId   String?
+  userId      String
+  action      String
+  oldValue    Json?
+  newValue    Json?
+  timestamp   DateTime @default(now())
+  payroll     Payroll? @relation(fields: [payrollId], references: [id])
+
+  @@map("payroll_audit_logs")
+}
+
+// Audit khusus attendance
+model AttendanceAuditLog {
+  id           String    @id @default(cuid())
+  attendanceId String?
+  userId       String
+  action       String
+  oldValue     Json?
+  newValue     Json?
+  timestamp    DateTime  @default(now())
+  attendance   Attendance? @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
+
+  @@map("attendance_audit_logs")
+}
+
+// Konfigurasi upah minimum regional (UMR)
+model PayrollConfig {
+  id               String   @id @default(cuid())
+  minMonthlyWage   Float    @default(3500000)
+  minHourlyWage    Float    @default(20000)
+  effectiveDate    DateTime @default(now())
+
+  @@map("payroll_config")
 }
 
 model Deduction {
@@ -161,4 +350,41 @@ model Leave {
   employee   Employee  @relation(fields: [employeeId], references: [id])
 
   @@map("leaves")
+}
+
+model Advance {
+  id              String    @id @default(cuid())
+  employeeId      String
+  amount          Float
+  month           Int
+  year            Int
+  reason          String?
+  status          String    @default("PENDING")
+  rejectionReason String?
+  deductionMonth  Int?
+  deductionYear   Int?
+  createdAt       DateTime  @default(now())
+  deductedAt      DateTime?
+  employee        Employee  @relation(fields: [employeeId], references: [id])
+
+  @@map("advances")
+}
+
+model SoftLoan {
+  id              String    @id @default(cuid())
+  employeeId      String
+  totalAmount     Float
+  monthlyAmount   Float
+  remainingAmount Float
+  durationMonths  Int
+  startMonth      Int
+  startYear       Int
+  reason          String?
+  status          String    @default("PENDING")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  completedAt     DateTime?
+  employee        Employee  @relation(fields: [employeeId], references: [id])
+
+  @@map("soft_loans")
 }

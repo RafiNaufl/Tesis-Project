@@ -6,6 +6,19 @@ import Link from "next/link";
 import Image from "next/image";
 import { signOut, useSession } from "next-auth/react";
 import NotificationDropdown from "../notifications/NotificationDropdown";
+import {
+  LayoutDashboard,
+  Clock,
+  CalendarDays,
+  Banknote,
+  Wallet,
+  HandCoins,
+  User,
+  Users,
+  FileText,
+  Bell,
+  ClipboardCheck,
+} from "lucide-react";
 
 interface NavItem {
   name: string;
@@ -16,21 +29,24 @@ interface NavItem {
 }
 
 const navigation: NavItem[] = [
-  { name: "Dashboard", href: "/dashboard", title: "Ringkasan Dashboard" },
-  { name: "Absensi", href: "/attendance", title: "Manajemen Absensi" },
-  { name: "Cuti", href: "/leave", title: "Manajemen Cuti" },
-  { name: "Penggajian", href: "/payroll", title: "Manajemen Penggajian" },
-  { name: "Profil", href: "/profile", title: "Profil Pengguna" },
-  { name: "Karyawan", href: "/dashboard/employees", adminOnly: true, title: "Manajemen Karyawan" },
-  { name: "Laporan", href: "/reports", adminOnly: true, title: "Manajemen Laporan" },
-  { name: "Notifikasi", href: "/notifications", title: "Notifikasi" },
+  { name: "Dashboard", href: "/dashboard", title: "Dashboard", icon: <LayoutDashboard className="h-6 w-6 mr-3" /> },
+  { name: "Absensi", href: "/attendance", title: "Manajemen Absensi", icon: <Clock className="h-6 w-6 mr-3" /> },
+  { name: "Cuti", href: "/leave", title: "Manajemen Cuti", icon: <CalendarDays className="h-6 w-6 mr-3" /> },
+  { name: "Penggajian", href: "/payroll", title: "Manajemen Penggajian", icon: <Banknote className="h-6 w-6 mr-3" /> },
+  { name: "Kasbon", href: "/advance", title: "Manajemen Kasbon", icon: <Wallet className="h-6 w-6 mr-3" /> },
+  { name: "Pinjaman Lunak", href: "/soft-loan", title: "Manajemen Pinjaman Lunak", icon: <HandCoins className="h-6 w-6 mr-3" /> },
+  { name: "Profil", href: "/profile", title: "Profil Pengguna", icon: <User className="h-6 w-6 mr-3" /> },
+  { name: "Karyawan", href: "/dashboard/employees", adminOnly: true, title: "Manajemen Karyawan", icon: <Users className="h-6 w-6 mr-3" /> },
+  { name: "Laporan", href: "/reports", adminOnly: true, title: "Manajemen Laporan", icon: <FileText className="h-6 w-6 mr-3" /> },
+  { name: "Notifikasi", href: "/notifications", title: "Notifikasi", icon: <Bell className="h-6 w-6 mr-3" /> },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const pathname = usePathname();
   const { data: session } = useSession();
-  const isAdmin = session?.user?.role === "ADMIN";
+  const role = session?.user?.role;
+  const isAdmin = role === "ADMIN" || role === "MANAGER";
   
   // Track user name for efficient re-rendering
   const [userName, setUserName] = useState<string | undefined>(session?.user?.name);
@@ -53,9 +69,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
   }, [session, userName]);
 
-  const filteredNavigation = navigation.filter(
+  const extraNavigation: NavItem[] = [];
+  if (role === "FOREMAN" || role === "ASSISTANT_FOREMAN" || isAdmin) {
+    extraNavigation.push({ name: "Persetujuan Lembur", href: "/approvals/overtime", title: "Persetujuan Lembur", icon: <ClipboardCheck className="h-6 w-6 mr-3" /> });
+  }
+  const filteredNavigation = [...navigation.filter(
     (item) => !item.adminOnly || (item.adminOnly && isAdmin)
-  );
+  ), ...extraNavigation];
 
   // Helper function to check if a path matches the current pathname
   const isActive = (path: string) => {
@@ -72,7 +92,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const defaultAvatar = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iIzZiNzI4MCIgd2lkdGg9IjI0IiBoZWlnaHQ9IjI0Ij48cGF0aCBkPSJNMTIgMkM2LjQ4IDIgMiA2LjQ4IDIgMTJzNC40OCAxMCAxMCAxMCAxMC00LjQ4IDEwLTEwUzE3LjUyIDIgMTIgMnptMCAzYzEuNjYgMCAzIDEuMzQgMyAzcy0xLjM0IDMtMyAzLTMtMS4zNC0zLTMgMS4zNC0zIDMtM3ptMCAxNC4yYy0yLjUgMC00LjcxLTEuMjgtNi0zLjIyLjAzLTEuOTkgNC0zLjA4IDYtMy4wOCAxLjk5IDAgNS45NyAxLjA5IDYgMy4wOC0xLjI5IDEuOTQtMy41IDMuMjItNiAzLjIyeiIvPjwvc3ZnPg==';
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 overflow-x-hidden">
       {/* Mobile sidebar */}
       <div className={`fixed inset-0 flex z-40 lg:hidden ${sidebarOpen ? "" : "hidden"}`}>
         <div className="fixed inset-0 bg-gray-600 bg-opacity-75" onClick={() => setSidebarOpen(false)}></div>
@@ -83,7 +103,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <Image src="/logoctu.png" alt="CV Catur Teknik Utama" width={40} height={40} />
               <div>
                 <h1 className="text-lg font-bold text-blue-800">CV CTU</h1>
-                <p className="text-xs text-gray-600">Attendance & Payroll System</p>
+                <p className="text-xs text-gray-600">Sistem Absensi & Penggajian</p>
               </div>
             </div>
           </div>
@@ -99,6 +119,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   } group flex items-center rounded-md px-2 py-2 text-base font-medium`}
                   title={item.title}
                 >
+                  {item.icon}
                   {item.name}
                 </Link>
               ))}
@@ -141,7 +162,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <Image src="/logoctu.png" alt="CV Catur Teknik Utama" width={40} height={40} />
                 <div>
                   <h1 className="text-lg font-bold text-blue-800">CV CTU</h1>
-                  <p className="text-xs text-gray-600">Attendance & Payroll System</p>
+                  <p className="text-xs text-gray-600">Sistem Absensi & Penggajian</p>
                 </div>
               </div>
             </div>
@@ -157,6 +178,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   } group flex items-center rounded-md px-2 py-2 text-sm font-medium`}
                   title={item.title}
                 >
+                  {item.icon}
                   {item.name}
                 </Link>
               ))}
@@ -192,35 +214,34 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       {/* Main content */}
       <div className="flex flex-1 flex-col lg:pl-64">
-        <div className="sticky top-0 z-10 bg-white pl-1 pt-1 sm:pl-3 sm:pt-3 lg:hidden">
-          <button
-            type="button"
-            className="-ml-0.5 -mt-0.5 inline-flex h-12 w-12 items-center justify-center rounded-md text-gray-500 hover:text-gray-900 focus:outline-none"
-            onClick={() => setSidebarOpen(true)}
-          >
-            <span className="sr-only">Buka sidebar</span>
-            <svg
-              className="h-6 w-6"
-              fill="none"
-              viewBox="0 0 24 24"
-              strokeWidth="1.5"
-              stroke="currentColor"
-              aria-hidden="true"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"
-              />
-            </svg>
-          </button>
-        </div>
-        
         {/* Top navigation bar */}
         <div className="sticky top-0 z-10 bg-white shadow">
           <div className="flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8">
-            <div className="text-lg font-semibold text-gray-800">
-              {filteredNavigation.find(item => isActive(item.href))?.title || "EMS"}
+            <div className="flex items-center gap-4">
+              <button
+                type="button"
+                className="-ml-2 inline-flex h-12 w-12 items-center justify-center rounded-md text-gray-500 hover:text-gray-900 focus:outline-none lg:hidden"
+                onClick={() => setSidebarOpen(true)}
+              >
+                <span className="sr-only">Buka sidebar</span>
+                <svg
+                  className="h-6 w-6"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  strokeWidth="1.5"
+                  stroke="currentColor"
+                  aria-hidden="true"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"
+                  />
+                </svg>
+              </button>
+              <div className="text-lg font-semibold text-gray-800">
+                {filteredNavigation.find(item => isActive(item.href))?.title || "EMS"}
+              </div>
             </div>
             <div className="flex items-center">
               <NotificationDropdown />
@@ -236,7 +257,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   </div>
                   <span className="text-sm text-gray-700">
                     {userName}
-                    {isAdmin && <span className="ml-1 text-xs text-gray-500">(Admin)</span>}
+                    {role === "ADMIN" && <span className="ml-1 text-xs text-gray-500">(Admin)</span>}
+                    {role === "MANAGER" && <span className="ml-1 text-xs text-gray-500">(Manager)</span>}
                   </span>
                 </div>
               </div>

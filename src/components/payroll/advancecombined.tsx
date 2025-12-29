@@ -212,7 +212,7 @@ export default function AdvanceCombined() {
                     id="amount"
                     value={formData.amount}
                     onChange={handleInputChange}
-                    className="focus:ring-indigo-500 focus:border-indigo-500 block w-full pl-12 pr-12 sm:text-sm border-gray-300 rounded-lg py-3"
+                    className="focus:ring-indigo-500 focus:border-indigo-500 block w-full pl-12 pr-12 sm:text-sm border-gray-300 rounded-lg py-3 min-h-[48px] touch-manipulation"
                     placeholder="0"
                     min="0"
                     step="1"
@@ -283,7 +283,7 @@ export default function AdvanceCombined() {
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="inline-flex justify-center items-center py-2.5 px-6 border border-transparent shadow-sm text-sm font-medium rounded-lg text-white bg-gradient-to-r from-indigo-600 to-blue-500 hover:from-indigo-700 hover:to-blue-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+                className="w-full sm:w-auto inline-flex justify-center items-center py-2.5 px-6 border border-transparent shadow-sm text-sm font-medium rounded-lg text-white bg-gradient-to-r from-indigo-600 to-blue-500 hover:from-indigo-700 hover:to-blue-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 min-h-[44px] touch-manipulation"
               >
                 {isSubmitting ? (
                   <>
@@ -351,7 +351,8 @@ export default function AdvanceCombined() {
             </div>
           ) : (
             <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
-              <table className="min-w-full divide-y divide-gray-300">
+              {/* Desktop Table View */}
+              <table className="min-w-full divide-y divide-gray-300 hidden md:table">
                 <thead className="bg-gray-50">
                   <tr>
                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -410,6 +411,56 @@ export default function AdvanceCombined() {
                   ))}
                 </tbody>
               </table>
+
+              {/* Mobile Card View */}
+              <div className="md:hidden space-y-4 p-4 bg-gray-50">
+                {advances.map((advance) => (
+                  <div 
+                    key={advance.id} 
+                    className="bg-white p-4 rounded-lg shadow space-y-3"
+                  >
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <span className="text-lg font-bold text-gray-900">{formatCurrency(advance.amount)}</span>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {formatDate(advance.createdAt)}
+                        </p>
+                      </div>
+                      {getStatusBadge(advance.status)}
+                    </div>
+                    
+                    <div className="border-t border-gray-100 pt-3 space-y-2">
+                      <div>
+                        <p className="text-xs font-medium text-gray-500 uppercase">Alasan</p>
+                        <p className="text-sm text-gray-900 mt-0.5">{advance.reason}</p>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-xs font-medium text-gray-500 uppercase">Periode</p>
+                          <p className="text-sm text-gray-900 mt-0.5">{getMonthName(advance.month)} {advance.year}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs font-medium text-gray-500 uppercase">Pemotongan</p>
+                          <p className="text-sm text-gray-900 mt-0.5">
+                            {advance.status === "APPROVED" && advance.deductionMonth && advance.deductionYear ? (
+                              <span>{getMonthName(advance.deductionMonth)} {advance.deductionYear}</span>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                      
+                      {advance.status === "REJECTED" && advance.rejectionReason && (
+                        <div className="bg-red-50 p-2 rounded text-xs text-red-700 mt-2">
+                          <span className="font-semibold">Alasan Penolakan:</span> {advance.rejectionReason}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>

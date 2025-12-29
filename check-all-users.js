@@ -41,7 +41,7 @@ async function checkUser(credentials) {
       console.log('\nEmployee Details:');
       console.log('Employee ID:', user.employee.employeeId);
       console.log('Position:', user.employee.position);
-      console.log('Department:', user.employee.department);
+      console.log('Division:', user.employee.division);
       console.log('Basic Salary:', user.employee.basicSalary);
       console.log('Joining Date:', user.employee.joiningDate);
       console.log('Is Active:', user.employee.isActive);

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useRef, useState, useCallback } from 'react';
+import Image from 'next/image';
 import Webcam from 'react-webcam';
 
 interface WebcamCaptureProps {
@@ -14,6 +15,8 @@ const WebcamCapture: React.FC<WebcamCaptureProps> = ({ onCapture, onCancel }) =>
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [facingMode, setFacingMode] = useState<string>('user');
   const [error, setError] = useState<string | null>(null);
+  const [uploadPreview, setUploadPreview] = useState<string | null>(null);
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
 
   const videoConstraints = {
     width: 320,
@@ -42,6 +45,15 @@ const WebcamCapture: React.FC<WebcamCaptureProps> = ({ onCapture, onCancel }) =>
   const confirmImage = () => {
     if (capturedImage) {
       onCapture(capturedImage);
+      return;
+    }
+    if (uploadPreview && uploadedFile) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = typeof reader.result === 'string' ? reader.result : null;
+        if (result) onCapture(result);
+      };
+      reader.readAsDataURL(uploadedFile);
     }
   };
 
@@ -100,13 +112,59 @@ const WebcamCapture: React.FC<WebcamCaptureProps> = ({ onCapture, onCancel }) =>
                   Ganti Kamera
                 </button>
               </div>
+              <div className="w-full">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Atau unggah foto (JPEG/PNG, maks 5MB)</label>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] || null;
+                    if (!file) return;
+                    const allowed = ["image/jpeg", "image/png"];
+                    if (!allowed.includes(file.type)) {
+                      setError("Format file harus JPEG atau PNG");
+                      setUploadedFile(null);
+                      setUploadPreview(null);
+                      return;
+                    }
+                    if (file.size > 5 * 1024 * 1024) {
+                      setError("Ukuran file melebihi batas 5MB");
+                      setUploadedFile(null);
+                      setUploadPreview(null);
+                      return;
+                    }
+                    setError(null);
+                    setUploadedFile(file);
+                    const previewUrl = URL.createObjectURL(file);
+                    setUploadPreview(previewUrl);
+                    setIsCaptureEnabled(false);
+                    setCapturedImage(null);
+                  }}
+                  className="block w-full text-sm text-gray-700"
+                />
+                {uploadPreview && (
+                  <div className="mt-3">
+                    <Image
+                      src={uploadPreview}
+                      alt="Preview unggahan"
+                      width={320}
+                      height={320}
+                      unoptimized
+                      className="rounded-lg mb-2 max-w-full"
+                    />
+                  </div>
+                )}
+              </div>
             </>
           ) : (
             <>
-              {capturedImage && (
-                <img
-                  src={capturedImage}
-                  alt="Captured"
+              {(capturedImage || uploadPreview) && (
+                <Image
+                  src={capturedImage || uploadPreview!}
+                  alt="Foto hasil tangkap"
+                  width={320}
+                  height={320}
+                  unoptimized
                   className="rounded-lg mb-4 max-w-full"
                 />
               )}

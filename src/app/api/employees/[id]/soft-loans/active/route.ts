@@ -1,6 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { getEmployeeSoftLoanInfo } from "@/lib/softloan";
 import { requireAuth } from "@/lib/session";
 import { prisma } from "@/lib/prisma";

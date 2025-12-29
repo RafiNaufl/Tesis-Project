@@ -1,18 +1,21 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { NOTIFICATION_UPDATE_EVENT } from "../notifications/NotificationDropdown";
 import { ACTIVITY_UPDATE_EVENT } from "../dashboard/AdminDashboard";
-import { getWorkdayType, WorkdayType, LATE_PENALTY } from "@/lib/attendanceRules";
-import OvertimeApprovalButton from "./OvertimeApprovalButton";
+import { getWorkdayType, WorkdayType, isOvertimeCheckIn, isOvertimeCheckOut } from "@/lib/attendanceRules";
 import AttendanceCapture from "./AttendanceCapture";
+import Image from "next/image";
+import { organizationNames, organizations } from "@/lib/registrationValidation";
 
 type AttendanceRecord = {
   id: string;
   date: Date;
   checkIn: Date | null;
   checkOut: Date | null;
+  overtimeStart?: Date | null;
+  overtimeEnd?: Date | null;
   status: "PRESENT" | "ABSENT" | "LATE" | "HALFDAY";
   notes?: string;
   isLate: boolean;
@@ -28,27 +31,61 @@ type AttendanceRecord = {
   checkInLongitude?: number;
   checkOutLatitude?: number;
   checkOutLongitude?: number;
+  overtimeStartPhotoUrl?: string | null;
+  overtimeStartLatitude?: number | null;
+  overtimeStartLongitude?: number | null;
+  overtimeEndPhotoUrl?: string | null;
+  overtimeEndLatitude?: number | null;
+  overtimeEndLongitude?: number | null;
+  lateReason?: string | null;
+  latePhotoUrl?: string | null;
+  lateSubmittedAt?: Date | null;
+  lateApprovalStatus?: string | null;
   employee?: {
     id: string;
     employeeId: string;
     user?: {
       name: string;
+      profileImageUrl?: string;
     };
+    position?: string;
+    division?: string;
+    organization?: string | null;
+    workScheduleType?: string | null;
     name?: string; // Alternatif jika struktur berbeda
   };
+};
+
+export const getAttendanceActionState = (record: AttendanceRecord | null): 'check-in' | 'check-out' | 'overtime-start' | 'overtime-end' | 'complete' => {
+  if (!record || (!record.checkIn && !record.checkOut)) return 'check-in';
+  const isPengajuanUlang = !!record && ((record.notes && record.notes.includes("Di Tolak")) || (record.approvedAt && ((record.overtime > 0 && !record.isOvertimeApproved) || (record.isSundayWork && !record.isSundayWorkApproved))));
+  if (isPengajuanUlang) return 'check-in';
+  if (record.checkIn && !record.checkOut) return 'check-out';
+  if (record.checkIn && record.checkOut) {
+    if (!record.overtimeStart) return 'overtime-start';
+    if (record.overtimeStart && !record.overtimeEnd) return 'overtime-end';
+    return 'complete';
+  }
+  return 'check-in';
 };
 
 export default function AttendanceManagement() {
   const { data: session } = useSession();
   const [isLoading, setIsLoading] = useState(true);
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
-  const [isCheckingIn, setIsCheckingIn] = useState(false);
-  const [isCheckingOut, setIsCheckingOut] = useState(false);
+  const [_isCheckingIn, setIsCheckingIn] = useState(false);
+  const [_isCheckingOut, setIsCheckingOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lateReason, setLateReason] = useState("");
+  const [latePhotoFile, setLatePhotoFile] = useState<File | null>(null);
+  const [latePhotoPreview, setLatePhotoPreview] = useState<string | null>(null);
+  const [lateError, setLateError] = useState<string | null>(null);
+  const [lateSubmitting, setLateSubmitting] = useState(false);
   const [todayRecord, setTodayRecord] = useState<AttendanceRecord | null>(null);
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
-  const isAdmin = session?.user?.role === "ADMIN";
+  const isAdmin = session?.user?.role === "ADMIN" || session?.user?.role === "MANAGER";
+  const [isLateModalOpen, setIsLateModalOpen] = useState(false);
   
   // Edit modal state
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -63,87 +100,31 @@ export default function AttendanceManagement() {
   
   // Photo modal state
   const [photoModalOpen, setPhotoModalOpen] = useState(false);
-  const [selectedPhotoUrl, setSelectedPhotoUrl] = useState<string>('');
-  const [photoModalTitle, setPhotoModalTitle] = useState<string>('');
+  const [selectedPhotoUrl] = useState<string>('');
+  const [photoModalTitle] = useState<string>('');
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailRecord, setDetailRecord] = useState<AttendanceRecord | null>(null);
+  const [detailLogs, setDetailLogs] = useState<any[]>([]);
+  const [detailLoading, setDetailLoading] = useState(false);
 
   // Tambahkan state untuk menyimpan data absensi sebelum refresh
-  const [persistedAttendance, setPersistedAttendance] = useState<AttendanceRecord | null>(null);
+  const [_persistedAttendance, _setPersistedAttendance] = useState<AttendanceRecord | null>(null);
   
   // State untuk AttendanceCapture
   const [showAttendanceCapture, setShowAttendanceCapture] = useState(false);
-  const [captureAction, setCaptureAction] = useState<'check-in' | 'check-out'>('check-in');
-  const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
-  const [capturedLatitude, setCapturedLatitude] = useState<number | null>(null);
-  const [capturedLongitude, setCapturedLongitude] = useState<number | null>(null);
-  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [captureAction, setCaptureAction] = useState<'check-in' | 'check-out' | 'overtime-start' | 'overtime-end'>('check-in');
+  const [actionLoading, setActionLoading] = useState(false);
+  const [_capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
+  const [_capturedLatitude, setCapturedLatitude] = useState<number | null>(null);
+  const [_capturedLongitude, setCapturedLongitude] = useState<number | null>(null);
+  const [_isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [selectedAttendanceId, setSelectedAttendanceId] = useState<string | null>(null);
+  const [highlightAttendanceId, setHighlightAttendanceId] = useState<string | null>(null);
 
   // Removed automatic localStorage saving to prevent circular dependency
   // localStorage is now only updated in handleCheckIn and handleCheckOut functions
 
-  // Tambahkan useEffect untuk memulihkan data absensi dari localStorage saat komponen dimuat
-  useEffect(() => {
-    const savedAttendance = localStorage.getItem('todayAttendance');
-    if (savedAttendance) {
-      try {
-        const parsedAttendance = JSON.parse(savedAttendance);
-        // Konversi string tanggal kembali ke objek Date dengan validasi
-        if (parsedAttendance.date) {
-          const dateObj = new Date(parsedAttendance.date);
-          parsedAttendance.date = isNaN(dateObj.getTime()) ? null : dateObj;
-        }
-        if (parsedAttendance.checkIn) {
-          const checkInObj = new Date(parsedAttendance.checkIn);
-          parsedAttendance.checkIn = isNaN(checkInObj.getTime()) ? null : checkInObj;
-          console.log("🔍 [LOCALSTORAGE] Parsed checkIn:", parsedAttendance.checkIn, "Valid:", parsedAttendance.checkIn instanceof Date && !isNaN(parsedAttendance.checkIn.getTime()));
-        }
-        if (parsedAttendance.checkOut) {
-          const checkOutObj = new Date(parsedAttendance.checkOut);
-          parsedAttendance.checkOut = isNaN(checkOutObj.getTime()) ? null : checkOutObj;
-        }
-        if (parsedAttendance.approvedAt) {
-          const approvedAtObj = new Date(parsedAttendance.approvedAt);
-          parsedAttendance.approvedAt = isNaN(approvedAtObj.getTime()) ? null : approvedAtObj;
-        }
-        
-        // Periksa apakah data absensi masih untuk hari ini
-        const today = new Date();
-        // Gunakan timezone lokal untuk perbandingan yang konsisten
-        const todayString = today.getFullYear() + '-' + 
-          String(today.getMonth() + 1).padStart(2, '0') + '-' + 
-          String(today.getDate()).padStart(2, '0');
-        
-        // Safely check if the persisted date is valid and for today
-        if (parsedAttendance.date && parsedAttendance.date instanceof Date && !isNaN(parsedAttendance.date.getTime())) {
-          // Gunakan timezone lokal untuk perbandingan yang konsisten
-          const persistedDateObj = new Date(parsedAttendance.date);
-          const persistedDate = persistedDateObj.getFullYear() + '-' + 
-            String(persistedDateObj.getMonth() + 1).padStart(2, '0') + '-' + 
-            String(persistedDateObj.getDate()).padStart(2, '0');
-          
-            if (persistedDate === todayString) {
-              console.log("✅ Menggunakan data absensi dari localStorage (hari ini):", parsedAttendance);
-              setPersistedAttendance(parsedAttendance);
-              
-              // Jika todayRecord belum ada, gunakan data yang dipulihkan
-              if (!todayRecord) {
-                setTodayRecord(parsedAttendance);
-              }
-            } else {
-              console.log("🗑️ Menghapus data localStorage karena bukan hari ini:", persistedDate, "vs", todayString);
-              localStorage.removeItem('todayAttendance');
-              setPersistedAttendance(null);
-            }
-          } else {
-            console.log("❌ Data absensi di localStorage memiliki tanggal yang tidak valid");
-            localStorage.removeItem('todayAttendance');
-            setPersistedAttendance(null);
-          }
-      } catch (error) {
-        console.error("❌ Error parsing saved attendance:", error);
-        localStorage.removeItem('todayAttendance'); // Hapus data yang corrupt
-      }
-    }
-  }, []);
+  // Hindari menggunakan localStorage sebagai sumber kebenaran untuk UI tombol
 
   // Fetch attendance records
   useEffect(() => {
@@ -194,8 +175,13 @@ export default function AttendanceManagement() {
                     id: item.employee?.id || "",
                     employeeId: item.employee?.employeeId || "",
                     name: item.employee?.name || "",
+                    position: item.employee?.position || undefined,
+                    division: item.employee?.division || undefined,
+                    organization: item.employee?.organization || null,
+                    workScheduleType: item.employee?.workScheduleType || null,
                     user: {
                       name: item.employee?.name || "",
+                      profileImageUrl: item.employee?.user?.profileImageUrl || undefined,
                     }
                   }
                 };
@@ -233,7 +219,8 @@ export default function AttendanceManagement() {
         }
         
         // Pastikan attendanceRecords selalu array
-        setAttendanceRecords(Array.isArray(processedData) ? processedData : []);
+        const sortedData = (Array.isArray(processedData) ? processedData : []).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        setAttendanceRecords(sortedData);
 
         // Check if there's a record for today
         const today = new Date();
@@ -253,90 +240,15 @@ export default function AttendanceManagement() {
         // Log data kehadiran hari ini untuk debugging
         console.log("Today's attendance record:", todayAttendance);
         
-        // Prioritaskan data dari localStorage jika ada dan masih untuk hari ini
-        const savedAttendance = localStorage.getItem('todayAttendance');
-        let finalTodayRecord = null;
-        
-        if (savedAttendance) {
-          try {
-            const parsedAttendance = JSON.parse(savedAttendance);
-            // Konversi string tanggal kembali ke objek Date dengan validasi
-            if (parsedAttendance.date) {
-              const dateObj = new Date(parsedAttendance.date);
-              parsedAttendance.date = isNaN(dateObj.getTime()) ? null : dateObj;
-            }
-            if (parsedAttendance.checkIn) {
-              const checkInObj = new Date(parsedAttendance.checkIn);
-              parsedAttendance.checkIn = isNaN(checkInObj.getTime()) ? null : checkInObj;
-              console.log("🔍 [FETCH] Parsed checkIn:", parsedAttendance.checkIn, "Valid:", parsedAttendance.checkIn instanceof Date && !isNaN(parsedAttendance.checkIn.getTime()));
-            }
-            if (parsedAttendance.checkOut) {
-              const checkOutObj = new Date(parsedAttendance.checkOut);
-              parsedAttendance.checkOut = isNaN(checkOutObj.getTime()) ? null : checkOutObj;
-            }
-            if (parsedAttendance.approvedAt) {
-              const approvedAtObj = new Date(parsedAttendance.approvedAt);
-              parsedAttendance.approvedAt = isNaN(approvedAtObj.getTime()) ? null : approvedAtObj;
-            }
-            
-            // Safely get the persisted date string using local timezone
-            const persistedDate = parsedAttendance.date && parsedAttendance.date instanceof Date && !isNaN(parsedAttendance.date.getTime()) 
-              ? (parsedAttendance.date.getFullYear() + '-' + 
-                 String(parsedAttendance.date.getMonth() + 1).padStart(2, '0') + '-' + 
-                 String(parsedAttendance.date.getDate()).padStart(2, '0'))
-              : null;
-            
-            // Get today's date in local timezone for comparison
-            const today = new Date();
-            const todayString = today.getFullYear() + '-' + 
-              String(today.getMonth() + 1).padStart(2, '0') + '-' + 
-              String(today.getDate()).padStart(2, '0');
-            
-            // Jika data localStorage untuk hari ini, selalu prioritaskan localStorage
-            if (persistedDate && persistedDate === todayString) {
-              console.log("✅ Menggunakan data absensi dari localStorage (prioritas):", parsedAttendance);
-              finalTodayRecord = parsedAttendance;
-            } else {
-              if (!persistedDate) {
-                console.log("⚠️ Data localStorage memiliki tanggal tidak valid, menggunakan data API");
-              } else {
-                console.log("⚠️ Data localStorage bukan untuk hari ini, menggunakan data API. Persisted:", persistedDate, "Today:", todayString);
-              }
-              finalTodayRecord = todayAttendance;
-            }
-          } catch (error) {
-            console.error("❌ Error parsing saved attendance:", error);
-            finalTodayRecord = todayAttendance;
-          }
-        } else {
-          console.log("ℹ️ Tidak ada data di localStorage, menggunakan data dari API");
-          finalTodayRecord = todayAttendance;
-        }
-        
-        setTodayRecord(finalTodayRecord);
-        console.log("🎯 Final todayRecord yang diset:", finalTodayRecord);
+        setTodayRecord(todayAttendance || null);
+        console.log("🎯 Final todayRecord yang diset:", todayAttendance);
       } catch (err) {
         console.error("Error fetching attendance:", err);
         setError("Gagal memuat data kehadiran");
         // Jika terjadi error, pastikan attendanceRecords masih array kosong
         setAttendanceRecords([]);
         
-        // Jika ada data di localStorage, gunakan sebagai fallback
-        if (persistedAttendance) {
-          const today = new Date();
-          const todayString = today.getFullYear() + '-' + 
-            String(today.getMonth() + 1).padStart(2, '0') + '-' + 
-            String(today.getDate()).padStart(2, '0');
-          const persistedDate = persistedAttendance.date && persistedAttendance.date instanceof Date && !isNaN(persistedAttendance.date.getTime())
-            ? (persistedAttendance.date.getFullYear() + '-' + 
-               String(persistedAttendance.date.getMonth() + 1).padStart(2, '0') + '-' + 
-               String(persistedAttendance.date.getDate()).padStart(2, '0'))
-            : null;
-          
-          if (persistedDate && persistedDate === todayString) {
-            setTodayRecord(persistedAttendance);
-          }
-        }
+        // Jangan gunakan localStorage sebagai fallback
       } finally {
         setIsLoading(false);
       }
@@ -345,11 +257,11 @@ export default function AttendanceManagement() {
     if (session) {
       fetchAttendance();
     }
-  }, [session, selectedMonth, selectedYear, persistedAttendance]);
+  }, [session, selectedMonth, selectedYear]);
 
   // Tambahkan effect untuk refresh otomatis ketika ada update dari penolakan
   // Function untuk fetch attendance - dipindahkan keluar dari useEffect
-  const fetchAttendanceRecords = async (retryCount = 0) => {
+  const fetchAttendanceRecords = useCallback(async (retryCount = 0) => {
     try {
       const queryParams = new URLSearchParams({
         month: selectedMonth.toString(),
@@ -390,8 +302,12 @@ export default function AttendanceManagement() {
                 id: item.employee?.id || "",
                 employeeId: item.employee?.employeeId || "",
                 name: item.employee?.name || "",
+                position: item.employee?.position || undefined,
+                division: item.employee?.division || undefined,
+                organization: item.employee?.organization || null,
                 user: {
                   name: item.employee?.name || "",
+                  profileImageUrl: item.employee?.user?.profileImageUrl || undefined,
                 }
               }
             }));
@@ -421,68 +337,14 @@ export default function AttendanceManagement() {
       });
       
       console.log("📊 [FETCH] Today's record from API:", todayRecordFromAPI);
+
+      // Selalu update todayRecord untuk hari ini, terlepas dari filter bulan/tahun
+      setTodayRecord(todayRecordFromAPI || null);
       
-      // PENTING: Hanya update todayRecord jika bulan dan tahun yang dipilih adalah bulan dan tahun saat ini
-      const currentMonth = today.getMonth() + 1; // getMonth() returns 0-11
-      const currentYear = today.getFullYear();
+      // Sort data berdasarkan tanggal terbaru
+      const sortedData = processedData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       
-      if (selectedMonth === currentMonth && selectedYear === currentYear) {
-        console.log("📅 [FETCH] Melihat bulan dan tahun saat ini, update todayRecord");
-        
-        // Cek apakah ada data di localStorage untuk hari ini
-        const savedAttendance = localStorage.getItem('todayAttendance');
-        if (savedAttendance && todayRecordFromAPI) {
-          try {
-            const parsedAttendance = JSON.parse(savedAttendance);
-            // Konversi string tanggal kembali ke objek Date dengan validasi
-            if (parsedAttendance.date) {
-              const dateObj = new Date(parsedAttendance.date);
-              parsedAttendance.date = isNaN(dateObj.getTime()) ? null : dateObj;
-            }
-            if (parsedAttendance.checkIn) {
-              const checkInObj = new Date(parsedAttendance.checkIn);
-              parsedAttendance.checkIn = isNaN(checkInObj.getTime()) ? null : checkInObj;
-            }
-            if (parsedAttendance.checkOut) {
-              const checkOutObj = new Date(parsedAttendance.checkOut);
-              parsedAttendance.checkOut = isNaN(checkOutObj.getTime()) ? null : checkOutObj;
-            }
-            if (parsedAttendance.approvedAt) {
-              const approvedAtObj = new Date(parsedAttendance.approvedAt);
-              parsedAttendance.approvedAt = isNaN(approvedAtObj.getTime()) ? null : approvedAtObj;
-            }
-            
-            // Safely get the persisted date string using local timezone
-            const persistedDate = parsedAttendance.date && parsedAttendance.date instanceof Date && !isNaN(parsedAttendance.date.getTime())
-              ? (parsedAttendance.date.getFullYear() + '-' + 
-                 String(parsedAttendance.date.getMonth() + 1).padStart(2, '0') + '-' + 
-                 String(parsedAttendance.date.getDate()).padStart(2, '0'))
-              : null;
-            
-            // Jika data localStorage untuk hari ini, selalu prioritaskan localStorage
-            if (persistedDate && persistedDate === todayString) {
-              console.log("✅ [FETCH] Menggunakan data absensi dari localStorage:", parsedAttendance);
-              setTodayRecord(parsedAttendance);
-            } else {
-              console.log("📊 [FETCH] Menggunakan data absensi dari API:", todayRecordFromAPI);
-              setTodayRecord(todayRecordFromAPI || null);
-            }
-          } catch (error) {
-            console.error("❌ [FETCH] Error parsing saved attendance:", error);
-            // Jika error parsing localStorage, gunakan data dari API
-            setTodayRecord(todayRecordFromAPI || null);
-          }
-        } else {
-          // Jika tidak ada localStorage atau tidak ada todayRecord, gunakan data dari API
-          console.log("📊 [FETCH] Menggunakan data absensi dari API (no localStorage):", todayRecordFromAPI);
-          setTodayRecord(todayRecordFromAPI || null);
-        }
-      } else {
-        console.log("📅 [FETCH] Melihat bulan/tahun lain, tidak update todayRecord");
-        // Tidak memperbarui todayRecord saat melihat bulan/tahun lain
-      }
-      
-      setAttendanceRecords(processedData);
+      setAttendanceRecords(sortedData);
       setIsLoading(false);
     } catch (error: any) {
       console.error("❌ [FETCH] Error fetching attendance records:", error);
@@ -551,7 +413,7 @@ export default function AttendanceManagement() {
         }
       }
     }
-  };
+  }, [selectedMonth, selectedYear]);
 
   useEffect(() => {
     // Function untuk menangani event storage
@@ -585,8 +447,7 @@ export default function AttendanceManagement() {
     // Also set up an interval to refresh data every 30 seconds
     const intervalId = setInterval(fetchAttendanceRecords, 30000);
     
-    // Jalankan fetchAttendanceRecords sekali saat komponen dimuat
-    fetchAttendanceRecords();
+    // Jalankan fetchAttendanceRecords sekali saat komponen dimuat (already called above)
     
     // Cleanup
     return () => {
@@ -594,7 +455,28 @@ export default function AttendanceManagement() {
       window.removeEventListener('attendance-checkin', handleAttendanceCheckIn as EventListener);
       clearInterval(intervalId);
     };
-  }, [selectedMonth, selectedYear]);
+  }, [selectedMonth, selectedYear, fetchAttendanceRecords]);
+
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
+      const id = params.get('attendanceId');
+      if (id) setSelectedAttendanceId(id);
+    } catch (error) {
+      console.warn('Failed to parse attendanceId from query', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (selectedAttendanceId && attendanceRecords.length > 0) {
+      const el = document.getElementById(`attendance-row-${selectedAttendanceId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setHighlightAttendanceId(selectedAttendanceId);
+        setTimeout(() => setHighlightAttendanceId(null), 3000);
+      }
+    }
+  }, [selectedAttendanceId, attendanceRecords]);
 
   // Fungsi untuk mengunggah foto ke server
   const uploadPhoto = async (photoBase64: string): Promise<string> => {
@@ -630,7 +512,8 @@ export default function AttendanceManagement() {
   };
 
   // Fungsi untuk menangani hasil dari AttendanceCapture
-  const handleCaptureComplete = async (photoUrl: string, latitude: number, longitude: number) => {
+  const handleCaptureComplete = async (photoUrl: string, latitude: number, longitude: number, locationNote?: string) => {
+    setActionLoading(true);
     setCapturedPhoto(photoUrl);
     setCapturedLatitude(latitude);
     setCapturedLongitude(longitude);
@@ -639,17 +522,24 @@ export default function AttendanceManagement() {
       // Upload foto ke server
       const uploadedPhotoUrl = await uploadPhoto(photoUrl);
       
-      // Lanjutkan dengan proses check-in atau check-out
+      // Lanjutkan dengan proses sesuai aksi
       if (captureAction === 'check-in') {
         await processCheckIn(uploadedPhotoUrl, latitude, longitude);
-      } else {
+      } else if (captureAction === 'check-out') {
         await processCheckOut(uploadedPhotoUrl, latitude, longitude);
+      } else if (captureAction === 'overtime-start') {
+        const reason = (window as any).overtimeReason || '';
+        const consentConfirmed = (window as any).overtimeConsentConfirmed === true;
+        await processOvertimeStart(uploadedPhotoUrl, latitude, longitude, locationNote, reason, consentConfirmed);
+      } else if (captureAction === 'overtime-end') {
+        await processOvertimeEnd(uploadedPhotoUrl, latitude, longitude, locationNote);
       }
     } catch (error) {
       console.error('Error in capture process:', error);
       setError(error instanceof Error ? error.message : 'Terjadi kesalahan saat memproses data');
     } finally {
       setShowAttendanceCapture(false);
+      setActionLoading(false);
     }
   };
 
@@ -784,6 +674,9 @@ export default function AttendanceManagement() {
       if (data.checkOut) data.checkOut = new Date(data.checkOut);
       
       setTodayRecord(data);
+      if (!isAdmin && ((data.status === "LATE" || data.status === "ABSENT") && !data.lateSubmittedAt)) {
+        setIsLateModalOpen(true);
+      }
       
       // Simpan data absensi ke localStorage segera setelah absen berhasil
       const attendanceDataToSave = {
@@ -882,6 +775,14 @@ export default function AttendanceManagement() {
     }
   };
 
+  useEffect(() => {
+    const r = todayRecord;
+    // Hanya tampilkan modal jika belum checkout
+    if (!isAdmin && r && ((r.status === "LATE" || r.status === "ABSENT") && !r.lateSubmittedAt) && !r.checkOut) {
+      setIsLateModalOpen(true);
+    }
+  }, [todayRecord, isAdmin]);
+
   // Fungsi untuk memulai proses check-out
   const handleCheckOut = () => {
     // Pre-warm GPS sebelum membuka modal check-out
@@ -907,6 +808,96 @@ export default function AttendanceManagement() {
     setError(null);
   };
 
+  const handleOvertimeStart = () => {
+    setError(null);
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        () => {},
+        () => {},
+        { timeout: 5000, maximumAge: 30000, enableHighAccuracy: true }
+      );
+    }
+    setCaptureAction('overtime-start');
+    setShowAttendanceCapture(true);
+  };
+
+  const handleOvertimeEnd = () => {
+    setError(null);
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        () => {},
+        () => {},
+        { timeout: 5000, maximumAge: 30000, enableHighAccuracy: true }
+      );
+    }
+    setCaptureAction('overtime-end');
+    setShowAttendanceCapture(true);
+  };
+
+  const processOvertimeStart = async (photoUrl: string, latitude: number, longitude: number, locationNote?: string, reason?: string, consentConfirmed?: boolean) => {
+    try {
+      const response = await fetch("/api/attendance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: 'overtime-start', photoUrl, latitude, longitude, locationNote, reason, consentConfirmed }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Gagal memulai lembur");
+      }
+      if (data.date) data.date = new Date(data.date);
+      if (data.checkIn) data.checkIn = new Date(data.checkIn);
+      if (data.checkOut) data.checkOut = new Date(data.checkOut);
+      if (data.overtimeStart) data.overtimeStart = new Date(data.overtimeStart);
+      if (data.overtimeEnd) data.overtimeEnd = new Date(data.overtimeEnd);
+      setTodayRecord(data);
+      const queryParams = new URLSearchParams({ month: selectedMonth.toString(), year: selectedYear.toString() });
+      const refreshResponse = await fetch(`/api/attendance?${queryParams}`);
+      if (refreshResponse.ok) {
+        const refreshData = await refreshResponse.json();
+        if (refreshData && refreshData.attendances && Array.isArray(refreshData.attendances)) {
+          setAttendanceRecords(refreshData.attendances);
+        } else if (Array.isArray(refreshData)) {
+          setAttendanceRecords(refreshData);
+        }
+      }
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const processOvertimeEnd = async (photoUrl: string, latitude: number, longitude: number, locationNote?: string) => {
+    try {
+      const response = await fetch("/api/attendance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: 'overtime-end', photoUrl, latitude, longitude, locationNote }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Gagal menyelesaikan lembur");
+      }
+      if (data.date) data.date = new Date(data.date);
+      if (data.checkIn) data.checkIn = new Date(data.checkIn);
+      if (data.checkOut) data.checkOut = new Date(data.checkOut);
+      if (data.overtimeStart) data.overtimeStart = new Date(data.overtimeStart);
+      if (data.overtimeEnd) data.overtimeEnd = new Date(data.overtimeEnd);
+      setTodayRecord(data);
+      const queryParams = new URLSearchParams({ month: selectedMonth.toString(), year: selectedYear.toString() });
+      const refreshResponse = await fetch(`/api/attendance?${queryParams}`);
+      if (refreshResponse.ok) {
+        const refreshData = await refreshResponse.json();
+        if (refreshData && refreshData.attendances && Array.isArray(refreshData.attendances)) {
+          setAttendanceRecords(refreshData.attendances);
+        } else if (Array.isArray(refreshData)) {
+          setAttendanceRecords(refreshData);
+        }
+      }
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
   // Fungsi untuk memproses check-out setelah foto dan lokasi didapatkan
   const processCheckOut = async (photoUrl: string, latitude: number, longitude: number, retryCount = 0) => {
     const maxRetries = 3;
@@ -927,7 +918,14 @@ export default function AttendanceManagement() {
           action: "check-out",
           photoUrl: photoUrl,
           latitude: latitude,
-          longitude: longitude
+          longitude: longitude,
+          confirmOvertime: (() => {
+            const now = new Date();
+            const outside = getWorkdayType(now) === WorkdayType.SUNDAY || isOvertimeCheckOut(now, now);
+            return outside && !todayRecord?.overtimeStart && ((window as any).overtimeConsentConfirmed === true);
+          })(),
+          overtimeReason: (window as any).overtimeReason || undefined,
+          consentConfirmed: (window as any).overtimeConsentConfirmed === true || undefined,
         }),
         signal: controller.signal,
       });
@@ -1062,6 +1060,33 @@ export default function AttendanceManagement() {
       hour: "2-digit",
       minute: "2-digit",
     });
+  };
+
+  const formatDateDMY = (date: Date): string => {
+    const d = new Date(date);
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${day}-${month}-${year}`;
+  };
+
+  const getStatusProps = (status: string): { label: string; cls: string } => {
+    switch (status) {
+      case "PRESENT":
+        return { label: "Hadir", cls: "bg-green-100 text-green-800" };
+      case "ABSENT":
+        return { label: "Alpa", cls: "bg-red-100 text-red-800" };
+      case "LATE":
+        return { label: "Terlambat", cls: "bg-yellow-100 text-yellow-800" };
+      case "LEAVE":
+        return { label: "Izin", cls: "bg-blue-100 text-blue-800" };
+      case "SICK":
+        return { label: "Sakit", cls: "bg-purple-100 text-purple-800" };
+      case "HALFDAY":
+        return { label: "Setengah Hari", cls: "bg-orange-100 text-orange-800" };
+      default:
+        return { label: status, cls: "bg-gray-100 text-gray-800" };
+    }
   };
 
   const formatDate = (date: Date): string => {
@@ -1202,7 +1227,7 @@ export default function AttendanceManagement() {
   };
 
   // Format mata uang ke format Rupiah
-  const formatCurrency = (amount: number): string => {
+  const _formatCurrency = (amount: number): string => {
     return new Intl.NumberFormat('id-ID', {
       style: 'currency',
       currency: 'IDR',
@@ -1223,7 +1248,10 @@ export default function AttendanceManagement() {
     
     switch (dayType) {
       case WorkdayType.WEEKDAY:
-        return "Hari Kerja";
+        {
+          const dayName = date.toLocaleDateString('id-ID', { weekday: 'long' });
+          return `${dayName} (Hari Kerja)`;
+        }
       case WorkdayType.SATURDAY:
         return "Sabtu (Setengah Hari)";
       case WorkdayType.SUNDAY:
@@ -1236,81 +1264,14 @@ export default function AttendanceManagement() {
   const months = Array.from({ length: 12 }, (_, i) => i + 1);
   const years = Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - 5 + i);
 
-  const handleApprovalChange = async (attendanceId: string, isApproved: boolean) => {
-    // Refresh data setelah persetujuan berubah
-    const queryParams = new URLSearchParams({
-      month: selectedMonth.toString(),
-      year: selectedYear.toString(),
-    });
-    
-    try {
-      // Tambahkan timeout untuk mobile compatibility
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 detik timeout
-      
-      const response = await fetch(`/api/attendance?${queryParams}`, {
-        signal: controller.signal,
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache',
-          'Expires': '0'
-        }
-      });
-      
-      clearTimeout(timeoutId);
-      if (response.ok) {
-        const data = await response.json();
-        
-        // Proses data seperti di useEffect
-        let processedData: AttendanceRecord[] = [];
-        
-        if (Array.isArray(data)) {
-          // Jika response adalah array (untuk admin)
-          processedData = data.flatMap((item) => {
-            if (item.report && Array.isArray(item.report.attendances)) {
-              return item.report.attendances.map((attendance: any) => ({
-                ...attendance,
-                employee: {
-                  id: item.employee?.id || "",
-                  employeeId: item.employee?.employeeId || "",
-                  name: item.employee?.name || "",
-                  user: {
-                    name: item.employee?.name || "",
-                  }
-                }
-              }));
-            }
-            return [];
-          });
-        } else if (data && data.attendances && Array.isArray(data.attendances)) {
-          // Jika response adalah objek dengan properti attendances (untuk karyawan)
-          processedData = data.attendances;
-        }
-        
-        // Pastikan selalu set sebagai array
-        setAttendanceRecords(Array.isArray(processedData) ? processedData : []);
-      }
-    } catch (error: any) {
-      console.error("❌ [APPROVAL] Error refreshing attendance data:", error);
-      
-      // Set error message yang lebih informatif jika diperlukan
-      if (error.name === 'AbortError') {
-        console.warn('⚠️ [APPROVAL] Request timeout saat refresh data approval');
-      } else if (error.message.includes('fetch')) {
-        console.warn('⚠️ [APPROVAL] Network error saat refresh data approval');
-      }
-      
-      // Jika terjadi error, tetap pastikan attendanceRecords adalah array
-      setAttendanceRecords([]);
-    }
-  };
+  
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-gray-900">Attendance</h1>
+        <h1 className="text-2xl font-semibold text-gray-900">Kehadiran</h1>
         <p className="mt-1 text-sm text-gray-500">
-          {isAdmin ? "Manage employee attendance" : "View and manage your attendance"}
+          {isAdmin ? "Kelola kehadiran karyawan" : "Lihat dan kelola kehadiran Anda"}
         </p>
       </div>
 
@@ -1381,7 +1342,7 @@ export default function AttendanceManagement() {
                       </p>
                     )}
                     <p className="mt-1 text-sm text-gray-500">
-                      {new Date().toLocaleDateString(undefined, {
+                      {new Date().toLocaleDateString('id-ID', {
                         weekday: "long",
                         year: "numeric",
                         month: "long",
@@ -1389,6 +1350,36 @@ export default function AttendanceManagement() {
                       })}
                     </p>
                   </div>
+                </div>
+                <div className="mt-2">
+                  {(() => {
+                    const nowTime = new Date();
+                    const outsideWorkHours = getWorkdayType(nowTime) === WorkdayType.SUNDAY || isOvertimeCheckIn(nowTime, nowTime);
+                    const canStartOvertime = !!todayRecord?.checkOut && !todayRecord?.overtimeStart && outsideWorkHours;
+                    const canEndOvertime = !!todayRecord?.overtimeStart && !todayRecord?.overtimeEnd;
+                    return (
+                      <div className="space-x-2">
+                        {canStartOvertime && (
+                          <button
+                            onClick={handleOvertimeStart}
+                            disabled={actionLoading}
+                            className="inline-flex items-center rounded-md border border-transparent bg-orange-600 px-4 py-2 font-medium text-white shadow-sm hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 sm:text-sm disabled:opacity-50"
+                          >
+                            {actionLoading ? 'Memproses...' : 'Mulai Lembur'}
+                          </button>
+                        )}
+                        {canEndOvertime && (
+                          <button
+                            onClick={handleOvertimeEnd}
+                            disabled={actionLoading}
+                            className="inline-flex items-center rounded-md border border-transparent bg-green-600 px-4 py-2 font-medium text-white shadow-sm hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 sm:text-sm disabled:opacity-50"
+                          >
+                            {actionLoading ? 'Memproses...' : 'Selesai Lembur'}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
                 <div className="mt-4 sm:ml-6 sm:mt-0 sm:flex-shrink-0">
                   {(() => {
@@ -1399,11 +1390,11 @@ export default function AttendanceManagement() {
                     console.log("🔍 [BUTTON DEBUG] todayRecord?.checkIn instanceof Date:", todayRecord?.checkIn instanceof Date);
                     console.log("🔍 [BUTTON DEBUG] !todayRecord?.checkIn:", !todayRecord?.checkIn);
                     
-                    const hasCheckIn = todayRecord?.checkIn && todayRecord.checkIn instanceof Date;
-                    const isRejected = todayRecord?.notes && todayRecord.notes.includes("Di Tolak");
-                    const hasUnapprovedWork = todayRecord?.approvedAt && 
-                      ((todayRecord.overtime > 0 && !todayRecord.isOvertimeApproved) || 
-                       (todayRecord.isSundayWork && !todayRecord.isSundayWorkApproved));
+                    const hasCheckIn = !!todayRecord?.checkIn;
+                    const isRejected = !!(todayRecord?.notes && todayRecord.notes.includes("Di Tolak"));
+                    const hasUnapprovedWork = !!(todayRecord?.approvedAt && 
+                      (((todayRecord.overtime ?? 0) > 0 && !todayRecord.isOvertimeApproved) || 
+                       (todayRecord.isSundayWork && !todayRecord.isSundayWorkApproved)));
                     
                     const showCheckInButton = !hasCheckIn || isRejected || hasUnapprovedWork;
                     
@@ -1412,23 +1403,48 @@ export default function AttendanceManagement() {
                     console.log("🔍 [BUTTON DEBUG] hasUnapprovedWork:", hasUnapprovedWork);
                     console.log("🔍 [BUTTON DEBUG] showCheckInButton:", showCheckInButton);
                     
-                    return showCheckInButton;
+                  return showCheckInButton;
                   })() ? (
-                    <button
-                      onClick={handleCheckIn}
-                      disabled={isCheckingIn}
-                      className="inline-flex items-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 sm:text-sm disabled:opacity-75"
-                    >
-                      {isCheckingIn ? "Processing..." : "Absen Masuk"}
-                    </button>
-                  ) : todayRecord?.checkIn && !todayRecord?.checkOut ? (
+                    (() => {
+                      const now = new Date();
+                      const outsideWork = getWorkdayType(now) === WorkdayType.SUNDAY || isOvertimeCheckIn(now, now);
+                      if (outsideWork) {
+                        return (
+                          <button
+                            onClick={handleOvertimeStart}
+                            disabled={actionLoading}
+                            className="inline-flex items-center gap-2 rounded-md border border-transparent bg-orange-600 px-4 py-2 font-medium text-white shadow-sm hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 sm:text-sm disabled:opacity-50"
+                          >
+                            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m6-6H6" />
+                            </svg>
+                            {actionLoading ? "Memproses..." : "Mulai Lembur"}
+                          </button>
+                        );
+                      }
+                      return (
+                        <button
+                          onClick={handleCheckIn}
+                          disabled={actionLoading}
+                          className="inline-flex items-center gap-2 rounded-md border border-transparent bg-blue-600 px-4 py-2 font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 sm:text-sm disabled:opacity-50"
+                        >
+                          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                          </svg>
+                          {actionLoading ? "Memproses..." : "Absen"}
+                        </button>
+                      );
+                    })()
+                  ) : todayRecord?.checkIn && !todayRecord?.checkOut && !todayRecord?.overtimeStart ? (
                     <button
                       onClick={handleCheckOut}
-                      disabled={isCheckingOut}
-                      className="inline-flex items-center rounded-md border border-transparent bg-red-600 px-4 py-2 font-medium text-white shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 sm:text-sm disabled:opacity-75"
+                      disabled={actionLoading}
+                      className="inline-flex items-center rounded-md border border-transparent bg-red-600 px-4 py-2 font-medium text-white shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 sm:text-sm disabled:opacity-50"
                     >
-                      {isCheckingOut ? "Processing..." : "Absen Keluar"}
+                      {actionLoading ? "Memproses..." : "Absen Keluar"}
                     </button>
+                  ) : todayRecord?.overtimeStart && !todayRecord?.overtimeEnd ? (
+                    null // Tombol Selesai Lembur sudah dirender di atas
                   ) : (
                     <span className="inline-flex items-center rounded-md bg-green-50 px-4 py-2 text-sm font-medium text-green-700">
                       Kehadiran hari ini sudah lengkap
@@ -1469,6 +1485,90 @@ export default function AttendanceManagement() {
                     <div className="ml-3">
                       <p className={`text-sm ${error.includes("sudah melakukan") ? "text-blue-700" : "text-red-700"}`}>{error}</p>
                     </div>
+                  </div>
+                </div>
+              )}
+              {(() => {
+                const shouldShow = !!todayRecord && !isAdmin && ((todayRecord.status === "LATE" || todayRecord.status === "ABSENT") && !todayRecord.lateSubmittedAt);
+                return shouldShow;
+              })() && (
+                <div className="mt-4 rounded-md bg-yellow-50 p-4">
+                  <div className="text-sm font-medium text-yellow-800">Formulir Keterlambatan</div>
+                  <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div className="sm:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700">Alasan keterlambatan</label>
+                      <textarea
+                        value={lateReason}
+                        onChange={(e) => { setLateReason(e.target.value); if (lateError) setLateError(null); }}
+                        rows={3}
+                        className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500"
+                        placeholder="Tuliskan alasan keterlambatan minimal 20 karakter"
+                      />
+                      {lateReason.trim().length > 0 && lateReason.trim().length < 20 && (
+                        <div className="mt-1 text-xs text-red-600">Minimal 20 karakter</div>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Upload bukti foto (opsional)</label>
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0] || null;
+                          if (!f) { setLatePhotoFile(null); setLatePhotoPreview(null); return; }
+                          if (f.size > 2 * 1024 * 1024) { setLateError("Ukuran file maksimal 2MB"); return; }
+                          const typeOk = ["image/jpeg", "image/png"].includes(f.type);
+                          if (!typeOk) { setLateError("Format file harus JPG/PNG"); return; }
+                          setLatePhotoFile(f);
+                          const reader = new FileReader();
+                          reader.onload = () => setLatePhotoPreview(reader.result as string);
+                          reader.readAsDataURL(f);
+                        }}
+                        className="mt-1 block w-full text-sm"
+                      />
+                      {latePhotoPreview && (
+                        <div className="mt-2">
+                          <Image src={latePhotoPreview} alt="Preview" width={96} height={96} className="h-24 w-24 rounded object-cover" />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  {lateError && (
+                    <div className="mt-2 rounded-md bg-red-50 p-2 text-sm text-red-700">{lateError}</div>
+                  )}
+                  <div className="mt-3 flex items-center justify-end gap-2">
+                    <button
+                      disabled={lateSubmitting || lateReason.trim().length < 20}
+                      onClick={async () => {
+                        setLateError(null);
+                        setLateSubmitting(true);
+                        try {
+                          let uploadedUrl: string | undefined;
+                          if (latePhotoFile) {
+                            const formData = new FormData();
+                            formData.append("file", latePhotoFile);
+                            const up = await fetch("/api/upload", { method: "POST", body: formData });
+                            const upData = await up.json();
+                            if (!up.ok) throw new Error(upData.error || "Gagal upload foto");
+                            uploadedUrl = upData.url;
+                          }
+                          const res = await fetch("/api/attendance/late", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: lateReason.trim(), photoUrl: uploadedUrl }) });
+                          const data = await res.json();
+                          if (!res.ok) throw new Error(data.error || "Gagal submit keterlambatan");
+                          setLateReason("");
+                          setLatePhotoFile(null);
+                          setLatePhotoPreview(null);
+                          setTodayRecord((prev) => prev ? { ...prev, lateSubmittedAt: new Date(data.lateSubmittedAt || Date.now()), lateApprovalStatus: data.lateApprovalStatus, lateReason: data.lateReason, latePhotoUrl: data.latePhotoUrl } : prev);
+                        } catch (e: any) {
+                          setLateError(e.message || "Terjadi kesalahan");
+                        } finally {
+                          setLateSubmitting(false);
+                        }
+                      }}
+                      className="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+                    >
+                      {lateSubmitting ? "Mengirim..." : "Kirim Pengajuan"}
+                    </button>
                   </div>
                 </div>
               )}
@@ -1535,20 +1635,18 @@ export default function AttendanceManagement() {
           </div>
         </div>
         <div className="mt-4 flex flex-col">
-          <div className="-my-2 -mx-4 overflow-x-auto sm:-mx-6 lg:-mx-8">
-            <div className="inline-block min-w-full py-2 align-middle md:px-6 lg:px-8">
-              <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
+          <div className="-my-2 overflow-x-auto">
+            <div className="inline-block min-w-full py-2 align-middle">
+              <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 rounded-lg">
                 <table className="min-w-full divide-y divide-gray-300">
                   <thead className="bg-gray-50">
                     <tr>
-                      {isAdmin && (
-                        <th
-                          scope="col"
-                          className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6"
-                        >
-                          Karyawan
-                        </th>
-                      )}
+                      <th
+                        scope="col"
+                        className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6"
+                      >
+                        Nama Karyawan
+                      </th>
                       <th
                         scope="col"
                         className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
@@ -1557,19 +1655,19 @@ export default function AttendanceManagement() {
                       </th>
                       <th
                         scope="col"
-                        className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
+                        className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 hidden md:table-cell"
                       >
                         Tipe Hari
                       </th>
                       <th
                         scope="col"
-                        className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
+                        className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 hidden md:table-cell"
                       >
                         Absen Masuk
                       </th>
                       <th
                         scope="col"
-                        className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
+                        className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 hidden md:table-cell"
                       >
                         Absen Keluar
                       </th>
@@ -1581,54 +1679,22 @@ export default function AttendanceManagement() {
                       </th>
                       <th
                         scope="col"
-                        className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
+                        className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 hidden md:table-cell"
                       >
                         Lembur
                       </th>
-                      {isAdmin && (
-                        <th
-                          scope="col"
-                          className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
-                        >
-                          Persetujuan
-                        </th>
-                      )}
                       <th
                         scope="col"
-                        className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
+                        className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 hidden md:table-cell"
                       >
-                        Foto Masuk
-                      </th>
-                      <th
-                        scope="col"
-                        className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
-                      >
-                        Foto Keluar
-                      </th>
-                      <th
-                        scope="col"
-                        className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
-                      >
-                        Lokasi Masuk
-                      </th>
-                      <th
-                        scope="col"
-                        className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
-                      >
-                        Lokasi Keluar
-                      </th>
-                      <th
-                        scope="col"
-                        className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
-                      >
-                        Catatan
+                        Keterangan
                       </th>
                       {isAdmin && (
                         <th
                           scope="col"
-                          className="relative py-3.5 pl-3 pr-4 sm:pr-6"
+                          className="relative py-3.5 pl-3 pr-4 sm:pr-6 text-left text-sm font-semibold text-gray-900 hidden md:table-cell"
                         >
-                          <span className="sr-only">Aksi</span>
+                          Aksi
                         </th>
                       )}
                     </tr>
@@ -1637,7 +1703,7 @@ export default function AttendanceManagement() {
                     {isLoading ? (
                       <tr>
                         <td
-                          colSpan={isAdmin ? 11 : 9}
+                          colSpan={8}
                           className="whitespace-nowrap py-4 px-3 text-sm text-gray-500 text-center"
                         >
                           Memuat data...
@@ -1646,7 +1712,7 @@ export default function AttendanceManagement() {
                     ) : !Array.isArray(attendanceRecords) || attendanceRecords.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={isAdmin ? 11 : 9}
+                          colSpan={8}
                           className="whitespace-nowrap py-4 px-3 text-sm text-gray-500 text-center"
                         >
                           Tidak ditemukan catatan kehadiran
@@ -1654,16 +1720,48 @@ export default function AttendanceManagement() {
                       </tr>
                     ) : (
                       attendanceRecords.map((record, index) => (
-                        <tr key={record.id || `attendance-${index}`}>
-                          {isAdmin && (
-                            <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6">
-                              {record.employee?.user?.name || record.employee?.name || "Unknown"}
-                            </td>
-                          )}
-                          <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                            {formatDate(record.date)}
+                        <tr
+                          id={`attendance-row-${record.id}`}
+                          key={`${record.id}-${index}`}
+                          className={`cursor-pointer hover:bg-gray-50 ${highlightAttendanceId === record.id ? 'bg-indigo-50' : ''}`}
+                          onClick={async () => {
+                            setDetailRecord(record);
+                            setDetailOpen(true);
+                            try {
+                              setDetailLoading(true);
+                              // Fetch logs specifically for this attendance record (works for both admin and employee)
+                              const res = await fetch(`/api/attendance/${record.id}/logs`);
+                              const data = res.ok ? await res.json() : {};
+                              const logs = Array.isArray(data.logs) ? data.logs : [];
+                              
+                              const allowed = [
+                                "REQUEST_SUBMITTED",
+                                "APPROVE",
+                                "REJECT",
+                                "OVERTIME_REQUESTED",
+                                "OVERTIME_APPROVED",
+                                "OVERTIME_REJECTED",
+                                "OVERTIME_START",
+                                "OVERTIME_ENDED",
+                                "LATE_REQUEST_SUBMITTED", // Include late request actions too if they exist in logs
+                              ];
+                              const uniqueLogs = Array.from(new Map(logs.map((item: any) => [item.id, item])).values()).filter((x: any) => allowed.includes(x.action));
+                              setDetailLogs(uniqueLogs);
+                            } catch (e) {
+                              console.error("Error fetching logs:", e);
+                              setDetailLogs([]);
+                            } finally {
+                              setDetailLoading(false);
+                            }
+                          }}
+                        >
+                          <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6">
+                            {record.employee?.user?.name || record.employee?.name || "Unknown"}
                           </td>
                           <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                            {formatDateDMY(record.date)}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500 hidden md:table-cell">
                             {getDayTypeLabel(new Date(record.date))}
                             {record.isSundayWork && (
                               <div className={`text-xs mt-1 ${
@@ -1681,7 +1779,7 @@ export default function AttendanceManagement() {
                               </div>
                             )}
                           </td>
-                          <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                          <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500 hidden md:table-cell">
                             {formatTime(record.checkIn)}
                             {record.isLate && (
                               <div className="text-red-500 text-xs mt-1">
@@ -1689,25 +1787,20 @@ export default function AttendanceManagement() {
                               </div>
                             )}
                           </td>
-                          <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                          <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500 hidden md:table-cell">
                             {formatTime(record.checkOut)}
                           </td>
                           <td className="whitespace-nowrap px-3 py-4 text-sm">
-                            <span
-                              className={`inline-flex rounded-full px-2 text-xs font-semibold leading-5 ${
-                                record.status === "PRESENT"
-                                  ? "bg-green-100 text-green-800"
-                                  : record.status === "ABSENT"
-                                  ? "bg-red-100 text-red-800"
-                                  : record.status === "LATE"
-                                  ? "bg-yellow-100 text-yellow-800"
-                                  : "bg-gray-100 text-gray-800"
-                              }`}
-                            >
-                              {record.status}
-                            </span>
+                            {(() => {
+                              const s = getStatusProps(record.status);
+                              return (
+                                <span className={`inline-flex rounded-full px-2 text-xs font-semibold leading-5 ${s.cls}`}>
+                                  {s.label}
+                                </span>
+                              );
+                            })()}
                           </td>
-                          <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                          <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500 hidden md:table-cell">
                             {record.overtime > 0 ? formatMinutesToHours(record.overtime) : "-"}
                             {record.overtime > 0 && (
                               <div className={`text-xs mt-1 ${
@@ -1725,124 +1818,62 @@ export default function AttendanceManagement() {
                               </div>
                             )}
                           </td>
-                          {isAdmin && (
-                            <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                              {(record.overtime > 0 || record.isSundayWork) && (
-                                <OvertimeApprovalButton
-                                  attendanceId={record.id}
-                                  isSundayWork={record.isSundayWork}
-                                  isApproved={record.isSundayWork ? record.isSundayWorkApproved : record.isOvertimeApproved}
-                                  onApprovalChange={handleApprovalChange}
-                                  isRejected={!!record.approvedAt && ((record.overtime > 0 && !record.isOvertimeApproved) || (record.isSundayWork && !record.isSundayWorkApproved))}
-                                />
-                              )}
-                            </td>
-                          )}
-                          <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                            {record.checkInPhotoUrl ? (
-                              <div className="flex flex-col items-center">
-                                <img
-                                  src={record.checkInPhotoUrl}
-                                  alt="Foto Check-in"
-                                  className="h-16 w-16 rounded-md object-cover cursor-pointer hover:opacity-80"
-                                  onClick={() => {
-                                    setSelectedPhotoUrl(record.checkInPhotoUrl!);
-                                    setPhotoModalTitle('Foto Masuk');
-                                    setPhotoModalOpen(true);
-                                  }}
-                                />
-                                <button
-                                  onClick={() => {
-                                    setSelectedPhotoUrl(record.checkInPhotoUrl!);
-                                    setPhotoModalTitle('Foto Masuk');
-                                    setPhotoModalOpen(true);
-                                  }}
-                                  className="text-blue-600 hover:text-blue-800 text-xs mt-1"
-                                >
-                                  Lihat
-                                </button>
-                              </div>
-                            ) : (
-                              <span className="text-gray-400">-</span>
-                            )}
-                          </td>
-                          <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                            {record.checkOutPhotoUrl ? (
-                              <div className="flex flex-col items-center">
-                                <img
-                                  src={record.checkOutPhotoUrl}
-                                  alt="Foto Check-out"
-                                  className="h-16 w-16 rounded-md object-cover cursor-pointer hover:opacity-80"
-                                  onClick={() => {
-                                    setSelectedPhotoUrl(record.checkOutPhotoUrl!);
-                                    setPhotoModalTitle('Foto Keluar');
-                                    setPhotoModalOpen(true);
-                                  }}
-                                />
-                                <button
-                                  onClick={() => {
-                                    setSelectedPhotoUrl(record.checkOutPhotoUrl!);
-                                    setPhotoModalTitle('Foto Keluar');
-                                    setPhotoModalOpen(true);
-                                  }}
-                                  className="text-blue-600 hover:text-blue-800 text-xs mt-1"
-                                >
-                                  Lihat
-                                </button>
-                              </div>
-                            ) : (
-                              <span className="text-gray-400">-</span>
-                            )}
-                          </td>
-                          <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                            {record.checkInLatitude && record.checkInLongitude ? (
-                              <div className="flex flex-col items-center text-center">
-                                <div className="text-xs text-gray-600">
-                                  {record.checkInLatitude.toFixed(6)},
-                                  <br />
-                                  {record.checkInLongitude.toFixed(6)}
-                                </div>
-                                <button
-                                  onClick={() => window.open(`https://maps.google.com/?q=${record.checkInLatitude},${record.checkInLongitude}`, '_blank')}
-                                  className="text-blue-600 hover:text-blue-800 text-xs mt-1"
-                                >
-                                  Lihat Peta
-                                </button>
-                              </div>
-                            ) : (
-                              <span className="text-gray-400">-</span>
-                            )}
-                          </td>
-                          <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                            {record.checkOutLatitude && record.checkOutLongitude ? (
-                              <div className="flex flex-col items-center text-center">
-                                <div className="text-xs text-gray-600">
-                                  {record.checkOutLatitude.toFixed(6)},
-                                  <br />
-                                  {record.checkOutLongitude.toFixed(6)}
-                                </div>
-                                <button
-                                  onClick={() => window.open(`https://maps.google.com/?q=${record.checkOutLatitude},${record.checkOutLongitude}`, '_blank')}
-                                  className="text-blue-600 hover:text-blue-800 text-xs mt-1"
-                                >
-                                  Lihat Peta
-                                </button>
-                              </div>
-                            ) : (
-                              <span className="text-gray-400">-</span>
-                            )}
-                          </td>
-                          <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                            {record.notes || "-"}
+                          <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500 hidden md:table-cell">
+                            {(() => {
+                                const dayType = getWorkdayType(new Date(record.date));
+                                const isWeekend = dayType === WorkdayType.SATURDAY || dayType === WorkdayType.SUNDAY;
+                                const remarks: string[] = [];
+
+                                // Only apply rules for NON_SHIFT employees
+                                if (record.employee?.workScheduleType === 'NON_SHIFT') {
+                                    // Check No Checkout
+                                    const recordDate = new Date(record.date);
+                                    const today = new Date();
+                                    today.setHours(0, 0, 0, 0);
+                                    recordDate.setHours(0, 0, 0, 0);
+                                    const isPastDate = recordDate.getTime() < today.getTime();
+
+                                    if ((record.status === 'PRESENT' || record.status === 'LATE') && !record.checkOut && isPastDate) {
+                                        remarks.push("Tidak Absen Pulang (0.5 Hari)");
+                                    }
+
+                                    // Check Weekend Rule
+                                    if (isWeekend && record.checkIn && record.checkOut) {
+                                        const start = new Date(record.checkIn);
+                                        const end = new Date(record.checkOut);
+                                        const durationMs = end.getTime() - start.getTime();
+                                        const durationHours = durationMs / (1000 * 60 * 60);
+                                        
+                                        if (durationHours <= 4) {
+                                            remarks.push("Weekend ≤4h (Rate x2)");
+                                        }
+                                    }
+                                }
+
+                                if (remarks.length === 0) return "-";
+                                return (
+                                    <div className="flex flex-col gap-1">
+                                        {remarks.map((r, i) => (
+                                            <span key={i} className="text-xs font-medium text-orange-600 bg-orange-50 px-2 py-0.5 rounded-full w-fit">
+                                                {r}
+                                            </span>
+                                        ))}
+                                    </div>
+                                );
+                            })()}
                           </td>
                           {isAdmin && (
-                            <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
-                              <button
-                                onClick={() => handleEditClick(record)}
-                                className="text-indigo-600 hover:text-indigo-900"
-                              >
-                                Edit
-                              </button>
+                            <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-sm font-medium sm:pr-6 hidden md:table-cell" onClick={() => { setDetailRecord(record); setDetailOpen(true); }}>
+                              <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleEditClick(record)}
+                                  className="text-indigo-600 hover:text-indigo-900 font-medium"
+                                >
+                                  Edit
+                                </button>
+                                {/* Row click opens modal; action cell stops propagation */}
+                              </div>
                             </td>
                           )}
                         </tr>
@@ -1862,7 +1893,7 @@ export default function AttendanceManagement() {
           <div className="flex min-h-screen items-center justify-center px-4 pt-4 pb-20 text-center sm:block sm:p-0">
             {/* Background overlay */}
             <div
-              className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
+              className="fixed inset-0 bg-black/50 backdrop-blur-md transition-opacity"
               aria-hidden="true"
               onClick={() => setIsEditModalOpen(false)}
             ></div>
@@ -2030,13 +2061,124 @@ export default function AttendanceManagement() {
         </div>
       )}
 
+      {isLateModalOpen && (
+        <div className="fixed inset-0 z-[100] overflow-y-auto">
+          <div className="flex min-h-screen items-center justify-center px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+            <div
+              className="fixed inset-0 bg-black/50 backdrop-blur-md transition-opacity"
+              aria-hidden="true"
+              onClick={() => setIsLateModalOpen(false)}
+            ></div>
+            <span className="hidden sm:inline-block sm:h-screen sm:align-middle" aria-hidden="true">&#8203;</span>
+            <div className="relative inline-block transform overflow-hidden rounded-lg bg-white text-left align-bottom shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:align-middle">
+              <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                <div className="sm:flex sm:items-start">
+                  <div className="mt-3 w-full text-center sm:mt-0 sm:text-left">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-medium leading-6 text-gray-900">Formulir Keterlambatan</h3>
+                      <button
+                        type="button"
+                        className="rounded-md bg-white text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                        onClick={() => setIsLateModalOpen(false)}
+                      >
+                        <span className="sr-only">Close</span>
+                        <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" aria-hidden="true">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                    <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div className="sm:col-span-2">
+                        <label className="block text-sm font-medium text-gray-700">Alasan keterlambatan</label>
+                        <textarea
+                          value={lateReason}
+                          onChange={(e) => { setLateReason(e.target.value); if (lateError) setLateError(null); }}
+                          rows={3}
+                          className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500"
+                          placeholder="Tuliskan alasan keterlambatan minimal 20 karakter"
+                        />
+                        {lateReason.trim().length > 0 && lateReason.trim().length < 20 && (
+                          <div className="mt-1 text-xs text-red-600">Minimal 20 karakter</div>
+                        )}
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">Upload bukti foto (opsional)</label>
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0] || null;
+                            if (!f) { setLatePhotoFile(null); setLatePhotoPreview(null); return; }
+                            if (f.size > 2 * 1024 * 1024) { setLateError("Ukuran file maksimal 2MB"); return; }
+                            const typeOk = ["image/jpeg", "image/png"].includes(f.type);
+                            if (!typeOk) { setLateError("Format file harus JPG/PNG"); return; }
+                            setLatePhotoFile(f);
+                            const reader = new FileReader();
+                            reader.onload = () => setLatePhotoPreview(reader.result as string);
+                            reader.readAsDataURL(f);
+                          }}
+                          className="mt-1 block w-full text-sm"
+                        />
+                        {latePhotoPreview && (
+                          <div className="mt-2">
+                            <Image src={latePhotoPreview} alt="Preview" width={96} height={96} className="h-24 w-24 rounded object-cover" />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    {lateError && (
+                      <div className="mt-2 rounded-md bg-red-50 p-2 text-sm text-red-700">{lateError}</div>
+                    )}
+                    <div className="mt-3 flex items-center justify-end gap-2">
+                      <button
+                        disabled={lateSubmitting || lateReason.trim().length < 20}
+                        onClick={async () => {
+                          setLateError(null);
+                          setLateSubmitting(true);
+                          try {
+                            let uploadedUrl: string | undefined;
+                            if (latePhotoFile) {
+                              const formData = new FormData();
+                              formData.append("file", latePhotoFile);
+                              const up = await fetch("/api/upload", { method: "POST", body: formData });
+                              const upData = await up.json();
+                              if (!up.ok) throw new Error(upData.error || "Gagal upload foto");
+                              uploadedUrl = upData.url;
+                            }
+                            const res = await fetch("/api/attendance/late", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: lateReason.trim(), photoUrl: uploadedUrl }) });
+                            const data = await res.json();
+                            if (!res.ok) throw new Error(data.error || "Gagal submit keterlambatan");
+                            setLateReason("");
+                            setLatePhotoFile(null);
+                            setLatePhotoPreview(null);
+                            setTodayRecord((prev) => prev ? { ...prev, lateSubmittedAt: new Date(data.lateSubmittedAt || Date.now()), lateApprovalStatus: data.lateApprovalStatus, lateReason: data.lateReason, latePhotoUrl: data.latePhotoUrl } : prev);
+                            setIsLateModalOpen(false);
+                          } catch (e: any) {
+                            setLateError(e.message || "Terjadi kesalahan");
+                          } finally {
+                            setLateSubmitting(false);
+                          }
+                        }}
+                        className="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+                      >
+                        {lateSubmitting ? "Mengirim..." : "Kirim Pengajuan"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Photo Modal */}
       {photoModalOpen && (
         <div className="fixed inset-0 z-[200] overflow-y-auto">
           <div className="flex min-h-screen items-center justify-center px-4 pt-4 pb-20 text-center sm:block sm:p-0">
             {/* Background overlay */}
             <div
-              className="fixed inset-0 bg-gray-900 bg-opacity-75 transition-opacity"
+              className="fixed inset-0 bg-black/50 backdrop-blur-md transition-opacity"
               aria-hidden="true"
               onClick={() => setPhotoModalOpen(false)}
             ></div>
@@ -2070,9 +2212,12 @@ export default function AttendanceManagement() {
                     {photoModalTitle}
                   </h3>
                   <div className="mt-2 flex justify-center">
-                    <img
-                      src={selectedPhotoUrl}
+                    <Image
+                      src={selectedPhotoUrl || ""}
                       alt={photoModalTitle}
+                      width={1024}
+                      height={768}
+                      unoptimized
                       className="max-w-full max-h-[70vh] object-contain rounded-lg shadow-lg"
                     />
                   </div>
@@ -2099,16 +2244,249 @@ export default function AttendanceManagement() {
           actionType={captureAction}
           onComplete={handleCaptureComplete}
           onCancel={handleCaptureCancel}
+          requireOvertimeConfirmation={(() => {
+            if (captureAction !== 'check-out') return false;
+            const now = new Date();
+            const outside = getWorkdayType(now) === WorkdayType.SUNDAY || isOvertimeCheckOut(now, now);
+            return outside && !todayRecord?.overtimeStart;
+          })()}
           onSuccess={(message) => {
-            // Callback untuk menampilkan pesan sukses di modal
             console.log('Success message:', message);
           }}
           onError={(errorMessage) => {
-            // Tampilkan error GPS di UI utama
             setError(errorMessage);
             console.error('GPS Error:', errorMessage);
           }}
         />
+      )}
+      {detailOpen && detailRecord && (
+        <div className="fixed inset-0 z-[190] flex items-center justify-center bg-black/50 backdrop-blur-md transition-opacity duration-200 ease-out p-4 sm:p-0" role="dialog" aria-modal="true">
+          <div className="w-full max-w-3xl rounded-xl bg-white shadow-2xl transition-all duration-200 ease-out scale-100 opacity-100 max-h-[90vh] overflow-y-auto flex flex-col">
+            
+            {/* Sticky Header */}
+            <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 sm:px-6 sm:py-4 sticky top-0 bg-white z-10">
+              <h3 className="text-lg font-semibold text-gray-900">Detail Kehadiran</h3>
+              <button 
+                onClick={() => setDetailOpen(false)} 
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500" 
+                aria-label="Tutup"
+              >
+                <span className="text-xl leading-none">&times;</span>
+              </button>
+            </div>
+
+            {/* Scrollable Content */}
+            <div className="p-4 sm:p-6 space-y-6">
+              
+              {/* Employee Info */}
+              <div className="flex items-center gap-3">
+                {detailRecord.employee?.user?.profileImageUrl ? (
+                  <Image src={detailRecord.employee.user.profileImageUrl} alt="Foto profil" width={60} height={60} sizes="60px" className="h-[60px] w-[60px] rounded-full object-cover ring-2 ring-gray-100" />
+                ) : (
+                  <div className="flex h-[60px] w-[60px] items-center justify-center rounded-full bg-indigo-100 text-sm font-bold text-indigo-600 ring-2 ring-indigo-50">
+                    {(detailRecord.employee?.user?.name || detailRecord.employee?.name || '-').split(' ').map(s => s[0]).slice(0,2).join('')}
+                  </div>
+                )}
+                <div>
+                  <div className="text-[16px] font-semibold text-gray-900">{detailRecord.employee?.user?.name || detailRecord.employee?.name || 'Unknown'}</div>
+                  <div className="text-xs text-gray-500 mt-0.5">
+                    {([
+                      detailRecord.employee?.organization && (organizations as readonly string[]).includes(detailRecord.employee.organization) 
+                        ? organizationNames[detailRecord.employee.organization as keyof typeof organizationNames] 
+                        : detailRecord.employee?.organization,
+                      detailRecord.employee?.division, 
+                      detailRecord.employee?.position
+                    ].filter(Boolean).join(" • ")) || "-"}
+                  </div>
+                </div>
+              </div>
+
+              {/* Status Badge */}
+              <div>
+                 <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium ${
+                    detailRecord.status === 'PRESENT' ? 'bg-green-100 text-green-800' : 
+                    detailRecord.status === 'ABSENT' ? 'bg-red-100 text-red-800' : 
+                    detailRecord.status === 'LATE' ? 'bg-yellow-100 text-yellow-800' : 
+                    'bg-gray-100 text-gray-800'
+                  }`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${
+                      detailRecord.status === 'PRESENT' ? 'bg-green-500' : 
+                      detailRecord.status === 'ABSENT' ? 'bg-red-500' : 
+                      detailRecord.status === 'LATE' ? 'bg-yellow-500' : 
+                      'bg-gray-500'
+                    }`}></span>
+                    {detailRecord.status}
+                 </span>
+              </div>
+
+              {/* Grid Info */}
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 bg-gray-50 p-4 rounded-xl border border-gray-100">
+                <div>
+                  <div className="text-xs font-medium text-gray-500 uppercase tracking-wider">Tanggal</div>
+                  <div className="mt-1 text-sm font-semibold text-gray-900">{formatDate(detailRecord.date)}</div>
+                </div>
+                <div>
+                  <div className="text-xs font-medium text-gray-500 uppercase tracking-wider">Tipe Hari</div>
+                  <div className="mt-1 text-sm font-semibold text-gray-900">{getDayTypeLabel(new Date(detailRecord.date))}</div>
+                </div>
+                <div>
+                  <div className="text-xs font-medium text-gray-500 uppercase tracking-wider">Total Shift</div>
+                  <div className="mt-1 text-sm font-semibold text-gray-900">{formatTime(detailRecord.checkIn)} — {formatTime(detailRecord.checkOut)}</div>
+                </div>
+                <div>
+                  <div className="text-xs font-medium text-gray-500 uppercase tracking-wider">Durasi</div>
+                  <div className="mt-1 text-sm font-semibold text-gray-900">{(() => {
+                    const ci = detailRecord.checkIn ? new Date(detailRecord.checkIn).getTime() : null;
+                    const co = detailRecord.checkOut ? new Date(detailRecord.checkOut).getTime() : null;
+                    if (!ci || !co || co < ci) return '-';
+                    const mins = Math.round((co - ci) / 60000);
+                    return `${Math.floor(mins/60)}h ${mins%60}m`;
+                  })()}</div>
+                </div>
+                <div>
+                   <div className="text-xs font-medium text-gray-500 uppercase tracking-wider">Lembur</div>
+                   <div className="mt-1 text-sm font-semibold text-gray-900">{detailRecord.overtime > 0 ? formatMinutesToHours(detailRecord.overtime) : '-'}</div>
+                </div>
+              </div>
+
+              {/* Photos & Location Grid */}
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                {/* Masuk */}
+                <div className="space-y-3">
+                  <h4 className="text-sm font-medium text-gray-900 border-b pb-2">Info Masuk {(!detailRecord.checkIn && detailRecord.overtimeStart) ? '(Lembur)' : ''}</h4>
+                  <div className="flex gap-4">
+                     <div className="flex-1">
+                        <div className="text-xs text-gray-500 mb-1">Foto</div>
+                        {detailRecord.checkInPhotoUrl || detailRecord.overtimeStartPhotoUrl ? (
+                          <div className="relative group overflow-hidden rounded-lg border border-gray-200 aspect-square w-24">
+                            <Image 
+                              src={detailRecord.checkInPhotoUrl || detailRecord.overtimeStartPhotoUrl || ''} 
+                              alt="Foto Masuk" 
+                              width={96} height={96} 
+                              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-110" 
+                            />
+                          </div>
+                        ) : <div className="text-sm text-gray-400 italic">Tidak ada foto</div>}
+                     </div>
+                     <div className="flex-1">
+                        <div className="text-xs text-gray-500 mb-1">Lokasi</div>
+                        {(detailRecord.checkInLatitude && detailRecord.checkInLongitude) || (detailRecord.overtimeStartLatitude && detailRecord.overtimeStartLongitude) ? (
+                          <div 
+                            className="flex flex-col items-center justify-center rounded-lg border border-gray-200 bg-blue-50 p-2 cursor-pointer hover:bg-blue-100 transition-colors h-24 w-24"
+                            onClick={() => window.open(`https://maps.google.com/?q=${detailRecord.checkInLatitude ?? detailRecord.overtimeStartLatitude},${detailRecord.checkInLongitude ?? detailRecord.overtimeStartLongitude}`, '_blank')}
+                          >
+                            <Image src="/map.svg" alt="Map" width={32} height={32} className="h-8 w-8 mb-1" />
+                            <span className="text-[10px] font-medium text-blue-700">Lihat Peta</span>
+                          </div>
+                        ) : <div className="text-sm text-gray-400 italic">Tidak ada lokasi</div>}
+                     </div>
+                  </div>
+                </div>
+
+                {/* Keluar */}
+                <div className="space-y-3">
+                  <h4 className="text-sm font-medium text-gray-900 border-b pb-2">Info Keluar {(!detailRecord.checkOut && detailRecord.overtimeEnd) ? '(Lembur)' : ''}</h4>
+                  <div className="flex gap-4">
+                     <div className="flex-1">
+                        <div className="text-xs text-gray-500 mb-1">Foto</div>
+                        {detailRecord.checkOutPhotoUrl || detailRecord.overtimeEndPhotoUrl ? (
+                          <div className="relative group overflow-hidden rounded-lg border border-gray-200 aspect-square w-24">
+                            <Image 
+                              src={detailRecord.checkOutPhotoUrl || detailRecord.overtimeEndPhotoUrl || ''} 
+                              alt="Foto Keluar" 
+                              width={96} height={96} 
+                              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-110" 
+                            />
+                          </div>
+                        ) : <div className="text-sm text-gray-400 italic">Tidak ada foto</div>}
+                     </div>
+                     <div className="flex-1">
+                        <div className="text-xs text-gray-500 mb-1">Lokasi</div>
+                        {(detailRecord.checkOutLatitude && detailRecord.checkOutLongitude) || (detailRecord.overtimeEndLatitude && detailRecord.overtimeEndLongitude) ? (
+                          <div 
+                            className="flex flex-col items-center justify-center rounded-lg border border-gray-200 bg-blue-50 p-2 cursor-pointer hover:bg-blue-100 transition-colors h-24 w-24"
+                            onClick={() => window.open(`https://maps.google.com/?q=${detailRecord.checkOutLatitude ?? detailRecord.overtimeEndLatitude},${detailRecord.checkOutLongitude ?? detailRecord.overtimeEndLongitude}`, '_blank')}
+                          >
+                            <Image src="/map.svg" alt="Map" width={32} height={32} className="h-8 w-8 mb-1" />
+                            <span className="text-[10px] font-medium text-blue-700">Lihat Peta</span>
+                          </div>
+                        ) : <div className="text-sm text-gray-400 italic">Tidak ada lokasi</div>}
+                     </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Late Info */}
+              {(detailRecord.lateReason || detailRecord.latePhotoUrl) && (
+                 <div className="bg-yellow-50 rounded-xl p-4 border border-yellow-100">
+                    <h4 className="text-sm font-medium text-yellow-900 mb-3 flex items-center gap-2">
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                      Info Keterlambatan
+                    </h4>
+                    <div className="flex gap-4">
+                       <div className="flex-1">
+                          <div className="text-xs text-yellow-700 mb-1">Alasan</div>
+                          <p className="text-sm text-gray-900 italic">"{detailRecord.lateReason || '-'}"</p>
+                       </div>
+                       {detailRecord.latePhotoUrl && (
+                         <div>
+                            <div className="text-xs text-yellow-700 mb-1">Bukti</div>
+                            <Image src={detailRecord.latePhotoUrl} alt="Foto keterlambatan" width={64} height={64} className="h-16 w-16 rounded object-cover border border-yellow-200" />
+                         </div>
+                       )}
+                    </div>
+                 </div>
+              )}
+
+              {/* Approval History */}
+              {(detailRecord.overtime > 0 || detailRecord.overtimeStart) && (
+                <div className="pt-2">
+                  <h4 className="text-sm font-medium text-gray-900 mb-3">Riwayat Persetujuan Lembur</h4>
+                  <div className="bg-gray-50 rounded-xl overflow-hidden border border-gray-100">
+                    {detailLoading ? (
+                      <div className="p-4 text-center text-sm text-gray-500">Memuat riwayat...</div>
+                    ) : detailLogs.filter((l) => l.attendanceId === detailRecord.id).length === 0 ? (
+                      <div className="p-4 text-center text-sm text-gray-500">Belum ada riwayat</div>
+                    ) : (
+                      <div className="divide-y divide-gray-100">
+                        {detailLogs.filter((l) => l.attendanceId === detailRecord.id && l.action !== "REQUEST_SUBMITTED").map((l, idx) => (
+                          <div key={`${l.id}-${idx}`} className="p-3 sm:px-4 hover:bg-gray-100 transition-colors">
+                             <div className="flex justify-between items-start">
+                                <div>
+                                   <div className="text-sm font-medium text-gray-900">
+                                      {l.action === "APPROVE" ? "Disetujui" : 
+                                       l.action === "REJECT" ? "Ditolak" : 
+                                       l.action === "REQUEST_SUBMITTED" ? "Permintaan Diajukan" :
+                                       l.action === "LATE_REQUEST_SUBMITTED" ? "Alasan Terlambat Diajukan" :
+                                       l.action}
+                                   </div>
+                                   <div className="text-xs text-gray-500 mt-0.5">Oleh: {l.actorName || '-'}</div>
+                                </div>
+                                <div className="text-xs text-gray-400">
+                                  {new Date(l.createdAt).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                                </div>
+                             </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Sticky Footer */}
+            <div className="flex items-center justify-end gap-3 border-t border-gray-100 px-4 py-3 sm:px-6 bg-gray-50 sticky bottom-0 z-10 rounded-b-xl">
+              <button 
+                onClick={() => setDetailOpen(false)} 
+                className="w-full sm:w-auto inline-flex justify-center items-center rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-colors min-h-[44px]"
+              >
+                Tutup
+              </button>
+            </div>
+
+          </div>
+        </div>
       )}
     </div>
   );

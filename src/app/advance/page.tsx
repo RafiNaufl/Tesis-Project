@@ -11,12 +11,11 @@ export default async function AdvancePage() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <h1 className="text-2xl font-semibold text-gray-900">Manajemen Kasbon</h1>
         
         {isAdmin ? (
           <div className="space-y-6">
             <div className="bg-white shadow rounded-lg p-6">
-              <h2 className="text-lg font-medium mb-4">Approval Kasbon</h2>
+              <h2 className="text-lg font-medium mb-4">Persetujuan Kasbon</h2>
               <AdvanceApproval />
             </div>
             

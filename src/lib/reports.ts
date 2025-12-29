@@ -54,7 +54,7 @@ export const generateDailyAttendanceReport = async (date?: Date) => {
         name: employee.user.name,
         email: employee.user.email,
         position: employee.position,
-        department: employee.department,
+        division: employee.division,
       },
       attendance: attendance
         ? {
@@ -172,7 +172,7 @@ export const generateMonthlyAttendanceReport = async (year: number, month: numbe
           name: employee.user.name,
           email: employee.user.email,
           position: employee.position,
-          department: employee.department,
+          division: employee.division,
         },
         attendance: {
           daysPresent,
@@ -277,7 +277,7 @@ export const generateMonthlyPayrollReport = async (year: number, month: number) 
       name: payroll.employee.user.name,
       email: payroll.employee.user.email,
       position: payroll.employee.position,
-      department: payroll.employee.department,
+      division: payroll.employee.division,
     },
     payroll: {
       id: payroll.id,

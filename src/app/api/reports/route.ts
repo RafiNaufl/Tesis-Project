@@ -262,24 +262,24 @@ async function generateFinancialReport(month: number, year: number) {
     .filter(record => record.status === "PENDING")
     .reduce((sum, record) => sum + record.netSalary, 0);
 
-  // Get department-wise expense
+  // Get division-wise expense
   const employees = await db.employee.findMany({
     select: {
       id: true,
-      department: true,
+      division: true,
     },
   });
 
-  const departmentMap = employees.reduce((map, emp) => {
-    map[emp.id] = emp.department;
+  const divisionMap = employees.reduce((map, emp) => {
+    map[emp.id] = emp.division;
     return map;
   }, {} as Record<string, string>);
 
-  const departmentExpenses: Record<string, number> = {};
+  const divisionExpenses: Record<string, number> = {};
   
   payrollRecords.forEach(record => {
-    const department = departmentMap[record.employeeId] || "Unknown";
-    departmentExpenses[department] = (departmentExpenses[department] || 0) + record.netSalary;
+    const division = divisionMap[record.employeeId] || "Unknown";
+    divisionExpenses[division] = (divisionExpenses[division] || 0) + record.netSalary;
   });
 
   return {
@@ -296,8 +296,8 @@ async function generateFinancialReport(month: number, year: number) {
       totalPaid,
       totalPending,
     },
-    departmentExpenses: Object.entries(departmentExpenses).map(([department, amount]) => ({
-      department,
+    divisionExpenses: Object.entries(divisionExpenses).map(([division, amount]) => ({
+      division,
       amount,
     })),
   };

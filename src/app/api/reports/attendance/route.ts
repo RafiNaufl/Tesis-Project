@@ -14,7 +14,7 @@ type AttendanceRecord = {
   empId: string;
   employeeName: string;
   position: string;
-  department: string;
+  division: string;
 };
 
 export async function GET(request: NextRequest) {
@@ -102,7 +102,7 @@ export async function GET(request: NextRequest) {
         e."employeeId" AS "empId",
         u.name AS "employeeName",
         e.position,
-        e.department
+        e.division
       FROM 
         attendances a
       JOIN 

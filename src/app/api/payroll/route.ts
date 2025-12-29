@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { db } from "@/lib/db";
 import { authOptions } from "@/lib/auth";
-import { Prisma } from "@prisma/client";
 import { createPayrollPaidNotification } from "@/lib/notification";
 
 // GET: Fetch payrolls with filtering
@@ -81,13 +80,15 @@ export async function GET(request: NextRequest) {
         p."daysAbsent",
         p."overtimeHours",
         p."overtimeAmount",
+        p."bpjsKesehatanAmount",
+        p."bpjsKetenagakerjaanAmount",
         p.status,
         p."createdAt",
         p."paidAt",
         e."employeeId" AS "empId",
         u.name AS "employeeName",
         e.position,
-        e.department
+        e.division
       FROM 
         payrolls p
       JOIN 
@@ -116,7 +117,7 @@ export async function PATCH(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
     
-    if (!session || session.user.role !== "ADMIN") {
+    if (!session || (session.user.role !== "ADMIN" && session.user.role !== "MANAGER")) {
       return NextResponse.json(
         { error: "Unauthorized. Admin access required." },
         { status: 403 }

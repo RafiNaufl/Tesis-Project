@@ -43,7 +43,7 @@ export async function GET(
 
     // Check if the user is authorized to view this record
     if (
-      session.user.role !== "ADMIN" &&
+      session.user.role !== "ADMIN" && session.user.role !== "MANAGER" &&
       attendance.employee.user.id !== session.user.id
     ) {
       return NextResponse.json(

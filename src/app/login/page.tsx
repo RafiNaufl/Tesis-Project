@@ -17,7 +17,7 @@ export default async function LoginPage() {
           Project Tesis
         </h1>
         <h2 className="mt-6 text-center text-2xl font-bold tracking-tight text-gray-900">
-          Sign in to your account
+          Masuk ke akun Anda
         </h2>
       </div>
 

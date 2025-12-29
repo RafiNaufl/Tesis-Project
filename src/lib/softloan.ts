@@ -1,4 +1,4 @@
-import { prisma } from "./prisma";
+import { db } from "./db";
 
 /**
  * Interface untuk informasi pinjaman lunak
@@ -17,7 +17,7 @@ export interface SoftLoanInfo {
 export const getEmployeeSoftLoanInfo = async (employeeId: string): Promise<SoftLoanInfo> => {
   try {
     // Cari pinjaman lunak yang aktif untuk karyawan
-    const activeLoan = await prisma.softLoan.findFirst({
+    const activeLoan = await db.softLoan.findFirst({
       where: {
         employeeId,
         status: "ACTIVE",
@@ -55,64 +55,47 @@ export const getSoftLoans = async (
   userId: string
 ) => {
   try {
-    let conditions = [];
-    let queryParams: any[] = [];
-    
     const { employeeId, status } = params;
-    
-    if (employeeId) {
-      conditions.push(`sl."employeeId" = $${queryParams.length + 1}`);
-      queryParams.push(employeeId);
-    } else if (!isAdmin) {
-      // If not admin, only show the employee's own soft loans
-      const employee = await prisma.employee.findUnique({
-        where: { userId },
-      });
-      
+    let resolvedEmployeeId = employeeId;
+    if (!resolvedEmployeeId && !isAdmin) {
+      const employee = await db.employee.findUnique({ where: { userId } });
       if (!employee) {
         throw new Error("Employee not found");
       }
-      
-      conditions.push(`sl."employeeId" = $${queryParams.length + 1}`);
-      queryParams.push(employee.id);
+      resolvedEmployeeId = employee.id;
     }
-    
-    if (status) {
-      conditions.push(`sl.status = $${queryParams.length + 1}`);
-      queryParams.push(status);
-    }
-    
-    // Construct the WHERE clause
-    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-    
-    // Execute the query
-    const query = `
-      SELECT 
-        sl.id, 
-        sl."employeeId", 
-        sl."totalAmount",
-        sl."monthlyAmount",
-        sl."remainingAmount",
-        sl."durationMonths",
-        sl."startMonth",
-        sl."startYear",
-        sl.status,
-        sl."createdAt",
-        sl."completedAt",
-        e."employeeId" AS "empId",
-        u.name AS "employeeName"
-      FROM 
-        soft_loans sl
-      JOIN 
-        employees e ON sl."employeeId" = e.id
-      JOIN 
-        users u ON e."userId" = u.id
-      ${whereClause}
-      ORDER BY 
-        sl."createdAt" DESC
-    `;
-    
-    return await prisma.$queryRawUnsafe(query, ...queryParams);
+
+    const where: any = {};
+    if (resolvedEmployeeId) where.employeeId = resolvedEmployeeId;
+    if (status) where.status = status;
+
+    const loans = await db.softLoan.findMany({
+      where,
+      include: {
+        employee: {
+          include: {
+            user: { select: { name: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return loans.map((sl) => ({
+      id: sl.id,
+      employeeId: sl.employeeId,
+      totalAmount: sl.totalAmount,
+      monthlyAmount: sl.monthlyAmount,
+      remainingAmount: sl.remainingAmount,
+      durationMonths: sl.durationMonths,
+      startMonth: sl.startMonth,
+      startYear: sl.startYear,
+      status: sl.status,
+      createdAt: sl.createdAt,
+      completedAt: sl.completedAt ?? null,
+      empId: sl.employee.employeeId,
+      employeeName: sl.employee.user?.name ?? "",
+    }));
   } catch (error) {
     console.error("Error fetching soft loans:", error);
     throw new Error("Failed to fetch soft loans");
@@ -144,7 +127,7 @@ export const createSoftLoan = async (
     
     // If not admin, get employee ID from session
     if (!isAdmin) {
-      const employee = await prisma.employee.findUnique({
+      const employee = await db.employee.findUnique({
         where: { userId },
       });
       
@@ -172,7 +155,7 @@ export const createSoftLoan = async (
     }
     
     // Check if the employee exists
-    const employee = await prisma.employee.findUnique({
+    const employee = await db.employee.findUnique({
       where: { id: employeeId },
     });
     
@@ -181,7 +164,7 @@ export const createSoftLoan = async (
     }
     
     // Check if employee has active or pending soft loan
-    const existingSoftLoan = await prisma.softLoan.findFirst({
+    const existingSoftLoan = await db.softLoan.findFirst({
       where: {
         employeeId,
         status: {
@@ -198,12 +181,24 @@ export const createSoftLoan = async (
     if (!monthlyAmount) {
       monthlyAmount = totalAmount / durationMonths;
     }
+    if (totalAmount <= 0) {
+      throw new Error("Total amount must be greater than zero");
+    }
+    if (monthlyAmount <= 0) {
+      throw new Error("Monthly amount must be greater than zero");
+    }
+    if (startMonth! < 1 || startMonth! > 12) {
+      throw new Error("Start month must be between 1 and 12");
+    }
+    if (startYear! < 2000 || startYear! > 2100) {
+      throw new Error("Start year must be between 2000 and 2100");
+    }
     
     // Set status based on user role
     const status = isAdmin ? "ACTIVE" : "PENDING";
     
     // Create the soft loan
-    return await prisma.softLoan.create({
+    return await db.softLoan.create({
       data: {
         employeeId,
         totalAmount,
@@ -231,7 +226,7 @@ export const createSoftLoan = async (
  */
 export const getSoftLoanById = async (id: string, isAdmin: boolean, userId: string) => {
   try {
-    const softLoan = await prisma.softLoan.findUnique({
+    const softLoan = await db.softLoan.findUnique({
       where: {
         id,
       },
@@ -268,13 +263,49 @@ export const updateSoftLoanStatus = async (id: string, status: string) => {
       throw new Error("Invalid status");
     }
 
-    const updatedSoftLoan = await prisma.softLoan.update({
+    // Ambil data pinjaman untuk mendapatkan durasi
+    const softLoan = await db.softLoan.findUnique({
+      where: { id }
+    });
+
+    if (!softLoan) {
+      throw new Error("Soft loan not found");
+    }
+
+    // Jika status APPROVED, atur startMonth dan startYear ke bulan dan tahun saat ini
+    const updateData: any = { status };
+    
+    if (status === 'APPROVED') {
+      const now = new Date();
+      const currentMonth = now.getMonth() + 1; // Bulan dimulai dari 0
+      const currentYear = now.getFullYear();
+      
+      updateData.startMonth = currentMonth;
+      updateData.startYear = currentYear;
+      
+      // Hitung perkiraan bulan dan tahun selesai berdasarkan durasi
+      let endMonth = currentMonth + softLoan.durationMonths - 1; // -1 karena bulan saat ini dihitung sebagai cicilan pertama
+      let endYear = currentYear;
+      
+      // Jika endMonth melebihi 12, sesuaikan tahun dan bulan
+      if (endMonth > 12) {
+        endYear += Math.floor(endMonth / 12);
+        endMonth = endMonth % 12;
+        if (endMonth === 0) {
+          endMonth = 12;
+          endYear--;
+        }
+      }
+      
+      // Tambahkan informasi perkiraan selesai ke dalam keterangan
+      updateData.reason = softLoan.reason + ` (Perkiraan selesai: ${endMonth}/${endYear})`;
+    }
+
+    const updatedSoftLoan = await db.softLoan.update({
       where: {
         id,
       },
-      data: {
-        status,
-      },
+      data: updateData,
       include: {
         employee: true,
       },
@@ -300,7 +331,7 @@ export const updateSoftLoanDeduction = async (id: string, deductionAmount: numbe
     }
     
     // Get the soft loan
-    const softLoan = await prisma.softLoan.findUnique({
+    const softLoan = await db.softLoan.findUnique({
       where: { id }
     });
     
@@ -317,7 +348,7 @@ export const updateSoftLoanDeduction = async (id: string, deductionAmount: numbe
     const isCompleted = newRemainingAmount === 0;
     
     // Update the soft loan
-    return await prisma.softLoan.update({
+    return await db.softLoan.update({
       where: { id },
       data: {
         remainingAmount: newRemainingAmount,
@@ -342,7 +373,7 @@ export const deleteSoftLoan = async (id: string) => {
       throw new Error("Soft loan ID is required");
     }
 
-    await prisma.softLoan.delete({
+    await db.softLoan.delete({
       where: { id },
     });
 
@@ -362,7 +393,7 @@ export const deleteSoftLoan = async (id: string) => {
  */
 export const getSoftLoanDeductions = async (employeeId: string, month: number, year: number) => {
   try {
-    const softLoanDeductions = await prisma.deduction.findMany({
+    const softLoanDeductions = await db.deduction.findMany({
       where: {
         employeeId,
         type: "SOFT_LOAN",
@@ -374,6 +405,65 @@ export const getSoftLoanDeductions = async (employeeId: string, month: number, y
     return softLoanDeductions.reduce((sum: number, deduction: any) => sum + deduction.amount, 0);
   } catch (error) {
     console.error("Error getting soft loan deductions:", error);
+    throw error;
+  }
+};
+
+/**
+ * Memproses pemotongan pinjaman lunak saat penggajian dibayarkan
+ * @param employeeId ID karyawan
+ * @param month Bulan penggajian
+ * @param year Tahun penggajian
+ * @returns Jumlah pinjaman lunak yang diproses
+ */
+export const processSoftLoanDeductions = async (employeeId: string, month: number, year: number) => {
+  try {
+    // Cari pinjaman lunak yang aktif untuk karyawan
+    // Filter berdasarkan startMonth dan startYear
+    // Pinjaman hanya diproses jika bulan dan tahun penggajian >= startMonth dan startYear
+    const activeLoan = await db.softLoan.findFirst({
+      where: {
+        employeeId,
+        status: "ACTIVE",
+        OR: [
+          // Jika tahun penggajian lebih besar dari startYear
+          { startYear: { lt: year } },
+          // Jika tahun sama, bulan penggajian harus >= startMonth
+          { 
+            AND: [
+              { startYear: year },
+              { startMonth: { lte: month } }
+            ]
+          }
+        ]
+      },
+    });
+
+    if (!activeLoan) {
+      return { count: 0 };
+    }
+
+    // Hitung jumlah yang akan dipotong (cicilan bulanan)
+    const deductionAmount = activeLoan.monthlyAmount;
+    
+    // Update sisa pinjaman
+    await updateSoftLoanDeduction(activeLoan.id, deductionAmount);
+    
+    // Buat catatan deduction untuk pinjaman lunak ini
+    await db.deduction.create({
+      data: {
+        employeeId,
+        amount: deductionAmount,
+        type: "SOFT_LOAN",
+        reason: `Cicilan pinjaman lunak bulan ${month}/${year}`,
+        month,
+        year,
+      },
+    });
+
+    return { count: 1 };
+  } catch (error) {
+    console.error("Error processing soft loan deductions:", error);
     throw error;
   }
 };

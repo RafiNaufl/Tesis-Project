@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useSession } from "next-auth/react";
+import { useState, useEffect, useCallback } from "react";
+ 
 import { formatCurrency } from "@/lib/utils";
-import { getEmployeeSoftLoanInfo } from "@/lib/payroll";
+import { getEmployeeSoftLoanInfo } from "@/lib/softloan";
 
 interface PayslipDetailProps {
   payrollId: string;
@@ -33,14 +33,23 @@ interface PayrollDetail {
       name: string;
     };
     position: string;
-    department: string;
+    division: string;
   };
+  attendance?: {
+    id: string;
+    date: string;
+    status: string;
+    checkIn: string | null;
+    checkOut: string | null;
+    notes: string | null;
+  }[];
 }
 
 interface DeductionBreakdown {
   advanceDeduction: number;
   softLoanDeduction: number;
-  bpjsDeduction: number;
+  bpjsKesehatan: number;
+  bpjsKetenagakerjaan: number;
   lateDeduction: number;
   absenceDeduction: number;
   otherDeductions: number;
@@ -60,11 +69,7 @@ export default function PayslipDetail({ payrollId, onClose }: PayslipDetailProps
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchPayrollDetail();
-  }, [payrollId]);
-
-  const fetchPayrollDetail = async () => {
+  const fetchPayrollDetail = useCallback(async () => {
     try {
       setLoading(true);
       
@@ -88,7 +93,7 @@ export default function PayslipDetail({ payrollId, onClose }: PayslipDetailProps
         try {
           const loanInfo = await getEmployeeSoftLoanInfo(payrollData.employee.id);
           setSoftLoanInfo(loanInfo);
-        } catch (err) {
+        } catch {
           // No active loan, which is fine
           setSoftLoanInfo(null);
         }
@@ -99,7 +104,11 @@ export default function PayslipDetail({ payrollId, onClose }: PayslipDetailProps
     } finally {
       setLoading(false);
     }
-  };
+  }, [payrollId]);
+
+  useEffect(() => {
+    fetchPayrollDetail();
+  }, [fetchPayrollDetail]);
 
   const getMonthName = (month: number): string => {
     const date = new Date();
@@ -122,7 +131,7 @@ export default function PayslipDetail({ payrollId, onClose }: PayslipDetailProps
 
   if (loading) {
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-md flex items-center justify-center z-50">
         <div className="bg-white p-6 rounded-lg">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
           <p className="mt-2 text-center text-gray-600">Memuat slip gaji...</p>
@@ -133,7 +142,7 @@ export default function PayslipDetail({ payrollId, onClose }: PayslipDetailProps
 
   if (error || !payroll) {
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-md flex items-center justify-center z-50">
         <div className="bg-white p-6 rounded-lg max-w-md w-full mx-4">
           <h3 className="text-lg font-semibold text-red-600 mb-2">Error</h3>
           <p className="text-gray-600 mb-4">{error || "Slip gaji tidak ditemukan"}</p>
@@ -149,7 +158,7 @@ export default function PayslipDetail({ payrollId, onClose }: PayslipDetailProps
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-md flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex justify-between items-center p-6 border-b border-gray-200 print:hidden">
@@ -177,8 +186,8 @@ export default function PayslipDetail({ payrollId, onClose }: PayslipDetailProps
         <div className="p-6 print:p-8">
           {/* Company Header */}
           <div className="text-center mb-8">
-            <h1 className="text-2xl font-bold text-gray-900">PT. NAMA PERUSAHAAN</h1>
-            <p className="text-gray-600">Alamat Perusahaan</p>
+            <h1 className="text-2xl font-bold text-gray-900">CV. Catur Teknik Utama</h1>
+            <p className="text-gray-600">Kmp Jerang Baru Permai, Jl, Cendana Raya No 26</p>
             <h2 className="text-xl font-semibold mt-4 text-gray-800">SLIP GAJI KARYAWAN</h2>
           </div>
 
@@ -198,8 +207,8 @@ export default function PayslipDetail({ payrollId, onClose }: PayslipDetailProps
                 <span className="text-gray-900">{payroll.employee.position}</span>
               </div>
               <div className="flex justify-between">
-                <span className="font-medium text-gray-700">Departemen:</span>
-                <span className="text-gray-900">{payroll.employee.department}</span>
+                <span className="font-medium text-gray-700">Divisi:</span>
+                <span className="text-gray-900">{payroll.employee.division}</span>
               </div>
             </div>
             <div className="space-y-2">
@@ -255,6 +264,43 @@ export default function PayslipDetail({ payrollId, onClose }: PayslipDetailProps
             </div>
           </div>
 
+          {/* Detailed Absence List */}
+          {payroll.attendance && payroll.attendance.some(a => a.status === "ABSENT") && (
+            <div className="mb-8">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Rincian Ketidakhadiran</h3>
+              <div className="bg-white border rounded-lg overflow-hidden">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tanggal</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Keterangan</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {payroll.attendance
+                      .filter(a => a.status === "ABSENT")
+                      .map((record) => (
+                        <tr key={record.id}>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {formatDate(record.date)}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
+                              Tidak Hadir (A)
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {record.notes || "-"}
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           {/* Salary Breakdown */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
             {/* Income */}
@@ -302,10 +348,16 @@ export default function PayslipDetail({ payrollId, onClose }: PayslipDetailProps
                         <span className="font-medium text-red-600">{formatCurrency(deductionBreakdown.softLoanDeduction)}</span>
                       </div>
                     )}
-                    {deductionBreakdown.bpjsDeduction > 0 && (
+                    {deductionBreakdown.bpjsKesehatan > 0 && (
                       <div className="flex justify-between">
                         <span className="text-gray-700">BPJS Kesehatan</span>
-                        <span className="font-medium text-red-600">{formatCurrency(deductionBreakdown.bpjsDeduction)}</span>
+                        <span className="font-medium text-red-600">{formatCurrency(deductionBreakdown.bpjsKesehatan)}</span>
+                      </div>
+                    )}
+                    {deductionBreakdown.bpjsKetenagakerjaan > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-700">BPJS Ketenagakerjaan</span>
+                        <span className="font-medium text-red-600">{formatCurrency(deductionBreakdown.bpjsKetenagakerjaan)}</span>
                       </div>
                     )}
                     {deductionBreakdown.lateDeduction > 0 && (
@@ -343,35 +395,75 @@ export default function PayslipDetail({ payrollId, onClose }: PayslipDetailProps
             </div>
           </div>
 
-          {/* Soft Loan Info */}
-          {softLoanInfo && (
+          {/* Soft Loan Info - hanya tampilkan jika ada potongan pinjaman lunak */}
+          {deductionBreakdown && deductionBreakdown.softLoanDeduction > 0 && (
             <div className="mb-8">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Informasi Pinjaman Lunak</h3>
-              <div className="bg-blue-50 p-4 rounded-lg">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="text-center">
-                    <div className="text-lg font-bold text-blue-600">{formatCurrency(softLoanInfo.activeLoan.totalAmount)}</div>
-                    <div className="text-sm text-gray-600">Total Pinjaman</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-lg font-bold text-green-600">{formatCurrency(softLoanInfo.activeLoan.totalAmount - softLoanInfo.totalRemaining)}</div>
-                    <div className="text-sm text-gray-600">Sudah Dibayar</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-lg font-bold text-orange-600">{formatCurrency(softLoanInfo.totalRemaining)}</div>
-                    <div className="text-sm text-gray-600">Sisa Pinjaman</div>
-                  </div>
+              {softLoanInfo && softLoanInfo.activeLoan && softLoanInfo.activeLoan.totalAmount > 0 ? (
+                <div className="bg-blue-50 p-4 rounded-lg">
+                  {/* Pastikan nilai tidak undefined atau null */}
+                  {(() => {
+                    const totalAmount = softLoanInfo.activeLoan.totalAmount || 0;
+                    const remainingAmount = softLoanInfo.totalRemaining || 0;
+                    const paidAmount = totalAmount - remainingAmount;
+                    const progressPercentage = totalAmount > 0 ? ((paidAmount / totalAmount) * 100).toFixed(1) : '0.0';
+                    
+                    // Log untuk debugging
+                    console.log("Soft Loan Info in PayslipDetail:", {
+                      totalAmount,
+                      paidAmount,
+                      remainingAmount,
+                      progressPercentage
+                    });
+                    
+                    return (
+                      <>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div className="text-center">
+                            <div className="text-lg font-bold text-blue-600">{formatCurrency(totalAmount)}</div>
+                            <div className="text-sm text-gray-600">Total Pinjaman</div>
+                          </div>
+                          <div className="text-center">
+                            <div className="text-lg font-bold text-green-600">{formatCurrency(paidAmount)}</div>
+                            <div className="text-sm text-gray-600">Sudah Dibayar</div>
+                          </div>
+                          <div className="text-center">
+                            <div className="text-lg font-bold text-orange-600">{formatCurrency(remainingAmount)}</div>
+                            <div className="text-sm text-gray-600">Sisa Pinjaman</div>
+                          </div>
+                        </div>
+                        <div className="mt-4">
+                          <div className="w-full bg-gray-200 rounded-full h-2">
+                            <div 
+                              className="bg-blue-600 h-2 rounded-full" 
+                              style={{ width: `${progressPercentage}%` }}
+                            ></div>
+                          </div>
+                          <div className="text-center text-sm text-gray-600 mt-2">
+                            Progress Pembayaran: {progressPercentage}%
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()} 
                 </div>
-                <div className="mt-4">
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div 
-                      className="bg-blue-600 h-2 rounded-full" 
-                      style={{ width: `${((softLoanInfo.activeLoan.totalAmount - softLoanInfo.totalRemaining) / softLoanInfo.activeLoan.totalAmount) * 100}%` }}
-                    ></div>
-                  </div>
-                  <div className="text-center text-sm text-gray-600 mt-2">
-                    Progress Pembayaran: {(((softLoanInfo.activeLoan.totalAmount - softLoanInfo.totalRemaining) / softLoanInfo.activeLoan.totalAmount) * 100).toFixed(1)}%
-                  </div>
+              ) : (
+                <div className="bg-gray-50 p-4 rounded-lg text-center">
+                  <p className="text-gray-600">Pinjaman lunak telah dilunasi atau tidak ada pinjaman aktif.</p>
+                  <p className="text-gray-600 mt-2">Cicilan bulan ini: {formatCurrency(deductionBreakdown.softLoanDeduction)}</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Cash Advance Info - hanya tampilkan jika ada potongan kasbon */}
+          {deductionBreakdown && deductionBreakdown.advanceDeduction > 0 && (
+            <div className="mb-8">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Informasi Kasbon</h3>
+              <div className="bg-yellow-50 p-4 rounded-lg">
+                <div className="text-center">
+                  <div className="text-lg font-bold text-yellow-600">{formatCurrency(deductionBreakdown.advanceDeduction)}</div>
+                  <div className="text-sm text-gray-600">Jumlah Kasbon</div>
                 </div>
               </div>
             </div>

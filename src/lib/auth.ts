@@ -20,29 +20,38 @@ export const authOptions: NextAuthOptions = {
     CredentialsProvider({
       name: "Credentials",
       credentials: {
-        email: { label: "Email", type: "email" },
+        identifier: { label: "Email or Phone", type: "text" },
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) {
+        if (!credentials?.identifier || !credentials?.password) {
           return null;
         }
 
-        const user = await prisma.user.findUnique({
-          where: {
-            email: credentials.email,
-          },
-        });
+        const identifier = credentials.identifier.trim();
+        const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier);
+
+        let user = null as any;
+
+        if (isEmail) {
+          user = await prisma.user.findUnique({
+            where: { email: identifier },
+          });
+        } else {
+          const employee = await prisma.employee.findFirst({
+            where: { contactNumber: identifier },
+            select: { userId: true },
+          });
+          if (employee?.userId) {
+            user = await prisma.user.findUnique({ where: { id: employee.userId } });
+          }
+        }
 
         if (!user) {
           return null;
         }
 
-        const isPasswordValid = await compare(
-          credentials.password,
-          user.hashedPassword
-        );
-
+        const isPasswordValid = await compare(credentials.password, user.hashedPassword);
         if (!isPasswordValid) {
           return null;
         }

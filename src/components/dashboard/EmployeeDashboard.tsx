@@ -1,8 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
+import Link from "next/link";
+import Image from "next/image";
+import DashboardNavigation from "./DashboardNavigation";
 import { useSession } from "next-auth/react";
 import AttendanceCapture from "../attendance/AttendanceCapture";
+import { getWorkdayType, WorkdayType, getWorkEndTime, isOvertimeCheckIn } from "@/lib/attendanceRules";
 
 type AttendanceRecord = {
   id: string;
@@ -25,6 +29,8 @@ type TodayAttendanceRecord = {
   date: Date;
   checkIn: Date | null;
   checkOut: Date | null;
+  overtimeStart?: Date | null;
+  overtimeEnd?: Date | null;
   status: "PRESENT" | "ABSENT" | "LATE" | "HALFDAY";
   isLate: boolean;
   lateMinutes: number;
@@ -34,12 +40,13 @@ type TodayAttendanceRecord = {
   isSundayWorkApproved: boolean;
   approvedAt: Date | null;
   notes?: string | null;
+  lateSubmittedAt?: Date | null;
 };
 
 export default function EmployeeDashboard() {
   const { data: session } = useSession();
   const [isCheckedIn, setIsCheckedIn] = useState(false);
-  const [checkInTime, setCheckInTime] = useState<string | null>(null);
+  
   const [attendanceStats, setAttendanceStats] = useState<AttendanceStats>({
     present: 0,
     absent: 0,
@@ -54,13 +61,19 @@ export default function EmployeeDashboard() {
   
   // State untuk AttendanceCapture
   const [showAttendanceCapture, setShowAttendanceCapture] = useState(false);
-  const [captureAction, setCaptureAction] = useState<'check-in' | 'check-out'>('check-in');
-  const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
-  const [capturedLatitude, setCapturedLatitude] = useState<number | null>(null);
-  const [capturedLongitude, setCapturedLongitude] = useState<number | null>(null);
-  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
-  const [isCheckingIn, setIsCheckingIn] = useState(false);
-  const [isCheckingOut, setIsCheckingOut] = useState(false);
+  const [captureAction, setCaptureAction] = useState<'check-in' | 'check-out' | 'overtime-start' | 'overtime-end'>('check-in');
+  
+  const [_isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [_isCheckingIn, setIsCheckingIn] = useState(false);
+  const [_isCheckingOut, setIsCheckingOut] = useState(false);
+
+  // Late Modal State
+  const [isLateModalOpen, setIsLateModalOpen] = useState(false);
+  const [lateReason, setLateReason] = useState("");
+  const [latePhotoFile, setLatePhotoFile] = useState<File | null>(null);
+  const [latePhotoPreview, setLatePhotoPreview] = useState<string | null>(null);
+  const [lateError, setLateError] = useState<string | null>(null);
+  const [lateSubmitting, setLateSubmitting] = useState(false);
 
   // Fungsi untuk format waktu
   const formatTime = (date: Date | null | string): string => {
@@ -73,7 +86,7 @@ export default function EmployeeDashboard() {
   };
 
   // Fungsi untuk memuat data kehadiran
-  const fetchAttendanceData = async () => {
+  const fetchAttendanceData = useCallback(async () => {
     if (!session) return;
     
     setIsLoading(true);
@@ -154,7 +167,9 @@ export default function EmployeeDashboard() {
           ...todayRecord,
           date: new Date(todayRecord.date),
           checkIn: todayRecord.checkIn ? new Date(todayRecord.checkIn) : null,
-          checkOut: todayRecord.checkOut ? new Date(todayRecord.checkOut) : null
+          checkOut: todayRecord.checkOut ? new Date(todayRecord.checkOut) : null,
+          overtimeStart: todayRecord.overtimeStart ? new Date(todayRecord.overtimeStart) : undefined,
+          overtimeEnd: todayRecord.overtimeEnd ? new Date(todayRecord.overtimeEnd) : undefined
         };
         
         console.log("Processed today's record:", processedTodayRecord);
@@ -162,13 +177,7 @@ export default function EmployeeDashboard() {
         // PENTING: Jangan set isCheckedIn di sini, biarkan useEffect yang menanganinya
         // useEffect akan dijalankan setelah setTodayRecord
         
-        if (processedTodayRecord.checkIn) {
-          setCheckInTime(new Date(processedTodayRecord.checkIn).toLocaleTimeString([], {
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: true
-          }));
-        }
+        
         
         // Set today record for detailed display
         setTodayRecord(processedTodayRecord);
@@ -183,7 +192,7 @@ export default function EmployeeDashboard() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [session]);
 
   // Fetch attendance data on component mount and when session changes
   useEffect(() => {
@@ -191,7 +200,7 @@ export default function EmployeeDashboard() {
       console.log("Fetching attendance data on mount or session change");
       fetchAttendanceData();
     }
-  }, [session]);
+  }, [session, fetchAttendanceData]);
 
   // Listener untuk pembaruan kehadiran
   useEffect(() => {
@@ -215,7 +224,7 @@ export default function EmployeeDashboard() {
       window.removeEventListener('storage', handleStorageChange);
       clearInterval(intervalId);
     };
-  }, []);
+  }, [fetchAttendanceData]);
 
   // Tambahkan useEffect untuk memperbarui status isCheckedIn setiap kali todayRecord berubah
   useEffect(() => {
@@ -239,100 +248,17 @@ export default function EmployeeDashboard() {
       });
       
       setIsCheckedIn(shouldBeCheckedIn);
-      
-      // Simpan status ke localStorage untuk memastikan konsistensi setelah refresh
-      localStorage.setItem('isCheckedInToday', shouldBeCheckedIn ? 'true' : 'false');
+
+      // Check for late status on load/update
+      // Jika terlambat dan belum mengajukan alasan, buka modal
+      if ((todayRecord.status === "LATE" || todayRecord.status === "ABSENT") && !todayRecord.lateSubmittedAt) {
+        setIsLateModalOpen(true);
+      }
     } else {
       // Jika tidak ada todayRecord, set isCheckedIn ke false
       setIsCheckedIn(false);
-      localStorage.removeItem('isCheckedInToday');
     }
   }, [todayRecord]);
-  
-  // Tambahkan useEffect untuk menyimpan todayRecord ke localStorage setiap kali berubah
-  useEffect(() => {
-    if (todayRecord) {
-      // Simpan data absensi ke localStorage
-      try {
-        const dataToSave = {
-          ...todayRecord,
-          // Konversi objek Date ke string untuk penyimpanan
-          date: todayRecord.date ? todayRecord.date.toISOString() : null,
-          checkIn: todayRecord.checkIn ? todayRecord.checkIn.toISOString() : null,
-          checkOut: todayRecord.checkOut ? todayRecord.checkOut.toISOString() : null,
-          approvedAt: todayRecord.approvedAt ? todayRecord.approvedAt.toISOString() : null
-        };
-        
-        localStorage.setItem('todayAttendanceData', JSON.stringify(dataToSave));
-        console.log("Saved todayRecord to localStorage:", dataToSave);
-      } catch (error) {
-        console.error("Error saving todayRecord to localStorage:", error);
-      }
-    } else {
-      // Jika tidak ada todayRecord, hapus data dari localStorage
-      localStorage.removeItem('todayAttendanceData');
-    }
-  }, [todayRecord]);
-  
-  // Tambahkan useEffect untuk memulihkan todayRecord dari localStorage saat komponen dimuat
-  useEffect(() => {
-    const savedAttendanceData = localStorage.getItem('todayAttendanceData');
-    if (savedAttendanceData) {
-      try {
-        const parsedData = JSON.parse(savedAttendanceData);
-        
-        // Pastikan data yang dipulihkan adalah untuk hari ini
-        const today = new Date();
-        const todayString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-        const savedDate = parsedData.date ? (() => {
-          const date = new Date(parsedData.date);
-          return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-        })() : null;
-        
-        if (savedDate === todayString) {
-          // Konversi string tanggal kembali ke objek Date
-          const restoredData = {
-            ...parsedData,
-            date: parsedData.date ? new Date(parsedData.date) : null,
-            checkIn: parsedData.checkIn ? new Date(parsedData.checkIn) : null,
-            checkOut: parsedData.checkOut ? new Date(parsedData.checkOut) : null,
-            approvedAt: parsedData.approvedAt ? new Date(parsedData.approvedAt) : null
-          };
-          
-          console.log("Restored todayRecord from localStorage:", restoredData);
-          setTodayRecord(restoredData);
-          
-          // Setelah memulihkan todayRecord, langsung set isCheckedIn berdasarkan data yang dipulihkan
-          const isPengajuanUlang = restoredData.notes && 
-                                 restoredData.notes.includes("Di Tolak") || 
-                                 (restoredData.approvedAt && 
-                                 ((restoredData.overtime > 0 && !restoredData.isOvertimeApproved) || 
-                                 (restoredData.isSundayWork && !restoredData.isSundayWorkApproved)));
-          
-          const shouldBeCheckedIn = !isPengajuanUlang && !!restoredData.checkIn && !restoredData.checkOut;
-          
-          console.log("Setting initial isCheckedIn from restored data:", {
-            shouldBeCheckedIn,
-            isPengajuanUlang,
-            hasCheckIn: !!restoredData.checkIn,
-            hasCheckOut: !!restoredData.checkOut
-          });
-          
-          setIsCheckedIn(shouldBeCheckedIn);
-        } else {
-          console.log("Saved attendance data is not for today, ignoring");
-          // Hapus data lama jika bukan untuk hari ini
-          localStorage.removeItem('todayAttendanceData');
-          localStorage.removeItem('isCheckedInToday');
-        }
-      } catch (error) {
-        console.error("Error restoring todayRecord from localStorage:", error);
-        // Hapus data yang rusak
-        localStorage.removeItem('todayAttendanceData');
-        localStorage.removeItem('isCheckedInToday');
-      }
-    }
-  }, []);
 
   // Fungsi untuk mengunggah foto ke server
   const uploadPhoto = async (photoBase64: string): Promise<string> => {
@@ -364,24 +290,26 @@ export default function EmployeeDashboard() {
   };
   
   // Fungsi untuk menangani hasil dari AttendanceCapture
-  const handleCaptureComplete = async (photoUrl: string, latitude: number, longitude: number) => {
+  const handleCaptureComplete = async (photoUrl: string, latitude: number, longitude: number, locationNote?: string) => {
     try {
       // Simpan data yang ditangkap
-      setCapturedPhoto(photoUrl);
-      setCapturedLatitude(latitude);
-      setCapturedLongitude(longitude);
       
       // Upload foto dan dapatkan URL
       setIsUploadingPhoto(true);
       const uploadedPhotoUrl = await uploadPhoto(photoUrl);
       
-      // Proses check-in atau check-out berdasarkan captureAction
       if (captureAction === 'check-in') {
         await processCheckIn(uploadedPhotoUrl, latitude, longitude);
-      } else {
+      } else if (captureAction === 'check-out') {
         await processCheckOut(uploadedPhotoUrl, latitude, longitude);
+      } else if (captureAction === 'overtime-start') {
+        const reason = (window as any).overtimeReason || '';
+        const consentConfirmed = (window as any).overtimeConsentConfirmed === true;
+        await processOvertimeStart(uploadedPhotoUrl, latitude, longitude, locationNote, reason, consentConfirmed);
+      } else if (captureAction === 'overtime-end') {
+        await processOvertimeEnd(uploadedPhotoUrl, latitude, longitude, locationNote);
       }
-    } catch (error: any) {
+  } catch (error: any) {
       console.error('Error in capture workflow:', error);
       setError(error.message || 'Terjadi kesalahan saat memproses absensi');
     } finally {
@@ -391,6 +319,16 @@ export default function EmployeeDashboard() {
       setIsCheckingIn(false);
       setIsCheckingOut(false);
     }
+  };
+  
+  const handleOvertimeStart = () => {
+    setCaptureAction('overtime-start');
+    setShowAttendanceCapture(true);
+  };
+  
+  const handleOvertimeEnd = () => {
+    setCaptureAction('overtime-end');
+    setShowAttendanceCapture(true);
   };
   
   // Fungsi untuk memulai proses check-in
@@ -463,6 +401,10 @@ export default function EmployeeDashboard() {
       
       // Update todayRecord
       setTodayRecord(data);
+
+      if ((data.status === "LATE" || data.status === "ABSENT") && !data.lateSubmittedAt) {
+        setIsLateModalOpen(true);
+      }
       
       // isCheckedIn akan diperbarui oleh useEffect berdasarkan todayRecord
       
@@ -652,6 +594,85 @@ export default function EmployeeDashboard() {
       setActionLoading(false);
     }
   };
+  
+  const processOvertimeStart = async (photoUrl: string, latitude: number, longitude: number, locationNote?: string, reason?: string, consentConfirmed?: boolean) => {
+    setActionLoading(true);
+    setError(null);
+    try {
+      const response = await fetch('/api/attendance', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        },
+      body: JSON.stringify({ 
+        action: 'overtime-start',
+        photoUrl,
+        latitude,
+        longitude,
+        locationNote,
+        reason,
+        consentConfirmed
+      }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Gagal memulai lembur');
+      }
+      if (data.date) data.date = new Date(data.date);
+      if (data.checkIn) data.checkIn = new Date(data.checkIn);
+      if (data.checkOut) data.checkOut = new Date(data.checkOut);
+      if (data.overtimeStart) data.overtimeStart = new Date(data.overtimeStart);
+      setTodayRecord(data);
+      localStorage.setItem('attendance-update', Date.now().toString());
+      await fetchAttendanceData();
+    } catch (error: any) {
+      setError(error.message || 'Gagal memulai lembur');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+  
+  const processOvertimeEnd = async (photoUrl: string, latitude: number, longitude: number, locationNote?: string) => {
+    setActionLoading(true);
+    setError(null);
+    try {
+      const response = await fetch('/api/attendance', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        },
+      body: JSON.stringify({ 
+        action: 'overtime-end',
+        photoUrl,
+        latitude,
+        longitude,
+        locationNote
+      }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Gagal menyelesaikan lembur');
+      }
+      if (data.date) data.date = new Date(data.date);
+      if (data.checkIn) data.checkIn = new Date(data.checkIn);
+      if (data.checkOut) data.checkOut = new Date(data.checkOut);
+      if (data.overtimeStart) data.overtimeStart = new Date(data.overtimeStart);
+      if (data.overtimeEnd) data.overtimeEnd = new Date(data.overtimeEnd);
+      setTodayRecord(data);
+      localStorage.setItem('attendance-update', Date.now().toString());
+      await fetchAttendanceData();
+    } catch (error: any) {
+      setError(error.message || 'Gagal menyelesaikan lembur');
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   // Tampilan kehadiran hari ini
   const renderTodayAttendance = () => {
@@ -833,13 +854,32 @@ export default function EmployeeDashboard() {
             </div>
           </div>
           <div className="mt-4 sm:ml-6 sm:mt-0 sm:flex-shrink-0">
-            <button
-              onClick={handleCheckIn}
-              disabled={actionLoading}
-              className="inline-flex items-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 sm:text-sm disabled:opacity-50"
-            >
-              {actionLoading ? "Memproses..." : "Absen Masuk"}
-            </button>
+            {(() => {
+              const now = new Date();
+              const outside = getWorkdayType(now) === WorkdayType.SUNDAY || isOvertimeCheckIn(now, now);
+              if (outside) {
+                return (
+                  <button
+                    onClick={handleOvertimeStart}
+                    disabled={actionLoading}
+                    className="inline-flex items-center gap-2 rounded-md border border-transparent bg-orange-600 px-4 py-2 font-medium text-white shadow-sm hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 sm:text-sm disabled:opacity-50"
+                  >
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m6-6H6" /></svg>
+                    {actionLoading ? "Memproses..." : "Mulai Lembur"}
+                  </button>
+                );
+              }
+              return (
+                <button
+                  onClick={handleCheckIn}
+                  disabled={actionLoading}
+                  className="inline-flex items-center gap-2 rounded-md border border-transparent bg-blue-600 px-4 py-2 font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 sm:text-sm disabled:opacity-50"
+                >
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                  {actionLoading ? "Memproses..." : "Absen"}
+                </button>
+              );
+            })()}
           </div>
         </div>
       );
@@ -849,7 +889,7 @@ export default function EmployeeDashboard() {
     const isPengajuanUlang = todayRecord && 
                            ((todayRecord.notes && todayRecord.notes.includes("Di Tolak")) || 
                            (todayRecord.approvedAt && 
-                           ((todayRecord.overtime > 0 && !todayRecord.isOvertimeApproved) || 
+                           (((todayRecord.overtime ?? 0) > 0 && !todayRecord.isOvertimeApproved) || 
                            (todayRecord.isSundayWork && !todayRecord.isSundayWorkApproved))));
     
     if (isPengajuanUlang) {
@@ -904,20 +944,39 @@ export default function EmployeeDashboard() {
             </div>
           </div>
           <div className="mt-4 sm:ml-6 sm:mt-0 sm:flex-shrink-0">
-            <button
-              onClick={handleCheckIn}
-              disabled={actionLoading}
-              className="inline-flex items-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 sm:text-sm disabled:opacity-50"
-            >
-              {actionLoading ? "Memproses..." : "Absen Masuk"}
-            </button>
+            {(() => {
+              const now = new Date();
+              const outside = getWorkdayType(now) === WorkdayType.SUNDAY || isOvertimeCheckIn(now, now);
+              if (outside) {
+                return (
+                  <button
+                    onClick={handleOvertimeStart}
+                    disabled={actionLoading}
+                    className="inline-flex items-center gap-2 rounded-md border border-transparent bg-orange-600 px-4 py-2 font-medium text-white shadow-sm hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 sm:text-sm disabled:opacity-50"
+                  >
+                    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m6-6H6" /></svg>
+                    {actionLoading ? "Memproses..." : "Mulai Lembur"}
+                  </button>
+                );
+              }
+              return (
+                <button
+                  onClick={handleCheckIn}
+                  disabled={actionLoading}
+                  className="inline-flex items-center gap-2 rounded-md border border-transparent bg-blue-600 px-4 py-2 font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 sm:text-sm disabled:opacity-50"
+                >
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                  {actionLoading ? "Memproses..." : "Absen"}
+                </button>
+              );
+            })()}
           </div>
         </div>
       );
     }
     
     // Kasus 3: Sudah check-in tapi belum check-out -> Tampilkan tombol Absen Keluar
-    if (todayRecord.checkIn && !todayRecord.checkOut) {
+    if (todayRecord.checkIn && !todayRecord.checkOut && !todayRecord.overtimeStart) {
       return (
         <div className="rounded-md bg-gray-50 px-6 py-5 sm:flex sm:items-center sm:justify-between">
           <div className="sm:flex sm:items-center">
@@ -983,8 +1042,8 @@ export default function EmployeeDashboard() {
       );
     }
     
-    // Kasus 4: Sudah check-in dan sudah check-out -> Tampilkan pesan kehadiran lengkap
-    if (todayRecord.checkIn && todayRecord.checkOut) {
+    // Kasus 4: Sudah check-in dan sudah check-out (atau sedang lembur tapi checkout tidak tercatat)
+    if (todayRecord.checkIn && (todayRecord.checkOut || todayRecord.overtimeStart)) {
       return (
         <div className="rounded-md bg-gray-50 px-6 py-5 sm:flex sm:items-center sm:justify-between">
           <div className="sm:flex sm:items-center">
@@ -1047,9 +1106,39 @@ export default function EmployeeDashboard() {
             </div>
           </div>
           <div className="mt-4 sm:ml-6 sm:mt-0 sm:flex-shrink-0">
-            <span className="inline-flex items-center rounded-md bg-green-50 px-4 py-2 text-sm font-medium text-green-700">
-              Kehadiran hari ini sudah lengkap
-            </span>
+            {todayRecord ? (
+              (() => {
+                const now = new Date();
+                const outsideWorkHours = getWorkdayType(now) === WorkdayType.SUNDAY || isOvertimeCheckIn(now, now);
+                const canStart = !!todayRecord.checkOut && !todayRecord.overtimeStart && outsideWorkHours;
+                const hasStarted = !!todayRecord.overtimeStart && !todayRecord.overtimeEnd;
+                if (canStart) {
+                  return (
+                    <button
+                      onClick={handleOvertimeStart}
+                      disabled={actionLoading}
+                      className="inline-flex items-center rounded-md border border-transparent bg-orange-600 px-4 py-2 font-medium text-white shadow-sm hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 sm:text-sm disabled:opacity-50"
+                    >
+                      {actionLoading ? 'Memproses...' : 'Mulai Lembur'}
+                    </button>
+                  );
+                }
+                if (hasStarted) {
+                  return (
+                    <button
+                      onClick={handleOvertimeEnd}
+                      disabled={actionLoading}
+                      className="inline-flex items-center rounded-md border border-transparent bg-green-600 px-4 py-2 font-medium text-white shadow-sm hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 sm:text-sm disabled:opacity-50"
+                    >
+                      {actionLoading ? 'Memproses...' : 'Selesai Lembur'}
+                    </button>
+                  );
+                }
+                return (
+                  <span className="inline-flex items-center rounded-md bg-green-50 px-4 py-2 text-sm font-medium text-green-700">Kehadiran hari ini sudah lengkap</span>
+                );
+              })()
+            ) : null}
           </div>
         </div>
       );
@@ -1087,13 +1176,35 @@ export default function EmployeeDashboard() {
           </div>
         </div>
         <div className="mt-4 sm:ml-6 sm:mt-0 sm:flex-shrink-0">
-          <button
-            onClick={handleCheckIn}
-            disabled={actionLoading}
-            className="inline-flex items-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 sm:text-sm disabled:opacity-50"
-          >
-            {actionLoading ? "Memproses..." : "Absen Masuk"}
-          </button>
+          {(() => {
+            const now = new Date();
+            const workdayType = getWorkdayType(now);
+            const endStr = getWorkEndTime(workdayType);
+            const endDate = workdayType === WorkdayType.SUNDAY ? null : new Date(`${now.toLocaleDateString('en-CA')}T${endStr}:00`);
+            const outside = workdayType === WorkdayType.SUNDAY || (endDate ? now > endDate : true);
+            if (outside) {
+              return (
+                <button
+                  onClick={handleOvertimeStart}
+                  disabled={actionLoading}
+                  className="inline-flex items-center gap-2 rounded-md border border-transparent bg-orange-600 px-4 py-2 font-medium text-white shadow-sm hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 sm:text-sm disabled:opacity-50"
+                >
+                  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m6-6H6" /></svg>
+                  {actionLoading ? "Memproses..." : "Mulai Lembur"}
+                </button>
+              );
+            }
+            return (
+              <button
+                onClick={handleCheckIn}
+                disabled={actionLoading}
+                className="inline-flex items-center gap-2 rounded-md border border-transparent bg-blue-600 px-4 py-2 font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 sm:text-sm disabled:opacity-50"
+              >
+                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                {actionLoading ? "Memproses..." : "Absen"}
+              </button>
+            );
+          })()}
         </div>
       </div>
     );
@@ -1101,6 +1212,7 @@ export default function EmployeeDashboard() {
 
   return (
     <div className="space-y-6">
+      
       <div>
         <h1 className="text-2xl font-semibold text-gray-900">
           Selamat Datang, {session?.user?.name}
@@ -1110,6 +1222,20 @@ export default function EmployeeDashboard() {
         </p>
       </div>
 
+      {/* Quick Actions per Role */}
+      {(session?.user?.role === "FOREMAN" || session?.user?.role === "ASSISTANT_FOREMAN") && (
+        <div className="overflow-hidden bg-white shadow sm:rounded-lg">
+          <div className="px-4 py-5 sm:p-6">
+            <h3 className="text-lg font-medium leading-6 text-gray-900">Tugas Persetujuan</h3>
+            <p className="mt-1 text-sm text-gray-500">Kelola permintaan lembur dan kerja Minggu dari tim Anda.</p>
+            <div className="mt-5">
+              <Link href="/approvals/overtime" className="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700">
+                Buka Halaman Persetujuan Lembur
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Attendance Action Card */}
       <div className="overflow-hidden bg-white shadow sm:rounded-lg">
         <div className="px-4 py-5 sm:p-6">
@@ -1180,15 +1306,16 @@ export default function EmployeeDashboard() {
       </div>
 
       {/* Attendance Stats */}
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+      <DashboardNavigation userRole={session?.user?.role} />
+      <div className="grid grid-cols-2 gap-4 sm:gap-5 sm:grid-cols-2 lg:grid-cols-4 transition-all duration-300 ease-in-out">
         {/* Present */}
-        <div className="overflow-hidden rounded-lg bg-white shadow">
-          <div className="p-5">
+        <div className="overflow-hidden rounded-lg bg-white shadow transition-all duration-300 hover:shadow-md">
+          <div className="p-3 sm:p-5">
             <div className="flex items-center">
               <div className="flex-shrink-0">
-                <div className="flex h-12 w-12 items-center justify-center rounded-md bg-green-100 text-green-600">
+                <div className="flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-md bg-green-100 text-green-600">
                   <svg
-                    className="h-6 w-6"
+                    className="h-5 w-5 sm:h-6 sm:w-6"
                     fill="none"
                     viewBox="0 0 24 24"
                     strokeWidth="1.5"
@@ -1202,13 +1329,13 @@ export default function EmployeeDashboard() {
                   </svg>
                 </div>
               </div>
-              <div className="ml-5 w-0 flex-1">
+              <div className="ml-3 sm:ml-5 w-0 flex-1">
                 <dl>
-                  <dt className="truncate text-sm font-medium text-gray-500">
+                  <dt className="truncate text-xs sm:text-sm font-medium text-gray-500">
                     Hadir
                   </dt>
                   <dd>
-                    <div className="text-lg font-medium text-gray-900">
+                    <div className="text-base sm:text-lg font-medium text-gray-900">
                       {isLoading ? "..." : attendanceStats.present}
                     </div>
                   </dd>
@@ -1219,13 +1346,13 @@ export default function EmployeeDashboard() {
         </div>
 
         {/* Absent */}
-        <div className="overflow-hidden rounded-lg bg-white shadow">
-          <div className="p-5">
+        <div className="overflow-hidden rounded-lg bg-white shadow transition-all duration-300 hover:shadow-md">
+          <div className="p-3 sm:p-5">
             <div className="flex items-center">
               <div className="flex-shrink-0">
-                <div className="flex h-12 w-12 items-center justify-center rounded-md bg-red-100 text-red-600">
+                <div className="flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-md bg-red-100 text-red-600">
                   <svg
-                    className="h-6 w-6"
+                    className="h-5 w-5 sm:h-6 sm:w-6"
                     fill="none"
                     viewBox="0 0 24 24"
                     strokeWidth="1.5"
@@ -1239,13 +1366,13 @@ export default function EmployeeDashboard() {
                   </svg>
                 </div>
               </div>
-              <div className="ml-5 w-0 flex-1">
+              <div className="ml-3 sm:ml-5 w-0 flex-1">
                 <dl>
-                  <dt className="truncate text-sm font-medium text-gray-500">
+                  <dt className="truncate text-xs sm:text-sm font-medium text-gray-500">
                     Tidak Hadir
                   </dt>
                   <dd>
-                    <div className="text-lg font-medium text-gray-900">
+                    <div className="text-base sm:text-lg font-medium text-gray-900">
                       {isLoading ? "..." : attendanceStats.absent}
                     </div>
                   </dd>
@@ -1256,13 +1383,13 @@ export default function EmployeeDashboard() {
         </div>
 
         {/* Late */}
-        <div className="overflow-hidden rounded-lg bg-white shadow">
-          <div className="p-5">
+        <div className="overflow-hidden rounded-lg bg-white shadow transition-all duration-300 hover:shadow-md">
+          <div className="p-3 sm:p-5">
             <div className="flex items-center">
               <div className="flex-shrink-0">
-                <div className="flex h-12 w-12 items-center justify-center rounded-md bg-yellow-100 text-yellow-600">
+                <div className="flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-md bg-yellow-100 text-yellow-600">
                   <svg
-                    className="h-6 w-6"
+                    className="h-5 w-5 sm:h-6 sm:w-6"
                     fill="none"
                     viewBox="0 0 24 24"
                     strokeWidth="1.5"
@@ -1276,13 +1403,13 @@ export default function EmployeeDashboard() {
                   </svg>
                 </div>
               </div>
-              <div className="ml-5 w-0 flex-1">
+              <div className="ml-3 sm:ml-5 w-0 flex-1">
                 <dl>
-                  <dt className="truncate text-sm font-medium text-gray-500">
+                  <dt className="truncate text-xs sm:text-sm font-medium text-gray-500">
                     Terlambat
                   </dt>
                   <dd>
-                    <div className="text-lg font-medium text-gray-900">
+                    <div className="text-base sm:text-lg font-medium text-gray-900">
                       {isLoading ? "..." : attendanceStats.late}
                     </div>
                   </dd>
@@ -1293,13 +1420,13 @@ export default function EmployeeDashboard() {
         </div>
 
         {/* Half Day */}
-        <div className="overflow-hidden rounded-lg bg-white shadow">
-          <div className="p-5">
+        <div className="overflow-hidden rounded-lg bg-white shadow transition-all duration-300 hover:shadow-md">
+          <div className="p-3 sm:p-5">
             <div className="flex items-center">
               <div className="flex-shrink-0">
-                <div className="flex h-12 w-12 items-center justify-center rounded-md bg-orange-100 text-orange-600">
+                <div className="flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-md bg-orange-100 text-orange-600">
                   <svg
-                    className="h-6 w-6"
+                    className="h-5 w-5 sm:h-6 sm:w-6"
                     fill="none"
                     viewBox="0 0 24 24"
                     strokeWidth="1.5"
@@ -1313,13 +1440,13 @@ export default function EmployeeDashboard() {
                   </svg>
                 </div>
               </div>
-              <div className="ml-5 w-0 flex-1">
+              <div className="ml-3 sm:ml-5 w-0 flex-1">
                 <dl>
-                  <dt className="truncate text-sm font-medium text-gray-500">
+                  <dt className="truncate text-xs sm:text-sm font-medium text-gray-500">
                     Setengah Hari
                   </dt>
                   <dd>
-                    <div className="text-lg font-medium text-gray-900">
+                    <div className="text-base sm:text-lg font-medium text-gray-900">
                       {isLoading ? "..." : attendanceStats.halfday}
                     </div>
                   </dd>
@@ -1391,11 +1518,210 @@ export default function EmployeeDashboard() {
             setIsCheckingOut(false);
           }}
           actionType={captureAction}
+          requireOvertimeConfirmation={(() => {
+            if (captureAction !== 'check-out') return false;
+            const now = new Date();
+            const workdayType = getWorkdayType(now);
+            const endStr = getWorkEndTime(workdayType);
+            const endDate = workdayType === WorkdayType.SUNDAY ? null : new Date(`${now.toLocaleDateString('en-CA')}T${endStr}:00`);
+            const outside = workdayType === WorkdayType.SUNDAY || (endDate ? now > endDate : true);
+            return outside && !(todayRecord && todayRecord.overtimeStart);
+          })()}
           onSuccess={(message) => {
             // Callback untuk menampilkan pesan sukses di modal
             console.log('Success message:', message);
           }}
         />
+      )}
+
+      {/* Modal Form Keterlambatan */}
+      {isLateModalOpen && (
+        <div className="fixed inset-0 z-[100] overflow-y-auto">
+          <div className="flex min-h-screen items-center justify-center px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+            <div
+              className="fixed inset-0 bg-black/50 backdrop-blur-md transition-opacity"
+              aria-hidden="true"
+            ></div>
+
+            <span className="hidden sm:inline-block sm:h-screen sm:align-middle" aria-hidden="true">
+              &#8203;
+            </span>
+
+            <div className="relative inline-block transform overflow-hidden rounded-lg bg-white text-left align-bottom shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:align-middle">
+              <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                <div className="sm:flex sm:items-start">
+                  <div className="mt-3 w-full text-center sm:mt-0 sm:text-left">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-medium leading-6 text-gray-900">
+                        Formulir Keterlambatan
+                      </h3>
+                    </div>
+                    <div className="mt-2">
+                      <p className="text-sm text-gray-500">
+                        Anda terdeteksi terlambat. Silakan isi alasan keterlambatan Anda.
+                      </p>
+                    </div>
+                    <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div className="sm:col-span-2">
+                        <label className="block text-sm font-medium text-gray-700">
+                          Alasan keterlambatan
+                        </label>
+                        <textarea
+                          value={lateReason}
+                          onChange={(e) => {
+                            setLateReason(e.target.value);
+                            if (lateError) setLateError(null);
+                          }}
+                          rows={3}
+                          className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm"
+                          placeholder="Tuliskan alasan keterlambatan minimal 20 karakter"
+                        />
+                        {lateReason.trim().length > 0 && lateReason.trim().length < 20 && (
+                          <div className="mt-1 text-xs text-red-600">
+                            Minimal 20 karakter
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">
+                          Upload bukti foto (opsional)
+                        </label>
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0] || null;
+                            if (!file) {
+                              setLatePhotoFile(null);
+                              setLatePhotoPreview(null);
+                              return;
+                            }
+
+                            if (file.size > 2 * 1024 * 1024) {
+                              setLateError("Ukuran file maksimal 2MB");
+                              return;
+                            }
+
+                            const validTypes = ["image/jpeg", "image/png"];
+                            if (!validTypes.includes(file.type)) {
+                              setLateError("Format file harus JPG atau PNG");
+                              return;
+                            }
+
+                            setLatePhotoFile(file);
+                            const reader = new FileReader();
+                            reader.onload = () => {
+                              setLatePhotoPreview(reader.result as string);
+                            };
+                            reader.readAsDataURL(file);
+                          }}
+                          className="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:rounded-md file:border-0 file:bg-indigo-50 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-indigo-700 hover:file:bg-indigo-100"
+                        />
+                        {latePhotoPreview && (
+                          <div className="mt-2">
+                            <Image
+                              src={latePhotoPreview}
+                              alt="Preview"
+                              width={96}
+                              height={96}
+                              className="h-24 w-24 rounded object-cover"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    {lateError && (
+                      <div className="mt-2 rounded-md bg-red-50 p-2 text-sm text-red-700">
+                        {lateError}
+                      </div>
+                    )}
+                    <div className="mt-3 flex items-center justify-end gap-2">
+                      <button
+                        disabled={lateSubmitting || lateReason.trim().length < 20}
+                        onClick={async () => {
+                          setLateError(null);
+                          setLateSubmitting(true);
+                          try {
+                            let uploadedUrl: string | undefined;
+
+                            // Upload photo if exists
+                            if (latePhotoFile) {
+                              const formData = new FormData();
+                              formData.append("file", latePhotoFile);
+
+                              const uploadRes = await fetch("/api/upload", {
+                                method: "POST",
+                                body: formData,
+                              });
+
+                              const uploadData = await uploadRes.json();
+
+                              if (!uploadRes.ok) {
+                                throw new Error(uploadData.error || "Gagal mengupload foto");
+                              }
+
+                              uploadedUrl = uploadData.url;
+                            }
+
+                            // Submit late reason
+                            const response = await fetch("/api/attendance/late", {
+                              method: "POST",
+                              headers: {
+                                "Content-Type": "application/json",
+                              },
+                              body: JSON.stringify({
+                                reason: lateReason.trim(),
+                                photoUrl: uploadedUrl,
+                              }),
+                            });
+
+                            const data = await response.json();
+
+                            if (!response.ok) {
+                              throw new Error(data.error || "Gagal mengirim alasan keterlambatan");
+                            }
+
+                            // Success
+                            setLateReason("");
+                            setLatePhotoFile(null);
+                            setLatePhotoPreview(null);
+                            
+                            // Update local state
+                            setTodayRecord((prev) => {
+                                if (!prev) return null;
+                                return {
+                                    ...prev,
+                                    lateSubmittedAt: new Date(data.lateSubmittedAt || Date.now()),
+                                };
+                            });
+                            
+                            setIsLateModalOpen(false);
+                            
+                            if (window.showAttendanceSuccess) {
+                                window.showAttendanceSuccess("✅ Alasan keterlambatan berhasil dikirim!");
+                            }
+                            
+                            // Refresh data
+                            fetchAttendanceData();
+
+                          } catch (err: any) {
+                            setLateError(err.message || "Terjadi kesalahan saat mengirim data");
+                          } finally {
+                            setLateSubmitting(false);
+                          }
+                        }}
+                        className="inline-flex items-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50"
+                      >
+                        {lateSubmitting ? "Mengirim..." : "Kirim Pengajuan"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
+import { updateEmployee } from "@/lib/updateEmployee";
 
 // GET a single employee
 export async function GET(
@@ -17,8 +18,8 @@ export async function GET(
 
     const { id: employeeId } = await params;
 
-    // Allow admins to access any employee, but employees can only access their own data
-    if (session.user.role !== "ADMIN") {
+    // Allow admins/managers to access any employee, but employees can only access their own data
+    if (session.user.role !== "ADMIN" && session.user.role !== "MANAGER") {
       const employee = await prisma.employee.findFirst({
         where: {
           id: employeeId,
@@ -81,72 +82,17 @@ export async function PUT(
 
     const { id: employeeId } = await params;
     const body = await req.json();
-    const {
-      name,
-      email,
-      position,
-      department,
-      basicSalary,
-      contactNumber,
-      address,
-      isActive,
-    } = body;
 
-    // Find the employee
-    const employee = await prisma.employee.findUnique({
-      where: { id: employeeId },
-      include: { user: true },
-    });
+    const result = await updateEmployee(employeeId, body, session.user.id);
 
-    if (!employee) {
-      return NextResponse.json(
-        { error: "Employee not found" },
-        { status: 404 }
-      );
+    if (!result.ok) {
+        if (typeof result.error === "string" && (result.error === "Employee not found")) {
+            return NextResponse.json({ error: result.error }, { status: 404 });
+        }
+        return NextResponse.json({ error: result.error }, { status: 400 });
     }
 
-    // Check if email already exists (if changing email)
-    if (email !== employee.user.email) {
-      const existingUser = await prisma.user.findUnique({
-        where: { email },
-      });
-
-      if (existingUser) {
-        return NextResponse.json(
-          { error: "Email already in use" },
-          { status: 400 }
-        );
-      }
-    }
-
-    // Update user and employee in a transaction
-    const result = await prisma.$transaction(async (tx) => {
-      // Update user
-      const user = await tx.user.update({
-        where: { id: employee.userId },
-        data: {
-          name,
-          email,
-        },
-      });
-
-      // Update employee
-      const updatedEmployee = await tx.employee.update({
-        where: { id: employeeId },
-        data: {
-          position,
-          department,
-          basicSalary,
-          contactNumber,
-          address,
-          isActive,
-        },
-      });
-
-      return { user, employee: updatedEmployee };
-    });
-
-    return NextResponse.json(result.employee);
+    return NextResponse.json(result.data);
   } catch (error) {
     console.error("Error updating employee:", error);
     return NextResponse.json(
@@ -187,82 +133,52 @@ export async function DELETE(
       );
     }
 
-    // Periksa data terkait (untuk informasi)
-    const attendanceCount = await prisma.attendance.count({
-      where: { employeeId: employee.id }
-    });
-
-    const payrollCount = await prisma.payroll.count({
-      where: { employeeId: employee.id }
-    });
-
-    // Lakukan penghapusan CASCADE semua data terkait
-    // Hapus semua data dalam transaksi untuk menjaga integritas database
+    // Delete user (cascade deletes employee)
+    // But we need to manually delete related records first because some relations don't have onDelete: Cascade
     await prisma.$transaction(async (tx) => {
-      // 1. Hapus semua data kehadiran terkait karyawan
-      if (attendanceCount > 0) {
-        await tx.attendance.deleteMany({
-          where: { employeeId: employee.id }
-        });
-      }
-
-      // 2. Hapus semua data penggajian terkait karyawan
-      if (payrollCount > 0) {
-        await tx.payroll.deleteMany({
-          where: { employeeId: employee.id }
-        });
-      }
-
-      // 3. Hapus data notifikasi terkait
-      await tx.notification.deleteMany({
-        where: { userId: employee.userId }
+      // 1. Delete Payroll related data
+      // Delete PayrollAuditLogs first (no cascade)
+      await tx.payrollAuditLog.deleteMany({
+        where: {
+          payroll: {
+            employeeId: employee.id
+          }
+        }
+      });
+      // Delete Payrolls
+      await tx.payroll.deleteMany({
+        where: { employeeId: employee.id }
       });
 
-      // 4. Hapus karyawan
-      await tx.employee.delete({
-        where: { id: employeeId },
+      // 2. Delete Attendance related data
+      // Attendance has cascade for ApprovalLog, AttendanceAuditLog, and AuditLog (via attendanceId)
+      await tx.attendance.deleteMany({
+        where: { employeeId: employee.id }
       });
 
-      // 5. Hapus user
+      // 3. Delete other related records
+      await tx.allowance.deleteMany({ where: { employeeId: employee.id } });
+      await tx.deduction.deleteMany({ where: { employeeId: employee.id } });
+      await tx.leave.deleteMany({ where: { employeeId: employee.id } });
+      await tx.advance.deleteMany({ where: { employeeId: employee.id } });
+      await tx.softLoan.deleteMany({ where: { employeeId: employee.id } });
+      await tx.overtimeRequest.deleteMany({ where: { employeeId: employee.id } });
+      
+      // 4. Delete AuditLogs directly linked to employee (not via attendance)
+      await tx.auditLog.deleteMany({ where: { employeeId: employee.id } });
+
+      // 5. Finally delete the User (which cascades to Employee and EmployeeIdLog)
       await tx.user.delete({
         where: { id: employee.userId },
       });
     });
 
-    // Informasi tentang data yang dihapus (untuk log)
-    const deletedDataInfo = [];
-    if (attendanceCount > 0) deletedDataInfo.push(`${attendanceCount} data kehadiran`);
-    if (payrollCount > 0) deletedDataInfo.push(`${payrollCount} data penggajian`);
-    
-    const successMessage = deletedDataInfo.length > 0
-      ? `Karyawan berhasil dihapus beserta ${deletedDataInfo.join(" dan ")}`
-      : "Karyawan berhasil dihapus";
-
-    return NextResponse.json({ 
-      message: successMessage,
-      deletedRelatedData: {
-        attendance: attendanceCount,
-        payroll: payrollCount
-      }
-    });
-  } catch (error: any) {
+    return NextResponse.json({ message: "Karyawan berhasil dihapus" });
+  } catch (error) {
     console.error("Error deleting employee:", error);
-    
-    // Berikan pesan error yang lebih spesifik berdasarkan jenis error
-    let errorMessage = "Gagal menghapus karyawan";
-    let statusCode = 500;
-    
-    if (error.code === 'P2025') {
-      errorMessage = "Karyawan tidak ditemukan";
-      statusCode = 404;
-    } else if (error.code === 'P2003') {
-      errorMessage = "Tidak dapat menghapus karyawan. Hubungi administrator sistem.";
-      statusCode = 400;
-    }
-    
     return NextResponse.json(
-      { error: errorMessage },
-      { status: statusCode }
+      { error: "Gagal menghapus karyawan" },
+      { status: 500 }
     );
   }
 }

@@ -38,7 +38,7 @@ async function main() {
         create: {
           employeeId: 'EMP001',
           position: 'Software Developer',
-          department: 'Engineering',
+          division: 'Engineering',
           basicSalary: 5000,
           joiningDate: new Date('2023-01-15'),
           contactNumber: '555-123-4567',
@@ -69,7 +69,7 @@ async function main() {
         create: {
           employeeId: 'EMP002',
           position: 'UI/UX Designer',
-          department: 'Design',
+          division: 'Design',
           basicSalary: 4500,
           joiningDate: new Date('2023-02-20'),
           contactNumber: '555-234-5678',
@@ -100,7 +100,7 @@ async function main() {
         create: {
           employeeId: 'EMP003',
           position: 'Project Manager',
-          department: 'Management',
+          division: 'Management',
           basicSalary: 6000,
           joiningDate: new Date('2022-11-05'),
           contactNumber: '555-345-6789',

@@ -4,7 +4,6 @@ import { writeFile, mkdir } from "fs/promises";
 import { existsSync } from "fs";
 import path from "path";
 import { authOptions } from "@/lib/auth";
-import { db } from "@/lib/db";
 
 // Helper function to generate a unique ID
 function generateUniqueId() {
@@ -35,18 +34,19 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Validate file type
-    if (!file.type.startsWith("image/")) {
+    // Validate file type: only JPEG/PNG
+    const allowedTypes = ["image/jpeg", "image/png"];
+    if (!allowedTypes.includes(file.type)) {
       return NextResponse.json(
-        { error: "Only image files are allowed" },
+        { error: "Format file harus JPEG atau PNG" },
         { status: 400 }
       );
     }
     
-    // Validate file size (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
+    // Validate file size (max 2MB)
+    if (file.size > 2 * 1024 * 1024) {
       return NextResponse.json(
-        { error: "File size exceeds 5MB limit" },
+        { error: "Ukuran file melebihi batas 2MB" },
         { status: 400 }
       );
     }
@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
     const fileName = `${session.user.id}_${generateUniqueId()}.${fileExtension}`;
     
     // Create uploads directory if it doesn't exist
-    const uploadsDir = path.join(process.cwd(), "public", "uploads");
+    const uploadsDir = path.join(process.cwd(), "public", "uploads", "profiles");
     
     if (!existsSync(uploadsDir)) {
       await mkdir(uploadsDir, { recursive: true });
@@ -68,12 +68,22 @@ export async function POST(request: NextRequest) {
     // Convert the file to a Buffer
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
+
+    // Basic magic-byte validation for JPEG/PNG
+    const isJpeg = buffer[0] === 0xff && buffer[1] === 0xd8;
+    const isPng = buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47 && buffer[4] === 0x0d && buffer[5] === 0x0a && buffer[6] === 0x1a && buffer[7] === 0x0a;
+    if (!isJpeg && !isPng) {
+      return NextResponse.json(
+        { error: "File tidak valid (format file rusak atau bukan gambar)" },
+        { status: 400 }
+      );
+    }
     
     // Write the file to the filesystem
     await writeFile(filePath, buffer);
     
     // Public URL for the file
-    const fileUrl = `/uploads/${fileName}`;
+    const fileUrl = `/uploads/profiles/${fileName}`;
     
     return NextResponse.json({
       url: fileUrl,

@@ -12,8 +12,15 @@ export async function POST(
   try {
     const session = await getServerSession(authOptions);
     
-    // Pastikan pengguna sudah login dan memiliki role ADMIN
-    if (!session || session.user.role !== "ADMIN") {
+    if (!session) {
+      return NextResponse.json(
+        { error: "Anda tidak memiliki izin untuk melakukan tindakan ini" },
+        { status: 403 }
+      );
+    }
+    const role = session.user.role;
+    const allowedRoles = ["ADMIN", "MANAGER", "FOREMAN", "ASSISTANT_FOREMAN"];
+    if (!allowedRoles.includes(role)) {
       return NextResponse.json(
         { error: "Anda tidak memiliki izin untuk melakukan tindakan ini" },
         { status: 403 }
@@ -54,11 +61,45 @@ export async function POST(
       );
     }
     
-    // Menyetujui overtime/Sunday work
-    const updatedAttendance = await approveOvertime(
-      attendanceId,
-      session.user.id
-    );
+    const body = await req.json().catch(() => ({}));
+    const note = typeof body?.note === "string" ? body.note : undefined;
+
+    if (role === "ASSISTANT_FOREMAN") {
+      if (attendance.isSundayWork) {
+        return NextResponse.json(
+          { error: "Assistant Foreman tidak dapat menyetujui kerja hari Minggu" },
+          { status: 403 }
+        );
+      }
+      if (attendance.overtime > 120) {
+        return NextResponse.json(
+          { error: "Batas persetujuan lembur Assistant Foreman adalah 120 menit" },
+          { status: 403 }
+        );
+      }
+    }
+
+    const updatedAttendance = await approveOvertime(attendanceId, session.user.id);
+
+    await prisma.approvalLog.create({
+      data: {
+        attendanceId,
+        action: "APPROVE",
+        actorUserId: session.user.id,
+        note: note || null,
+      },
+    });
+
+    // Audit log
+    await prisma.attendanceAuditLog.create({
+      data: {
+        attendanceId,
+        userId: session.user.id,
+        action: "OVERTIME_APPROVED",
+        oldValue: { isOvertimeApproved: attendance.isOvertimeApproved },
+        newValue: { isOvertimeApproved: true },
+      },
+    });
     
     // Kirim notifikasi ke karyawan
     if (attendance.employee?.user) {
@@ -77,6 +118,20 @@ export async function POST(
         "success"
       );
     }
+
+    // Notifikasi ke semua pihak terkait (ADMIN, MANAGER, FOREMAN, ASSISTANT_FOREMAN)
+    const approverUsers = await prisma.user.findMany({
+      where: { role: { in: ["ADMIN", "MANAGER", "FOREMAN", "ASSISTANT_FOREMAN"] } },
+      select: { id: true, name: true, role: true },
+    });
+    const actor = approverUsers.find(u => u.id === session.user.id);
+    const employeeName = attendance.employee?.user?.name || "Karyawan";
+    const broadcastMsg = `Status persetujuan lembur untuk ${employeeName} diubah menjadi Disetujui oleh ${actor?.name || "-"} (${actor?.role || "-"}).`;
+    await Promise.all(
+      approverUsers
+        .filter(u => u.id !== session.user.id)
+        .map(u => createNotification(u.id, "Pembaruan Persetujuan Lembur", broadcastMsg, "info"))
+    );
     
     return NextResponse.json(updatedAttendance);
   } catch (error: any) {

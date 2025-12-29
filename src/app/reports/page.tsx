@@ -4,11 +4,11 @@ import ReportsManagement from "@/components/reports/ReportsManagement";
 
 export default async function ReportsPage() {
   // Only admin users can access this page
-  const user = await requireAdmin();
+  const _user = await requireAdmin();
   
   return (
     <DashboardLayout>
       <ReportsManagement />
     </DashboardLayout>
   );
-} 
+}

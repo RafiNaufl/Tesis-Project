@@ -28,6 +28,8 @@ export default function AdvanceHistory() {
   const [advances, setAdvances] = useState<Advance[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [queryAdvanceId, setQueryAdvanceId] = useState<string | null>(null);
+  const [highlightAdvanceId, setHighlightAdvanceId] = useState<string | null>(null);
 
   const fetchAdvances = async () => {
     try {
@@ -51,6 +53,25 @@ export default function AdvanceHistory() {
       fetchAdvances();
     }
   }, [session]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const aid = params.get('advanceId');
+      if (aid) setQueryAdvanceId(aid);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (queryAdvanceId && advances.length > 0) {
+      const el = document.getElementById(`advance-history-row-${queryAdvanceId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setHighlightAdvanceId(queryAdvanceId);
+        setTimeout(() => setHighlightAdvanceId(null), 3000);
+      }
+    }
+  }, [queryAdvanceId, advances]);
 
   const getStatusBadge = (status: string) => {
     const statusConfig = {
@@ -128,7 +149,8 @@ export default function AdvanceHistory() {
           </div>
         ) : (
           <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
-            <table className="min-w-full divide-y divide-gray-300">
+            {/* Desktop Table View */}
+            <table className="min-w-full divide-y divide-gray-300 hidden md:table">
               <thead className="bg-gray-50">
                 <tr>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -153,7 +175,7 @@ export default function AdvanceHistory() {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {advances.map((advance) => (
-                  <tr key={advance.id}>
+                  <tr key={advance.id} id={`advance-history-row-${advance.id}`} className={highlightAdvanceId === advance.id ? 'bg-indigo-50' : ''}>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {formatCurrency(advance.amount)}
                     </td>
@@ -187,6 +209,57 @@ export default function AdvanceHistory() {
                 ))}
               </tbody>
             </table>
+
+            {/* Mobile Card View */}
+            <div className="md:hidden space-y-4 p-4 bg-gray-50">
+              {advances.map((advance) => (
+                <div 
+                  key={advance.id} 
+                  id={`advance-history-card-${advance.id}`}
+                  className={`bg-white p-4 rounded-lg shadow space-y-3 ${highlightAdvanceId === advance.id ? 'ring-2 ring-indigo-500 bg-indigo-50' : ''}`}
+                >
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <span className="text-lg font-bold text-gray-900">{formatCurrency(advance.amount)}</span>
+                      <p className="text-xs text-gray-500 mt-1">
+                        {formatDate(advance.createdAt)}
+                      </p>
+                    </div>
+                    {getStatusBadge(advance.status)}
+                  </div>
+                  
+                  <div className="border-t border-gray-100 pt-3 space-y-2">
+                    <div>
+                      <p className="text-xs font-medium text-gray-500 uppercase">Alasan</p>
+                      <p className="text-sm text-gray-900 mt-0.5">{advance.reason}</p>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-xs font-medium text-gray-500 uppercase">Periode</p>
+                        <p className="text-sm text-gray-900 mt-0.5">{getMonthName(advance.month)} {advance.year}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium text-gray-500 uppercase">Pemotongan</p>
+                        <p className="text-sm text-gray-900 mt-0.5">
+                          {advance.status === "APPROVED" && advance.deductionMonth && advance.deductionYear ? (
+                            <span>{getMonthName(advance.deductionMonth)} {advance.deductionYear}</span>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                    
+                    {advance.status === "REJECTED" && advance.rejectionReason && (
+                      <div className="bg-red-50 p-2 rounded text-xs text-red-700 mt-2">
+                        <span className="font-semibold">Alasan Penolakan:</span> {advance.rejectionReason}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>

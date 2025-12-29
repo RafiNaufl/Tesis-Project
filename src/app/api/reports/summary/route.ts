@@ -3,58 +3,33 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 
-// Define types for the query results
-type PayrollSummaryResult = {
-  totalbasesalary: string | null;
-  totalallowances: string | null;
-  totaldeductions: string | null;
-  totalnetsalary: string | null;
-  totalovertimeamount: string | null;
-  employeeCount: string | null;
-  averagesalary: string | null;
-};
-
-type DepartmentBreakdownResult = {
-  department: string;
-  employeeCount: string;
-  totalSalary: string;
-  averageSalary: string;
-};
-
-type AttendanceSummaryResult = {
-  totalAttendanceRecords: string | null;
-  presentCount: string | null;
-  absentCount: string | null;
-  lateCount: string | null;
-  halfdayCount: string | null;
-};
 
 export async function GET(request: NextRequest) {
   try {
     // Cek apakah pengguna terautentikasi
     const session = await getServerSession(authOptions);
     let isAuthenticated = false;
-    let isAdmin = false;
+    let isPrivileged = false;
 
     if (session) {
       isAuthenticated = true;
-      isAdmin = session.user.role === "ADMIN";
+      isPrivileged = session.user.role === "ADMIN" || session.user.role === "MANAGER";
     }
 
     // Extract query parameters
     const searchParams = request.nextUrl.searchParams;
     const month = searchParams.get("month") ? parseInt(searchParams.get("month")!) : null;
     const year = searchParams.get("year") ? parseInt(searchParams.get("year")!) : null;
-    const department = searchParams.get("department");
+    const division = searchParams.get("division");
     
-    // Jika pengguna tidak terautentikasi atau bukan admin, berikan data dummy
-    if (!isAuthenticated || !isAdmin) {
+    // Jika pengguna tidak terautentikasi atau bukan admin/manager, berikan data dummy
+    if (!isAuthenticated || !isPrivileged) {
       // Berikan data default untuk tampilan dashboard
       return NextResponse.json({
         period: { 
           month: month || new Date().getMonth() + 1, 
           year: year || new Date().getFullYear(), 
-          department: department || "All Departments" 
+          division: division || "All Divisions" 
         },
         payroll: { 
           totalBaseSalary: 0, 
@@ -66,7 +41,7 @@ export async function GET(request: NextRequest) {
           averageSalary: 0, 
           pendingCount: 0 
         },
-        departments: [],
+        divisions: [],
         attendance: {
           totalAttendanceRecords: 0, 
           presentCount: 0, 
@@ -122,7 +97,7 @@ export async function GET(request: NextRequest) {
         period: {
           month: month || new Date().getMonth() + 1,
           year: year || new Date().getFullYear(),
-          department: department || "All Departments"
+          division: division || "All Divisions"
         },
         payroll: {
           totalBaseSalary: 0,
@@ -134,7 +109,7 @@ export async function GET(request: NextRequest) {
           averageSalary: employeeCount > 0 ? (payrollSummary._sum.netSalary || 0) / employeeCount : 0,
           pendingCount: pendingCount
         },
-        departments: [],
+        divisions: [],
         attendance: {
           totalAttendanceRecords: 0,
           presentCount: 0,
@@ -154,14 +129,14 @@ export async function GET(request: NextRequest) {
         period: { 
           month: month || new Date().getMonth() + 1, 
           year: year || new Date().getFullYear(), 
-          department: department || "All Departments" 
+          division: division || "All Divisions" 
         },
         payroll: { 
           totalBaseSalary: 0, totalAllowances: 0, totalDeductions: 0, 
           totalNetSalary: 0, totalOvertimeAmount: 0, employeeCount: 0, 
           averageSalary: 0, pendingCount: 0 
         },
-        departments: [],
+        divisions: [],
         attendance: {
           totalAttendanceRecords: 0, presentCount: 0, absentCount: 0,
           lateCount: 0, halfdayCount: 0, presentToday: 0
@@ -179,7 +154,7 @@ export async function GET(request: NextRequest) {
       period: { 
         month: new Date().getMonth() + 1, 
         year: new Date().getFullYear(), 
-        department: "All Departments" 
+        division: "All Divisions" 
       }, 
       payroll: { 
         totalBaseSalary: 0, 
@@ -187,7 +162,7 @@ export async function GET(request: NextRequest) {
         employeeCount: 0, 
         pendingCount: 0 
       },
-      departments: [],
+      divisions: [],
       attendance: { presentToday: 0 }
     }, { status: 200 }); // Use 200 instead of 500 to prevent client errors
   }

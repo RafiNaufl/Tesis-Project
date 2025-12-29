@@ -1,40 +1,40 @@
 "use client";
 
 import { useState } from "react";
-import { useSession } from "next-auth/react";
-import { formatCurrency } from "@/lib/utils";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
+ 
 
 interface AdvanceRequestProps {
   onSuccess?: () => void;
 }
 
 export default function AdvanceRequest({ onSuccess }: AdvanceRequestProps) {
-  const { data: session } = useSession();
+  
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  
-  const [formData, setFormData] = useState({
-    amount: "",
-    reason: "",
+  const schema = z.object({
+    amount: z
+      .string()
+      .refine((v) => !isNaN(parseFloat(v)) && parseFloat(v) > 0, {
+        message: "Jumlah kasbon harus lebih dari 0",
+      }),
+    reason: z.string().min(10, { message: "Alasan minimal 10 karakter" }),
+  });
+  const { register, handleSubmit: rhfHandleSubmit, formState: { errors }, reset } = useForm<{ amount: string; reason: string }>({
+    resolver: zodResolver(schema),
+    defaultValues: { amount: "", reason: "" },
   });
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const onSubmit = async (data: { amount: string; reason: string }) => {
     setIsSubmitting(true);
     setError(null);
     setSuccess(null);
 
     try {
-      const amount = parseFloat(formData.amount);
-      
-      if (amount <= 0) {
-        throw new Error("Jumlah kasbon harus lebih dari 0");
-      }
-
-      if (!formData.reason.trim()) {
-        throw new Error("Alasan permohonan harus diisi");
-      }
+      const amount = parseFloat(data.amount);
 
       const response = await fetch("/api/payroll/advances", {
         method: "POST",
@@ -43,7 +43,7 @@ export default function AdvanceRequest({ onSuccess }: AdvanceRequestProps) {
         },
         body: JSON.stringify({
           amount,
-          reason: formData.reason,
+          reason: data.reason,
           month: new Date().getMonth() + 1,
           year: new Date().getFullYear(),
         }),
@@ -55,7 +55,7 @@ export default function AdvanceRequest({ onSuccess }: AdvanceRequestProps) {
       }
 
       setSuccess("Permohonan kasbon berhasil diajukan dan menunggu persetujuan admin");
-      setFormData({ amount: "", reason: "" });
+      reset();
       
       if (onSuccess) {
         onSuccess();
@@ -65,11 +65,6 @@ export default function AdvanceRequest({ onSuccess }: AdvanceRequestProps) {
     } finally {
       setIsSubmitting(false);
     }
-  };
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
   };
 
   return (
@@ -111,9 +106,9 @@ export default function AdvanceRequest({ onSuccess }: AdvanceRequestProps) {
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <form onSubmit={rhfHandleSubmit(onSubmit)} className="space-y-6">
         <div>
-          <label htmlFor="amount" className="block text-sm font-medium text-gray-700">
+          <label htmlFor="amount" className="block text-sm font-medium text-gray-700 mb-1">
             Jumlah Kasbon *
           </label>
           <div className="mt-1 relative rounded-md shadow-sm">
@@ -122,16 +117,17 @@ export default function AdvanceRequest({ onSuccess }: AdvanceRequestProps) {
             </div>
             <input
               type="number"
-              name="amount"
               id="amount"
-              value={formData.amount}
-              onChange={handleInputChange}
-              className="focus:ring-indigo-500 focus:border-indigo-500 block w-full pl-12 pr-12 sm:text-sm border-gray-300 rounded-md"
+              {...register("amount")}
+              className="focus:ring-indigo-500 focus:border-indigo-500 block w-full pl-12 pr-4 sm:text-sm border-gray-300 rounded-md py-3 min-h-[48px] touch-manipulation"
               placeholder="0"
               min="1"
               step="1000"
               required
             />
+            {errors.amount && (
+              <p className="mt-1 text-xs text-red-600">{errors.amount.message as string}</p>
+            )}
           </div>
           <p className="mt-1 text-xs text-gray-500">
             Masukkan jumlah kasbon yang dibutuhkan
@@ -139,20 +135,21 @@ export default function AdvanceRequest({ onSuccess }: AdvanceRequestProps) {
         </div>
 
         <div>
-          <label htmlFor="reason" className="block text-sm font-medium text-gray-700">
+          <label htmlFor="reason" className="block text-sm font-medium text-gray-700 mb-1">
             Alasan Permohonan *
           </label>
           <div className="mt-1">
             <textarea
-              name="reason"
               id="reason"
               rows={4}
-              value={formData.reason}
-              onChange={handleInputChange}
-              className="focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
+              {...register("reason")}
+              className="focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md py-3 px-4 min-h-[120px] touch-manipulation"
               placeholder="Jelaskan alasan mengajukan kasbon (contoh: kebutuhan mendesak, biaya tak terduga, dll.)"
               required
             />
+            {errors.reason && (
+              <p className="mt-1 text-xs text-red-600">{errors.reason.message as string}</p>
+            )}
           </div>
           <p className="mt-1 text-xs text-gray-500">
             Berikan penjelasan yang jelas mengenai alasan permohonan kasbon
@@ -179,11 +176,11 @@ export default function AdvanceRequest({ onSuccess }: AdvanceRequestProps) {
           </div>
         </div>
 
-        <div className="flex justify-end">
+        <div className="flex justify-end pt-2">
           <button
             type="submit"
             disabled={isSubmitting}
-            className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full sm:w-auto inline-flex justify-center items-center py-3 px-6 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed min-h-[48px] touch-manipulation"
           >
             {isSubmitting ? "Mengajukan..." : "Ajukan Kasbon"}
           </button>

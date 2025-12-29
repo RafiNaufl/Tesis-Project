@@ -1,14 +1,13 @@
 import { requireAuth } from "@/lib/session";
 import DashboardLayout from "@/components/layouts/DashboardLayout";
-import PayrollManagement from "@/components/payroll/PayrollManagement";
-import { redirect } from "next/navigation";
+import PayrollDashboard from "@/components/payroll/PayrollDashboard";
 
 export default async function PayrollPage() {
   const user = await requireAuth();
   
   return (
     <DashboardLayout>
-      <PayrollManagement />
+      <PayrollDashboard user={user} />
     </DashboardLayout>
   );
-} 
+}

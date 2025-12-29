@@ -8,7 +8,7 @@ export default async function DashboardPage() {
   
   return (
     <DashboardLayout>
-      {user.role === "ADMIN" ? <AdminDashboard /> : <EmployeeDashboard />}
+      {(user.role === "ADMIN" || user.role === "MANAGER") ? <AdminDashboard /> : <EmployeeDashboard />}
     </DashboardLayout>
   );
-} 
+}
