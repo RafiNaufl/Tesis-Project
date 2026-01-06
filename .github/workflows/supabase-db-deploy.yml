@@ -30,21 +30,39 @@ jobs:
           DATABASE_URL: ${{ secrets.SUPABASE_DIRECT_URL }}
           DIRECT_URL: ${{ secrets.SUPABASE_DIRECT_URL }}
         run: |
-          npx prisma db push --skip-generate
+          set -o pipefail
+          echo "Applying schema via DIRECT_URL..."
+          npx prisma db push --skip-generate || (
+            echo "DIRECT_URL failed, falling back to pooler DATABASE_URL..." && \
+            export DATABASE_URL="${{ secrets.SUPABASE_DB_URL }}" && \
+            npx prisma db push --skip-generate
+          )
 
       - name: Run migrations if present
         env:
-          DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
+          DATABASE_URL: ${{ secrets.SUPABASE_DIRECT_URL }}
           DIRECT_URL: ${{ secrets.SUPABASE_DIRECT_URL }}
         run: |
-          npx prisma migrate deploy
+          set -o pipefail
+          echo "Running migrate deploy via DIRECT_URL..."
+          npx prisma migrate deploy || (
+            echo "DIRECT_URL failed, falling back to pooler DATABASE_URL..." && \
+            export DATABASE_URL="${{ secrets.SUPABASE_DB_URL }}" && \
+            npx prisma migrate deploy
+          )
 
       - name: Seed database (post-migration)
         env:
           # Use direct connection to avoid PgBouncer transaction limitations
           DATABASE_URL: ${{ secrets.SUPABASE_DIRECT_URL }}
         run: |
-          npx prisma db seed
+          set -o pipefail
+          echo "Seeding via DIRECT_URL..."
+          npx prisma db seed || (
+            echo "DIRECT_URL failed, falling back to pooler DATABASE_URL..." && \
+            export DATABASE_URL="${{ secrets.SUPABASE_DB_URL }}" && \
+            npx prisma db seed
+          )
 
       - name: Show Prisma migrate status
         env:
