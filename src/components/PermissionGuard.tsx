@@ -155,10 +155,6 @@ export default function PermissionGuard() {
       }
     } catch (e) {
       console.error("Error opening settings:", e);
-      // Fallback if plugin fails or not implemented
-      if (Capacitor.getPlatform() === 'ios') {
-         await App.openUrl({ url: 'app-settings:' });
-      }
     }
     // Dialog remains open until they return and we re-check
   };
