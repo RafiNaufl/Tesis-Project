@@ -1384,6 +1384,7 @@ export default function EmployeeDashboard() {
                             if (latePhotoFile) {
                               const formData = new FormData();
                               formData.append("file", latePhotoFile);
+                              formData.append("folder", "attendance"); // Simpan di folder attendance
 
                               const uploadRes = await fetch("/api/upload", {
                                 method: "POST",

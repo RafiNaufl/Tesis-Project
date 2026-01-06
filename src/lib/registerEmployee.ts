@@ -45,7 +45,9 @@ export async function registerEmployee(input: any) {
   const data = parsed.data;
 
   if (data.email) {
-    const existingUser = await prisma.user.findUnique({ where: { email: data.email } });
+    const existingUser = await prisma.user.findFirst({
+      where: { email: { equals: data.email, mode: "insensitive" } },
+    });
     if (existingUser) {
       return { ok: false, error: "Email sudah digunakan" } as const;
     }
@@ -68,7 +70,7 @@ export async function registerEmployee(input: any) {
     const user = await tx.user.create({
       data: {
         name: data.name,
-        email: data.email ?? `${employeeId}@example.local`,
+        email: data.email ? data.email.toLowerCase() : `${employeeId}@example.local`.toLowerCase(),
         hashedPassword,
         profileImageUrl: typeof data.profileImageUrl === "string" ? data.profileImageUrl : undefined,
         role:

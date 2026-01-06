@@ -75,8 +75,8 @@ export async function updateEmployee(employeeId: string, data: any, changedByUse
 
   // Check if email already exists (if changing email)
   if (validatedData.email !== employee.user.email) {
-    const existingUser = await prisma.user.findUnique({
-      where: { email: validatedData.email },
+    const existingUser = await prisma.user.findFirst({
+      where: { email: { equals: validatedData.email, mode: "insensitive" } },
     });
 
     if (existingUser) {

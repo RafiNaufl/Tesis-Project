@@ -234,6 +234,7 @@ export default function ProfileForm() {
         // Create a FormData object for the file upload
         const formData = new FormData();
         formData.append('file', profileImage);
+        formData.append('folder', 'profiles'); // Explicitly set folder
         
         // Upload the image
         const uploadResponse = await fetch(`${baseUrl}/api/upload`, {

@@ -88,6 +88,7 @@ export default function AddEmployeeModal({
         }
         const fd = new FormData();
         fd.append("file", profileFile);
+        fd.append("folder", "profiles"); // Explicitly set folder
         const res = await fetch("/api/upload", { method: "POST", body: fd });
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));

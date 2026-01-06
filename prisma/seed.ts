@@ -20,103 +20,29 @@ async function main() {
   });
 
   console.log('Admin user created:', admin.id);
+  const dummyEmails = ['employee@example.com', 'jane@example.com', 'robert@example.com'];
+  for (const email of dummyEmails) {
+    const u = await prisma.user.findUnique({ where: { email }, include: { employee: true } });
+    if (!u) continue;
+    const empId = u.employee?.id;
+    if (empId) {
+      await prisma.attendance.deleteMany({ where: { employeeId: empId } });
+      await prisma.allowance.deleteMany({ where: { employeeId: empId } });
+      await prisma.deduction.deleteMany({ where: { employeeId: empId } });
+      await prisma.payroll.deleteMany({ where: { employeeId: empId } });
+      await prisma.auditLog.deleteMany({ where: { employeeId: empId } });
+      await prisma.softLoan.deleteMany({ where: { employeeId: empId } });
+      await prisma.advance.deleteMany({ where: { employeeId: empId } });
+      await prisma.leave.deleteMany({ where: { employeeId: empId } });
+      await prisma.overtimeRequest.deleteMany({ where: { employeeId: empId } });
+      await prisma.employeeIdLog.deleteMany({ where: { employeeId: empId } });
+    }
+    await prisma.session.deleteMany({ where: { userId: u.id } });
+    await prisma.notification.deleteMany({ where: { userId: u.id } });
+    await prisma.user.delete({ where: { email } });
+  }
 
-  // Create demo employee users - DISABLED
-  // const employees = [];
-  
-  // // First employee
-  // const employee1Password = await hash('employee123', 10);
-  // const employee1 = await prisma.user.upsert({
-
-    where: { email: 'employee@example.com' },
-    update: {},
-    create: {
-      email: 'employee@example.com',
-      name: 'John Employee',
-      hashedPassword: employee1Password,
-      role: 'EMPLOYEE',
-      employee: {
-        create: {
-          employeeId: 'EMP001',
-          position: 'Software Developer',
-          division: 'Engineering',
-          basicSalary: 5000,
-          joiningDate: new Date('2023-01-15'),
-          contactNumber: '555-123-4567',
-          address: '123 Main St, Anytown, USA',
-          isActive: true,
-        },
-      },
-    },
-    include: {
-      employee: true,
-    },
-  });
-
-  employees.push(employee1);
-  console.log('Employee 1 created:', employee1.id);
-
-  // Second employee
-  const employee2Password = await hash('employee123', 10);
-  const employee2 = await prisma.user.upsert({
-    where: { email: 'jane@example.com' },
-    update: {},
-    create: {
-      email: 'jane@example.com',
-      name: 'Jane Smith',
-      hashedPassword: employee2Password,
-      role: 'EMPLOYEE',
-      employee: {
-        create: {
-          employeeId: 'EMP002',
-          position: 'UI/UX Designer',
-          division: 'Design',
-          basicSalary: 4500,
-          joiningDate: new Date('2023-02-20'),
-          contactNumber: '555-234-5678',
-          address: '456 Oak Ave, Anytown, USA',
-          isActive: true,
-        },
-      },
-    },
-    include: {
-      employee: true,
-    },
-  });
-
-  employees.push(employee2);
-  console.log('Employee 2 created:', employee2.id);
-
-  // Third employee
-  const employee3Password = await hash('employee123', 10);
-  const employee3 = await prisma.user.upsert({
-    where: { email: 'robert@example.com' },
-    update: {},
-    create: {
-      email: 'robert@example.com',
-      name: 'Robert Johnson',
-      hashedPassword: employee3Password,
-      role: 'EMPLOYEE',
-      employee: {
-        create: {
-          employeeId: 'EMP003',
-          position: 'Project Manager',
-          division: 'Management',
-          basicSalary: 6000,
-          joiningDate: new Date('2022-11-05'),
-          contactNumber: '555-345-6789',
-          address: '789 Pine St, Anytown, USA',
-          isActive: true,
-        },
-      },
-    },
-    include: {
-      employee: true,
-    },
-  });
-
-  employees.push(employee3);
-  console.log('Employee 3 created:', employee3.id);
+  const employees: any[] = [];
 
   // Generate dates for the records
   const today = new Date();
@@ -131,129 +57,129 @@ async function main() {
   const lastMonth = currentMonth === 1 ? 12 : currentMonth - 1;
   const lastMonthYear = currentMonth === 1 ? currentYear - 1 : currentYear;
 
-  // Create attendance records for all employees - DISABLED
-  console.log('Creating attendance records... - DISABLED');
+  // Create attendance records for all employees
+  console.log('Creating attendance records...');
   
-  // for (const employee of employees) {
-  //   // Last 5 days attendance for current employee
-  //   for (let i = 1; i <= 5; i++) {
-  //     const recordDate = new Date(today);
-  //     recordDate.setDate(today.getDate() - i);
+  for (const employee of employees) {
+    // Last 5 days attendance for current employee
+    for (let i = 1; i <= 5; i++) {
+      const recordDate = new Date(today);
+      recordDate.setDate(today.getDate() - i);
       
-  //     // Skip weekends
-  //     if (recordDate.getDay() === 0 || recordDate.getDay() === 6) {
-  //       continue;
-  //     }
+      // Skip weekends
+      if (recordDate.getDay() === 0 || recordDate.getDay() === 6) {
+        continue;
+      }
       
-  //     const checkInHour = 8 + Math.floor(Math.random() * 2); // Random check in between 8 and 9 AM
-  //     const checkOutHour = 17 + Math.floor(Math.random() * 2); // Random check out between 5 and 6 PM
+      const checkInHour = 8 + Math.floor(Math.random() * 2); // Random check in between 8 and 9 AM
+      const checkOutHour = 17 + Math.floor(Math.random() * 2); // Random check out between 5 and 6 PM
       
-  //     // Random status with more weight on PRESENT
-  //     const statuses = ['PRESENT', 'PRESENT', 'PRESENT', 'PRESENT', 'LATE', 'HALFDAY'];
-  //     const status = statuses[Math.floor(Math.random() * statuses.length)] as 'PRESENT' | 'LATE' | 'HALFDAY' | 'ABSENT';
+      // Random status with more weight on PRESENT
+      const statuses = ['PRESENT', 'PRESENT', 'PRESENT', 'PRESENT', 'LATE', 'HALFDAY'];
+      const status = statuses[Math.floor(Math.random() * statuses.length)] as 'PRESENT' | 'LATE' | 'HALFDAY' | 'ABSENT';
       
-  //     await prisma.attendance.create({
-  //       data: {
-  //         employeeId: employee.employee!.id,
-  //         date: new Date(recordDate),
-  //         checkIn: new Date(recordDate.setHours(checkInHour, Math.floor(Math.random() * 60), 0)),
-  //         checkOut: new Date(recordDate.setHours(checkOutHour, Math.floor(Math.random() * 60), 0)),
-  //         status: status,
-  //       },
-  //     });
-  //   }
-  // }
+      await prisma.attendance.create({
+        data: {
+          employeeId: employee.employee!.id,
+          date: new Date(recordDate),
+          checkIn: new Date(recordDate.setHours(checkInHour, Math.floor(Math.random() * 60), 0)),
+          checkOut: new Date(recordDate.setHours(checkOutHour, Math.floor(Math.random() * 60), 0)),
+          status: status,
+        },
+      });
+    }
+  }
 
 
-  console.log('Attendance records created');
+  console.log('Attendance records skipped');
 
   // Create allowances for employees
-  console.log('Creating allowances... - DISABLED');
+  console.log('Creating allowances...');
   
   const allowanceTypes = ['Transport', 'Meal', 'Housing', 'Performance Bonus'];
   
-  // for (const employee of employees) {
-  //   // Current month allowances
-  //   for (let i = 0; i < 2; i++) {
-  //     const type = allowanceTypes[Math.floor(Math.random() * allowanceTypes.length)];
-  //     const amount = (100 + Math.floor(Math.random() * 10) * 50); // Random amount between 100 and 550
+  for (const employee of employees) {
+    // Current month allowances
+    for (let i = 0; i < 2; i++) {
+      const type = allowanceTypes[Math.floor(Math.random() * allowanceTypes.length)];
+      const amount = (100 + Math.floor(Math.random() * 10) * 50); // Random amount between 100 and 550
       
-  //     await prisma.allowance.create({
-  //       data: {
-  //         employeeId: employee.employee!.id,
-  //         month: currentMonth,
-  //         year: currentYear,
-  //         type: type,
-  //         amount: amount,
-  //         date: today,
-  //       },
-  //     });
-  //   }
+      await prisma.allowance.create({
+        data: {
+          employeeId: employee.employee!.id,
+          month: currentMonth,
+          year: currentYear,
+          type: type,
+          amount: amount,
+          date: today,
+        },
+      });
+    }
     
-  //   // Last month allowances
-  //   for (let i = 0; i < 2; i++) {
-  //     const type = allowanceTypes[Math.floor(Math.random() * allowanceTypes.length)];
-  //     const amount = (100 + Math.floor(Math.random() * 10) * 50);
-  //     const lastMonthDate = new Date(lastMonthYear, lastMonth - 1, 15);
+    // Last month allowances
+    for (let i = 0; i < 2; i++) {
+      const type = allowanceTypes[Math.floor(Math.random() * allowanceTypes.length)];
+      const amount = (100 + Math.floor(Math.random() * 10) * 50);
+      const lastMonthDate = new Date(lastMonthYear, lastMonth - 1, 15);
       
-  //     await prisma.allowance.create({
-  //       data: {
-  //         employeeId: employee.employee!.id,
-  //         month: lastMonth,
-  //         year: lastMonthYear,
-  //         type: type,
-  //         amount: amount,
-  //         date: lastMonthDate,
-  //       },
-  //     });
-  //   }
-  // }
+      await prisma.allowance.create({
+        data: {
+          employeeId: employee.employee!.id,
+          month: lastMonth,
+          year: lastMonthYear,
+          type: type,
+          amount: amount,
+          date: lastMonthDate,
+        },
+      });
+    }
+  }
   
-  console.log('Allowances created');
+  console.log('Allowances skipped');
   
   // Create deductions for employees
-  console.log('Creating deductions... - DISABLED');
+  console.log('Creating deductions...');
   
   const deductionReasons = ['Tax', 'Insurance', 'Advance Payment', 'Late Penalty'];
   
-  // for (const employee of employees) {
-  //   // Current month deductions
-  //   for (let i = 0; i < 2; i++) {
-  //     const reason = deductionReasons[Math.floor(Math.random() * deductionReasons.length)];
-  //     const amount = (50 + Math.floor(Math.random() * 10) * 25); // Random amount between 50 and 300
+  for (const employee of employees) {
+    // Current month deductions
+    for (let i = 0; i < 2; i++) {
+      const reason = deductionReasons[Math.floor(Math.random() * deductionReasons.length)];
+      const amount = (50 + Math.floor(Math.random() * 10) * 25); // Random amount between 50 and 300
       
-  //     await prisma.deduction.create({
-  //       data: {
-  //         employeeId: employee.employee!.id,
-  //         month: currentMonth,
-  //         year: currentYear,
-  //         reason: reason,
-  //         amount: amount,
-  //         date: today,
-  //       },
-  //     });
-  //   }
+      await prisma.deduction.create({
+        data: {
+          employeeId: employee.employee!.id,
+          month: currentMonth,
+          year: currentYear,
+          reason: reason,
+          amount: amount,
+          date: today,
+        },
+      });
+    }
     
-  //   // Last month deductions
-  //   for (let i = 0; i < 2; i++) {
-  //     const reason = deductionReasons[Math.floor(Math.random() * deductionReasons.length)];
-  //     const amount = (50 + Math.floor(Math.random() * 10) * 25);
-  //     const lastMonthDate = new Date(lastMonthYear, lastMonth - 1, 15);
+    // Last month deductions
+    for (let i = 0; i < 2; i++) {
+      const reason = deductionReasons[Math.floor(Math.random() * deductionReasons.length)];
+      const amount = (50 + Math.floor(Math.random() * 10) * 25);
+      const lastMonthDate = new Date(lastMonthYear, lastMonth - 1, 15);
       
-  //     await prisma.deduction.create({
-  //       data: {
-  //         employeeId: employee.employee!.id,
-  //         month: lastMonth,
-  //         year: lastMonthYear,
-  //         reason: reason,
-  //         amount: amount,
-  //         date: lastMonthDate,
-  //       },
-  //     });
-  //   }
-  // }
+      await prisma.deduction.create({
+        data: {
+          employeeId: employee.employee!.id,
+          month: lastMonth,
+          year: lastMonthYear,
+          reason: reason,
+          amount: amount,
+          date: lastMonthDate,
+        },
+      });
+    }
+  }
   
-  console.log('Deductions created');
+  console.log('Deductions skipped');
   
   // Create payroll records for last month (all paid)
   console.log('Creating payroll records... - DISABLED');
@@ -405,7 +331,7 @@ async function main() {
   // }
 
   
-  console.log('Payroll records created');
+  console.log('Payroll records skipped');
 
   // Add sample notifications for the admin
   // await prisma.notification.create({
@@ -526,7 +452,7 @@ async function main() {
   // }
 
 
-  console.log('Sample notifications created');
+  console.log('Sample notifications skipped');
   console.log('Seeding complete!');
 }
 

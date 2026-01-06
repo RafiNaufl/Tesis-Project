@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev -H 0.0.0.0",
-    "build": "next build",
+    "build": "npx prisma generate && next build",
     "start": "next start",
     "lint": "next lint",
     "test": "jest",
@@ -41,6 +41,7 @@
     "@radix-ui/react-select": "^2.2.5",
     "@radix-ui/react-slot": "^1.2.3",
     "@radix-ui/react-tabs": "^1.1.12",
+    "@supabase/supabase-js": "^2.89.0",
     "@types/uuid": "^8.3.4",
     "axios": "^1.10.0",
     "bcrypt": "^5.1.1",
@@ -82,6 +83,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "csstype": "^3.2.3",
     "eslint": "9.39.1",
     "eslint-config-next": "16.0.5",
     "eslint-plugin-next": "^0.0.0",
@@ -90,6 +92,7 @@
     "tailwindcss": "^4",
     "ts-jest": "^29.4.5",
     "ts-node": "^10.9.2",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "undici-types": "^7.18.0"
   }
 }

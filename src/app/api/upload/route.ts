@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { writeFile, mkdir } from "fs/promises";
-import { existsSync } from "fs";
-import path from "path";
 import { authOptions } from "@/lib/auth";
+import { supabase } from "@/lib/supabase";
 
 // Helper function to generate a unique ID
 function generateUniqueId() {
@@ -26,13 +24,18 @@ export async function POST(request: NextRequest) {
     // Get the form data
     const formData = await request.formData();
     const file = formData.get("file") as File;
-    
+    const folder = formData.get("folder") as string || "profiles"; // Default to 'profiles'
+
     if (!file) {
       return NextResponse.json(
         { error: "No file provided" },
         { status: 400 }
       );
     }
+    
+    // Validate folder name to prevent directory traversal
+    const allowedFolders = ["profiles", "attendance", "requests", "misc"];
+    const targetFolder = allowedFolders.includes(folder) ? folder : "profiles";
     
     // Validate file type: only JPEG/PNG
     const allowedTypes = ["image/jpeg", "image/png"];
@@ -51,19 +54,11 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Create unique filename
+    // Create unique filename with folder path
     const fileExtension = file.name.split(".").pop();
-    const fileName = `${session.user.id}_${generateUniqueId()}.${fileExtension}`;
-    
-    // Create uploads directory if it doesn't exist
-    const uploadsDir = path.join(process.cwd(), "public", "uploads", "profiles");
-    
-    if (!existsSync(uploadsDir)) {
-      await mkdir(uploadsDir, { recursive: true });
-    }
-    
-    // Save file path
-    const filePath = path.join(uploadsDir, fileName);
+    // Format: folder/userId_timestamp_random.ext
+    // Note: In Supabase Storage, folders are just prefixes in the filename
+    const fileName = `${targetFolder}/${session.user.id}_${generateUniqueId()}.${fileExtension}`;
     
     // Convert the file to a Buffer
     const arrayBuffer = await file.arrayBuffer();
@@ -79,14 +74,30 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Write the file to the filesystem
-    await writeFile(filePath, buffer);
+    // Upload to Supabase Storage
+    // Ensure you have a bucket named 'profiles' in your Supabase project
+    const { data, error: uploadError } = await supabase.storage
+      .from('profiles')
+      .upload(fileName, buffer, {
+        contentType: file.type,
+        upsert: true
+      });
+      
+    if (uploadError) {
+      console.error("Supabase storage upload error:", uploadError);
+      return NextResponse.json(
+        { error: "Gagal mengupload file ke storage server" },
+        { status: 500 }
+      );
+    }
     
-    // Public URL for the file
-    const fileUrl = `/uploads/profiles/${fileName}`;
+    // Get Public URL
+    const { data: { publicUrl } } = supabase.storage
+      .from('profiles')
+      .getPublicUrl(fileName);
     
     return NextResponse.json({
-      url: fileUrl,
+      url: publicUrl,
       message: "File uploaded successfully",
     });
   } catch (error) {

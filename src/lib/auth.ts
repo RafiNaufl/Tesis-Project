@@ -34,8 +34,8 @@ export const authOptions: NextAuthOptions = {
         let user = null as any;
 
         if (isEmail) {
-          user = await prisma.user.findUnique({
-            where: { email: identifier },
+          user = await prisma.user.findFirst({
+            where: { email: { equals: identifier, mode: "insensitive" } },
             include: { employee: true },
           });
         } else {

@@ -640,6 +640,7 @@ export default function AttendanceManagement() {
       // Buat FormData untuk mengirim file
       const formData = new FormData();
       formData.append('file', blob, 'attendance-photo.jpg');
+      formData.append('folder', 'attendance'); // Simpan di folder attendance
       
       // Kirim ke endpoint upload
       const response = await fetch('/api/upload', {

@@ -21,6 +21,7 @@ jest.mock('@/lib/prisma', () => {
     payrollConfig: { findFirst: jest.fn(async () => ({ minMonthlyWage: 3500000, minHourlyWage: 20000 })) },
     user: {
       findUnique: jest.fn(async () => null),
+      findFirst: jest.fn(async () => null),
       findMany: jest.fn(async () => [{ email: 'admin@example.com' }]),
       create: tx.user.create,
     },

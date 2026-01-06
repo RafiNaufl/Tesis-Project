@@ -19,7 +19,10 @@ export async function POST(req: NextRequest) {
     let user: any = null;
 
     if (isEmail) {
-      user = await db.user.findUnique({ where: { email: identifier }, include: { employee: true } });
+      user = await db.user.findFirst({
+        where: { email: { equals: identifier, mode: "insensitive" } },
+        include: { employee: true },
+      });
     } else {
       const employee = await db.employee.findFirst({ where: { contactNumber: identifier }, select: { userId: true } });
       if (employee?.userId) {
