@@ -46,10 +46,10 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Validate file size (max 2MB)
-    if (file.size > 2 * 1024 * 1024) {
+    // Validate file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
       return NextResponse.json(
-        { error: "Ukuran file melebihi batas 2MB" },
+        { error: "Ukuran file melebihi batas 10MB" },
         { status: 400 }
       );
     }

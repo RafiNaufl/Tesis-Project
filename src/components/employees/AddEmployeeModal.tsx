@@ -76,33 +76,38 @@ export default function AddEmployeeModal({
 
   const handleFormSubmit = (data: EmployeeFormValues) => {
     const proceed = async () => {
-      let profileImageUrl: string | undefined;
-      if (profileFile) {
-        if (!["image/jpeg", "image/png"].includes(profileFile.type)) {
-          alert("Format gambar harus JPG/PNG");
-          return;
+      try {
+        let profileImageUrl: string | undefined;
+        if (profileFile) {
+          if (!["image/jpeg", "image/png"].includes(profileFile.type)) {
+            alert("Format gambar harus JPG/PNG");
+            return;
+          }
+          if (profileFile.size > 2 * 1024 * 1024) {
+            alert("Ukuran gambar maksimal 2MB");
+            return;
+          }
+          const fd = new FormData();
+          fd.append("file", profileFile);
+          fd.append("folder", "profiles"); // Explicitly set folder
+          const res = await fetch("/api/upload", { method: "POST", body: fd });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            alert(err.error || "Gagal upload gambar");
+            return;
+          }
+          const j = await res.json();
+          profileImageUrl = j.url;
         }
-        if (profileFile.size > 2 * 1024 * 1024) {
-          alert("Ukuran gambar maksimal 2MB");
-          return;
-        }
-        const fd = new FormData();
-        fd.append("file", profileFile);
-        fd.append("folder", "profiles"); // Explicitly set folder
-        const res = await fetch("/api/upload", { method: "POST", body: fd });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          alert(err.error || "Gagal upload gambar");
-          return;
-        }
-        const j = await res.json();
-        profileImageUrl = j.url;
+        onSubmit({ ...(data as any), profileImageUrl });
+        reset();
+        onClose();
+      } catch (error) {
+        console.error("Error submitting form:", error);
+        alert("Terjadi kesalahan saat menyimpan data");
       }
-      onSubmit({ ...(data as any), profileImageUrl });
     };
     proceed();
-    reset();
-    onClose();
   };
 
   if (!isOpen) return null;

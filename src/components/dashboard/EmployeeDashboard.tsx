@@ -294,6 +294,7 @@ export default function EmployeeDashboard() {
       // Buat FormData untuk upload
       const formData = new FormData();
       formData.append('file', blob, 'photo.jpg');
+      formData.append('folder', 'attendance'); // Set folder to attendance
       
       // Upload ke server
       const uploadResponse = await fetch('/api/upload', {

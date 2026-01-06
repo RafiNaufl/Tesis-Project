@@ -96,6 +96,8 @@ export async function registerEmployee(input: any) {
         contactNumber: data.phone,
         address: undefined,
         joiningDate: new Date(),
+        bpjsKesehatan: data.bpjsKesehatan || 0,
+        bpjsKetenagakerjaan: data.bpjsKetenagakerjaan || 0,
       },
     });
 
