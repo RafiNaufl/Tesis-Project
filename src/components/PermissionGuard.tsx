@@ -145,12 +145,12 @@ export default function PermissionGuard() {
   const handleOpenSettings = async () => {
     try {
       if (Capacitor.getPlatform() === 'ios') {
-        await NativeSettings.open({
-          optionIOS: IOSSettings.App, 
+        await NativeSettings.openIOS({
+          option: IOSSettings.App, 
         });
       } else {
-        await NativeSettings.open({
-          optionAndroid: AndroidSettings.ApplicationDetails,
+        await NativeSettings.openAndroid({
+          option: AndroidSettings.ApplicationDetails,
         });
       }
     } catch (e) {
