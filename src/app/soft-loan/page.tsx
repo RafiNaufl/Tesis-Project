@@ -1,7 +1,7 @@
 import { requireAuth } from "@/lib/session";
 import DashboardLayout from "@/components/layouts/DashboardLayout";
-import SoftLoanRequest from "@/components/payroll/softloanrequest";
-import SoftLoanManagement from "@/components/payroll/softloanmanagement";
+import SoftLoanRequest from "@/components/payroll/SoftLoanRequest";
+import SoftLoanManagement from "@/components/payroll/SoftLoanManagement";
 
 export default async function SoftLoanPage() {
   const user = await requireAuth();

@@ -5,7 +5,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { formatCurrency } from "@/lib/utils";
-import SoftLoanManagement from "./softloanmanagement";
+import SoftLoanManagement from "./SoftLoanManagement";
 import { 
   Wallet, 
   History, 
