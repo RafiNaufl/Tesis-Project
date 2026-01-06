@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import AuthProvider from "@/components/auth/AuthProvider";
+import PermissionGuard from "@/components/PermissionGuard";
 import { Toaster } from "react-hot-toast";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -20,6 +21,7 @@ export default function RootLayout({
     <html lang="id">
       <body className={inter.className}>
         <AuthProvider>
+          <PermissionGuard />
           {children}
           <Toaster position="top-center" />
         </AuthProvider>
