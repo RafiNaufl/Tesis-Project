@@ -638,9 +638,9 @@ export default function AttendanceManagement() {
       const blob = await base64Response.blob();
       
       // Buat FormData untuk mengirim file
-      const formData = new FormData();
-      formData.append('file', blob, 'attendance-photo.jpg');
-      formData.append('folder', 'attendance'); // Simpan di folder attendance
+            const formData = new FormData();
+            formData.append('file', blob, `attendance-${Date.now()}.jpg`);
+            formData.append('folder', 'attendance'); // Simpan di folder attendance
       
       // Kirim ke endpoint upload
       const response = await fetch('/api/upload', {
