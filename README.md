@@ -59,8 +59,8 @@ A comprehensive employee management system that handles attendance tracking, pay
 ### Prerequisites
 
 - Node.js 18+ installed
-- PostgreSQL installed and running
 - Git
+- Supabase project (Postgres) created
 
 ### Installation
 
@@ -75,15 +75,20 @@ npm install
 Create or edit the `.env` file with your database connection details:
 
 ```
-DATABASE_URL="postgresql://postgres:password@localhost:5432/employee_system"
+DATABASE_URL="postgresql://postgres:<password>@db.<project_ref>.supabase.co:5432/postgres?sslmode=require"
 NEXTAUTH_SECRET="your-secret-key-change-in-production"
 NEXTAUTH_URL="http://localhost:3000"
+SUPABASE_URL="https://<project_ref>.supabase.co"
+SUPABASE_ANON_KEY="<anon-key>"
+SUPABASE_SERVICE_ROLE_KEY="<service-role-key>"
 ```
 
-3. Set up the database:
+3. Set up the database (Supabase):
 
 ```bash
+# Ensure DATABASE_URL points to your Supabase database
 npx prisma db push
+npx prisma migrate deploy
 ```
 
 4. Seed the database with initial data:
@@ -223,3 +228,32 @@ The project includes several utility scripts to verify authentication functional
   node test-nextauth-session.js
   ```
 
+## Deployment
+
+### Deploying Database to Supabase
+
+- Create a Supabase project and retrieve `DATABASE_URL` from the Dashboard (Settings → Database → Connection string). Use `sslmode=require`.
+- Add `SUPABASE_DB_URL` as a GitHub Secret in your repository settings.
+- The workflow `.github/workflows/supabase-db-deploy.yml` runs on pushes to `main` and applies schema and migrations to Supabase.
+- To rollback a migration, trigger `.github/workflows/supabase-db-rollback.yml` and supply the migration name (from `prisma/migrations`).
+
+### Environment Variables
+
+- `DATABASE_URL`: Supabase Postgres connection string
+- `NEXTAUTH_SECRET`: JWT secret for NextAuth
+- `NEXTAUTH_URL`: Base URL for NextAuth callbacks
+- `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`: Supabase project keys (optional if not using supabase-js)
+- `RATE_LIMIT_ENABLED`, `RATE_LIMIT_MAX`, `RATE_LIMIT_WINDOW_MS`: API rate limiting controls
+
+### Security Considerations
+
+- Keep `SUPABASE_SERVICE_ROLE_KEY` only in server-side environments and secrets storage.
+- API rate limiting is enforced via `middleware.ts`; enable with `RATE_LIMIT_ENABLED=true`.
+- Passwords are stored as hashes; never log sensitive data.
+
+### Troubleshooting
+
+- Connection errors: Verify `DATABASE_URL` includes `sslmode=require` and correct host `db.<project_ref>.supabase.co`.
+- Prisma generate errors: Run `npm run db:generate` and ensure Node 18+.
+- Migration failures: Check `npx prisma migrate status` and use rollback workflow with the last migration name.
+- Health check: `GET /api/health` returns `{ db: "connected" }` when DB is reachable.

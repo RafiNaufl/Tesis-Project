@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { db } from '@/lib/db';
 
 /**
  * Endpoint untuk health check
@@ -6,7 +7,16 @@ import { NextResponse } from 'next/server';
  */
 export async function GET() {
   try {
-    return NextResponse.json({ status: 'ok', timestamp: new Date().toISOString() });
+    // Check database connectivity
+    let dbOk = false;
+    try {
+      const result = await db.$queryRaw`SELECT NOW()`;
+      dbOk = Array.isArray(result) || !!result;
+    } catch {
+      dbOk = false;
+    }
+
+    return NextResponse.json({ status: 'ok', db: dbOk ? 'connected' : 'error', timestamp: new Date().toISOString() });
   } catch (error) {
     console.error('Health check error:', error);
     return NextResponse.json({ status: 'error' }, { status: 500 });

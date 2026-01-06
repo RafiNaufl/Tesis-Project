@@ -1,0 +1,40 @@
+name: Supabase DB Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      migration_name:
+        description: Prisma migration name to mark as rolled back
+        required: true
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Mark migration rolled back
+        env:
+          DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          npx prisma migrate resolve --rolled-back ${{ inputs.migration_name }}
+
+      - name: Migrate to previous safe state
+        env:
+          DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          npx prisma migrate deploy
+

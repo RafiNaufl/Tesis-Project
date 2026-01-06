@@ -4,8 +4,9 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = "file:./dev.db"
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
@@ -194,12 +195,15 @@ model Payroll {
   overtimeHours   Float     @default(0)
   overtimeAmount  Float     @default(0)
   lateDeduction   Float     @default(0)
+  advanceDeduction Float    @default(0)
+  softLoanDeduction Float   @default(0)
   bpjsKesehatanAmount Float @default(0)
   bpjsKetenagakerjaanAmount Float @default(0)
   status          String    @default("PENDING")
   createdAt       DateTime  @default(now())
   paidAt          DateTime?
   employee        Employee  @relation(fields: [employeeId], references: [id])
+  deductions      Deduction[]
   auditLogs       PayrollAuditLog[]
 
   @@unique([employeeId, month, year])
@@ -319,6 +323,8 @@ model Deduction {
   date       DateTime @default(now())
   type       String   @default("OTHER")
   employee   Employee @relation(fields: [employeeId], references: [id])
+  payrollId  String?
+  payroll    Payroll? @relation(fields: [payrollId], references: [id])
 
   @@map("deductions")
 }
@@ -381,6 +387,8 @@ model SoftLoan {
   startYear       Int
   reason          String?
   status          String    @default("PENDING")
+  approvedBy      String?
+  approvedAt      DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   completedAt     DateTime?
