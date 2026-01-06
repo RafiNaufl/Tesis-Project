@@ -202,7 +202,7 @@ export default function EmployeeDashboardMobile() {
       
       // Create FormData
       const formData = new FormData();
-      formData.append('file', blob, 'attendance-photo.jpg');
+      formData.append('file', blob, `attendance-${Date.now()}.jpg`);
       formData.append('folder', 'attendance'); // Simpan di folder attendance
       
       // Upload to server
