@@ -1,0 +1,22 @@
+export enum Status {
+  PRESENT = 'PRESENT',
+  LATE = 'LATE',
+  ABSENT = 'ABSENT',
+  LEAVE = 'LEAVE',
+  SICK = 'SICK',
+  PERMIT = 'PERMIT'
+}
+
+export enum LeaveStatus {
+  PENDING = 'PENDING',
+  APPROVED = 'APPROVED',
+  REJECTED = 'REJECTED'
+}
+
+export enum Role {
+  ADMIN = 'ADMIN',
+  EMPLOYEE = 'EMPLOYEE',
+  MANAGER = 'MANAGER',
+  FOREMAN = 'FOREMAN',
+  ASSISTANT_FOREMAN = 'ASSISTANT_FOREMAN'
+}

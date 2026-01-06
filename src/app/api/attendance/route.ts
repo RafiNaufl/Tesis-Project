@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { checkIn, checkOut, getMonthlyAttendanceReport, startOvertime, endOvertime } from "@/lib/attendance";
 import { getWorkdayType, WorkdayType, getWorkEndTime, isOvertimeCheckOut, isOvertimeCheckIn } from "@/lib/attendanceRules";
 import { calculateOvertimeDuration } from "@/lib/overtimeCalculator";
-import { Status } from "@/generated/prisma/enums";
+import { Status } from "@/types/enums";
 import { 
   createCheckInNotification, 
   createLateCheckInAdminNotification,

@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { Status } from "@/generated/prisma/enums";
+import { Status } from "@/types/enums";
 
 /**
  * Membuat laporan kehadiran harian untuk semua karyawan

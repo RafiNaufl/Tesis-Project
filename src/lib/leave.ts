@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { LeaveStatus } from "@/generated/prisma/enums";
+import { LeaveStatus } from "@/types/enums";
 
 /**
  * Membuat permohonan cuti baru

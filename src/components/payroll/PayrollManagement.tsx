@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useSession } from "next-auth/react";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import { Status } from "@/generated/prisma/enums";
+import { Status } from "@/types/enums";
 import Image from "next/image";
 import { 
   Calendar, 

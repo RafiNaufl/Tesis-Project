@@ -1,6 +1,6 @@
 import { prisma } from '../src/lib/prisma';
 import { generateMonthlyPayroll } from '../src/lib/payroll';
-import { Status } from '../src/generated/prisma/enums';
+import { Status } from '../src/types/enums';
 
 // Helper to create date object (Month is 0-indexed in JS Date)
 const createDate = (day: number, hour: number, minute: number) => {

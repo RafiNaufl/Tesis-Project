@@ -1,5 +1,5 @@
 import { prisma } from "./prisma";
-import { Status } from "../generated/prisma/enums";
+import { Status } from "@/types/enums";
 
 // ==========================================
 // KONFIGURASI & KONSTANTA
