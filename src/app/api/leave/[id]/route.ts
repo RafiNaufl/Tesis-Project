@@ -182,8 +182,8 @@ export async function PATCH(
         title: status === "APPROVED" ? "Permohonan Cuti Disetujui" : "Permohonan Cuti Ditolak",
         message:
           status === "APPROVED"
-            ? `Permohonan cuti Anda dari ${leave.startDate.toLocaleDateString()} hingga ${leave.endDate.toLocaleDateString()} telah disetujui. [#ref:LEAVE:${id}]`
-            : `Permohonan cuti Anda dari ${leave.startDate.toLocaleDateString()} hingga ${leave.endDate.toLocaleDateString()} telah ditolak. [#ref:LEAVE:${id}]`,
+            ? `Permohonan cuti Anda dari ${leave.startDate.toLocaleDateString()} hingga ${leave.endDate.toLocaleDateString()} telah disetujui.`
+            : `Permohonan cuti Anda dari ${leave.startDate.toLocaleDateString()} hingga ${leave.endDate.toLocaleDateString()} telah ditolak.`,
         type: status === "APPROVED" ? "success" : "error",
         refType: "LEAVE",
         refId: id,

@@ -29,12 +29,13 @@ export async function GET(
     // Gunakan fungsi yang sudah ada untuk mendapatkan informasi pinjaman lunak aktif
     const softLoanInfo = await getEmployeeSoftLoanInfo(id);
     
+    if (!softLoanInfo) {
+      return NextResponse.json({ message: "Tidak ada pinjaman lunak aktif" }, { status: 404 });
+    }
+    
     return NextResponse.json(softLoanInfo);
   } catch (error) {
     console.error('Error fetching active soft loan:', error);
-    if (error instanceof Error && error.message === "Tidak ada pinjaman lunak aktif") {
-      return NextResponse.json({ message: error.message }, { status: 404 });
-    }
     return NextResponse.json({ message: 'Error fetching active soft loan' }, { status: 500 });
   }
 }

@@ -14,7 +14,7 @@ export interface SoftLoanInfo {
  * @param employeeId ID karyawan
  * @returns Informasi pinjaman lunak aktif
  */
-export const getEmployeeSoftLoanInfo = async (employeeId: string): Promise<SoftLoanInfo> => {
+export const getEmployeeSoftLoanInfo = async (employeeId: string): Promise<SoftLoanInfo | null> => {
   try {
     // Cari pinjaman lunak yang aktif untuk karyawan
     const activeLoan = await db.softLoan.findFirst({
@@ -25,7 +25,7 @@ export const getEmployeeSoftLoanInfo = async (employeeId: string): Promise<SoftL
     });
 
     if (!activeLoan) {
-      throw new Error("Tidak ada pinjaman lunak aktif");
+      return null;
     }
 
     return {
@@ -257,7 +257,7 @@ export const getSoftLoanById = async (id: string, isAdmin: boolean, userId: stri
  * @param status Status baru
  * @returns Pinjaman lunak yang telah diperbarui
  */
-export const updateSoftLoanStatus = async (id: string, status: string) => {
+export const updateSoftLoanStatus = async (id: string, status: string, adminId?: string, rejectionReason?: string) => {
   try {
     if (!['APPROVED', 'REJECTED'].includes(status)) {
       throw new Error("Invalid status");
@@ -276,12 +276,19 @@ export const updateSoftLoanStatus = async (id: string, status: string) => {
     const updateData: any = { status };
     
     if (status === 'APPROVED') {
+      updateData.status = 'ACTIVE'; // Map APPROVED to ACTIVE for internal logic
       const now = new Date();
       const currentMonth = now.getMonth() + 1; // Bulan dimulai dari 0
       const currentYear = now.getFullYear();
       
       updateData.startMonth = currentMonth;
       updateData.startYear = currentYear;
+      
+      // Simpan informasi admin
+      if (adminId) {
+        updateData.approvedBy = adminId;
+        updateData.approvedAt = now;
+      }
       
       // Hitung perkiraan bulan dan tahun selesai berdasarkan durasi
       let endMonth = currentMonth + softLoan.durationMonths - 1; // -1 karena bulan saat ini dihitung sebagai cicilan pertama
@@ -299,19 +306,111 @@ export const updateSoftLoanStatus = async (id: string, status: string) => {
       
       // Tambahkan informasi perkiraan selesai ke dalam keterangan
       updateData.reason = softLoan.reason + ` (Perkiraan selesai: ${endMonth}/${endYear})`;
+    } else if (status === 'REJECTED' && rejectionReason) {
+       // Tambahkan alasan penolakan ke dalam keterangan
+       updateData.reason = softLoan.reason + ` (DITOLAK: ${rejectionReason})`;
     }
 
-    const updatedSoftLoan = await db.softLoan.update({
-      where: {
-        id,
-      },
-      data: updateData,
-      include: {
-        employee: true,
-      },
+    // Gunakan transaksi untuk memastikan konsistensi data
+    const result = await db.$transaction(async (tx) => {
+      // 1. Update status pinjaman
+      const updatedSoftLoan = await tx.softLoan.update({
+        where: { id },
+        data: updateData,
+        include: {
+          employee: true,
+        },
+      });
+
+      // 2. Jika status ACTIVE, proses pemotongan langsung (Immediate Deduction)
+      if (updatedSoftLoan.status === 'ACTIVE') {
+        const now = new Date();
+        const currentMonth = now.getMonth() + 1;
+        const currentYear = now.getFullYear();
+
+        // Cek apakah sudah ada potongan pinjaman untuk bulan ini agar tidak double
+        const existingDeduction = await tx.deduction.findFirst({
+          where: {
+            employeeId: updatedSoftLoan.employeeId,
+            month: currentMonth,
+            year: currentYear,
+            type: "PINJAMAN",
+            // Jika kita bisa melacak by reason atau ID pinjaman di masa depan akan lebih baik
+            // Untuk saat ini asumsi 1 pinjaman aktif per karyawan
+          }
+        });
+
+        if (!existingDeduction) {
+           // Hitung jumlah potongan (Safety check: tidak melebihi sisa pinjaman)
+           const deductionAmount = Math.min(updatedSoftLoan.monthlyAmount, updatedSoftLoan.remainingAmount);
+
+           if (deductionAmount > 0) {
+             // a. Cari Payroll Pending (Optional)
+             const payroll = await tx.payroll.findFirst({
+               where: {
+                 employeeId: updatedSoftLoan.employeeId,
+                 month: currentMonth,
+                 year: currentYear,
+                 status: 'PENDING'
+               }
+             });
+
+             // b. Buat record deduction (Selalu buat, terlepas dari ada payroll atau tidak)
+             await tx.deduction.create({
+               data: {
+                 employeeId: updatedSoftLoan.employeeId,
+                 month: currentMonth,
+                 year: currentYear,
+                 amount: deductionAmount,
+                 type: "PINJAMAN",
+                 reason: `Cicilan Pinjaman (Auto-deducted on Approval)`,
+                 payrollId: payroll ? payroll.id : undefined // Link jika payroll ada
+               }
+             });
+
+             // c. Update saldo pinjaman LANGSUNG
+             const newRemaining = updatedSoftLoan.remainingAmount - deductionAmount;
+             await tx.softLoan.update({
+               where: { id: updatedSoftLoan.id },
+               data: {
+                 remainingAmount: newRemaining,
+                 status: newRemaining <= 0 ? 'COMPLETED' : 'ACTIVE',
+                 completedAt: newRemaining <= 0 ? new Date() : null
+               }
+             });
+
+             // d. Jika Payroll ada, update total deductions & net salary
+             if (payroll) {
+                await tx.payroll.update({
+                  where: { id: payroll.id },
+                  data: {
+                    totalDeductions: { increment: deductionAmount },
+                    netSalary: { decrement: deductionAmount },
+                  }
+                });
+
+                // Audit Log Payroll
+                await tx.payrollAuditLog.create({
+                  data: {
+                    payrollId: payroll.id,
+                    userId: adminId || "SYSTEM",
+                    action: "UPDATE_PAYROLL_DEDUCTION",
+                    newValue: { 
+                      reason: "Soft Loan Approval Deduction", 
+                      amount: deductionAmount,
+                      loanId: updatedSoftLoan.id
+                    }
+                  }
+                });
+             }
+           }
+        }
+      }
+
+      return updatedSoftLoan;
     });
 
-    return updatedSoftLoan;
+    return result;
   } catch (error) {
     console.error("Error updating soft loan status:", error);
     throw error;

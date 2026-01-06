@@ -36,6 +36,7 @@ export const authOptions: NextAuthOptions = {
         if (isEmail) {
           user = await prisma.user.findUnique({
             where: { email: identifier },
+            include: { employee: true },
           });
         } else {
           const employee = await prisma.employee.findFirst({
@@ -43,7 +44,10 @@ export const authOptions: NextAuthOptions = {
             select: { userId: true },
           });
           if (employee?.userId) {
-            user = await prisma.user.findUnique({ where: { id: employee.userId } });
+            user = await prisma.user.findUnique({ 
+              where: { id: employee.userId },
+              include: { employee: true },
+            });
           }
         }
 
@@ -62,6 +66,9 @@ export const authOptions: NextAuthOptions = {
           name: user.name,
           role: user.role,
           image: user.profileImageUrl || null,
+          position: user.employee?.position || null,
+          division: user.employee?.division || null,
+          organization: user.employee?.organization || null,
         };
       },
     }),
@@ -77,6 +84,9 @@ export const authOptions: NextAuthOptions = {
           email: user.email,
           role: user.role,
           image: user.image,
+          position: user.position,
+          division: user.division,
+          organization: user.organization,
         };
       }
       
@@ -89,6 +99,9 @@ export const authOptions: NextAuthOptions = {
           image: session.user.image,
           id: token.id,
           role: token.role,
+          position: token.position,
+          division: token.division,
+          organization: token.organization,
         };
       }
       
@@ -104,6 +117,9 @@ export const authOptions: NextAuthOptions = {
           email: token.email,
           role: token.role,
           image: token.image,
+          position: token.position,
+          division: token.division,
+          organization: token.organization,
         },
       };
     },

@@ -59,6 +59,215 @@ export async function GET(req: NextRequest) {
     const yearNum = year ? parseInt(year) : new Date().getFullYear();
     const limitNum = limit ? parseInt(limit) : undefined;
 
+    // Advanced Filtering Parameters
+    const startDateParam = searchParams.get("startDate");
+    const endDateParam = searchParams.get("endDate");
+    const departmentParam = searchParams.get("department");
+    const positionParam = searchParams.get("position");
+    const statusParam = searchParams.get("status"); // Comma separated
+    const isLateParam = searchParams.get("isLate");
+    const hasLocationParam = searchParams.get("hasLocation");
+    const dayTypeParam = searchParams.get("dayType");
+    const searchQuery = searchParams.get("search");
+
+    // Check if we are in "Advanced Filter Mode"
+    // Triggered if startDate/endDate/search/department/status is present
+    const isFilterMode = startDateParam || endDateParam || searchQuery || departmentParam || positionParam || statusParam || isLateParam || hasLocationParam || dayTypeParam || employeeId;
+
+    if (isFilterMode && (session.user.role === "ADMIN" || session.user.role === "MANAGER")) {
+      const whereClause: any = {
+        employee: {
+          isActive: true
+        }
+      };
+
+      // Date Range Filter
+      if (startDateParam || endDateParam) {
+        whereClause.date = {};
+        if (startDateParam) whereClause.date.gte = new Date(startDateParam);
+        if (endDateParam) {
+           // Set to end of day
+           const end = new Date(endDateParam);
+           end.setHours(23, 59, 59, 999);
+           whereClause.date.lte = end;
+        }
+      } else {
+         // Default to current month if no date provided in filter mode
+         const start = new Date(yearNum, monthNum - 1, 1);
+         const end = new Date(yearNum, monthNum, 0, 23, 59, 59);
+         whereClause.date = { gte: start, lte: end };
+      }
+
+      // Department/Division Filter
+      if (departmentParam) {
+        whereClause.employee.division = departmentParam;
+      }
+
+      // Position Filter
+      if (positionParam) {
+        whereClause.employee.position = positionParam;
+      }
+
+      // Exact Employee filter
+      if (employeeId) {
+        whereClause.employeeId = employeeId;
+      } else if (searchQuery) {
+        // Only apply search query if no specific employeeId is selected
+        // This prevents conflicts where search text might not match the selected employee's details exactly
+        whereClause.employee.OR = [
+          {
+            user: {
+              name: {
+                contains: searchQuery,
+                mode: 'insensitive'
+              }
+            }
+          },
+          {
+            employeeId: {
+              contains: searchQuery,
+              mode: 'insensitive'
+            }
+          }
+        ];
+      }
+
+      // Status and Late Filter logic
+      // Use AND array to allow multiple OR groups (e.g. Status/Late OR Location)
+      const andConditions: any[] = [];
+      const statusConditions: any[] = [];
+
+      if (statusParam) {
+        const statuses = statusParam.split(',').filter(s => s.trim() !== '');
+        if (statuses.length > 0) {
+          statusConditions.push({ status: { in: statuses } });
+        }
+      }
+
+      if (isLateParam === 'true') {
+        // Use isLate boolean field for better accuracy
+        statusConditions.push({ isLate: true });
+      }
+
+      if (statusConditions.length > 0) {
+        if (statusConditions.length > 1) {
+          // If both provided, we treat it as OR (e.g. "ABSENT" OR "isLate")
+          andConditions.push({ OR: statusConditions });
+        } else {
+          // Single condition
+          Object.assign(whereClause, statusConditions[0]);
+        }
+      }
+
+      // Location Filter
+      if (hasLocationParam === 'true') {
+        andConditions.push({
+          OR: [
+            { checkInLatitude: { not: null } },
+            { checkOutLatitude: { not: null } }
+          ]
+        });
+      }
+
+      if (andConditions.length > 0) {
+        whereClause.AND = andConditions;
+      }
+
+      let attendances = await prisma.attendance.findMany({
+        where: whereClause,
+        include: {
+          employee: {
+            include: {
+              user: {
+                select: {
+                  name: true,
+                  profileImageUrl: true
+                }
+              }
+            }
+          }
+        },
+        orderBy: {
+          date: 'desc'
+        }
+      });
+
+      // Filter by Day Type (In-Memory)
+      if (dayTypeParam && dayTypeParam !== 'ALL') {
+        // Fetch holidays if needed
+        let holidayDates = new Set<string>();
+        if (dayTypeParam === 'HOLIDAY' || dayTypeParam === 'WEEKDAY') {
+          const holidays = await prisma.publicHoliday.findMany({
+             select: { date: true }
+          });
+          holidays.forEach(h => holidayDates.add(h.date.toISOString().split('T')[0]));
+        }
+
+        attendances = attendances.filter(a => {
+           const date = new Date(a.date);
+           const day = date.getDay(); // 0 = Sunday, 6 = Saturday
+           const dateString = date.toISOString().split('T')[0];
+           const isHoliday = holidayDates.has(dateString);
+
+           if (dayTypeParam === 'WEEKDAY') return (day >= 1 && day <= 5) && !isHoliday;
+           if (dayTypeParam === 'SATURDAY') return day === 6;
+           if (dayTypeParam === 'SUNDAY') return day === 0;
+           if (dayTypeParam === 'HOLIDAY') return isHoliday;
+           return true;
+        });
+      }
+
+      // Fetch overtime requests for fallback (missing overtimeStartAddressNote)
+      const employeeIds = [...new Set(attendances.map(a => a.employeeId))];
+      
+      if (employeeIds.length > 0) {
+        const overtimeRequests = await prisma.overtimeRequest.findMany({
+            where: {
+                employeeId: { in: employeeIds },
+                date: whereClause.date
+            }
+        });
+        
+        attendances = attendances.map(att => {
+            if (!att.overtimeStartAddressNote && (att.overtime > 0 || att.overtimeStart)) {
+                const attDateStr = att.date.toISOString().split('T')[0];
+                const req = overtimeRequests.find(r => 
+                    r.employeeId === att.employeeId && 
+                    r.date.toISOString().split('T')[0] === attDateStr
+                );
+                
+                if (req && req.reason) {
+                    return { ...att, overtimeStartAddressNote: req.reason };
+                }
+            }
+            return att;
+        });
+      }
+
+      // Format response
+      const formatted = attendances.map(a => {
+        const formattedRecord = formatAttendanceResponse(a);
+        return {
+            ...formattedRecord,
+            employee: {
+              id: a.employee.id,
+              employeeId: a.employee.employeeId,
+              position: a.employee.position,
+              division: a.employee.division,
+              organization: a.employee.organization ?? null,
+              workScheduleType: a.employee.workScheduleType ?? null,
+              name: a.employee.user?.name ?? "",
+              user: {
+                name: a.employee.user?.name ?? "",
+                profileImageUrl: a.employee.user?.profileImageUrl
+              }
+            }
+        };
+      });
+
+      return NextResponse.json({ attendances: formatted });
+    }
+
     // Special case: If limit is provided without month/year, return recent activities for admin dashboard
     if (limitNum && (session.user.role === "ADMIN" || session.user.role === "MANAGER") && !month && !year) {
       // Get recent attendance records across all employees for admin dashboard
@@ -89,6 +298,36 @@ export async function GET(req: NextRequest) {
         ],
         take: limitNum * 2 // Ambil lebih banyak untuk memungkinkan aktivitas terpisah
       });
+
+      // Fetch overtime requests for fallback
+      if (recentAttendances.length > 0) {
+        const employeeIds = [...new Set(recentAttendances.map(a => a.employeeId))];
+        const dates = recentAttendances.map(a => a.date.getTime());
+        const minDate = new Date(Math.min(...dates));
+        const maxDate = new Date(Math.max(...dates));
+        maxDate.setHours(23, 59, 59, 999);
+        minDate.setHours(0, 0, 0, 0);
+
+        const overtimeRequests = await prisma.overtimeRequest.findMany({
+             where: {
+                employeeId: { in: employeeIds },
+                date: { gte: minDate, lte: maxDate }
+             }
+        });
+        
+        for (const att of recentAttendances) {
+             if (!att.overtimeStartAddressNote && (att.overtime > 0 || att.overtimeStart)) {
+                 const attDateStr = att.date.toISOString().split('T')[0];
+                 const req = overtimeRequests.find(r => 
+                    r.employeeId === att.employeeId && 
+                    r.date.toISOString().split('T')[0] === attDateStr
+                 );
+                 if (req && req.reason) {
+                    att.overtimeStartAddressNote = req.reason;
+                 }
+             }
+        }
+      }
 
       // Buat aktivitas terpisah untuk check-in dan check-out
       const activities: any[] = [];
@@ -590,8 +829,7 @@ export async function POST(req: NextRequest) {
           });
         
         // Notifikasi karyawan
-        let message = "Absen keluar berhasil dicatat.";
-        message = `${message} [#ref:ATTENDANCE:${attendance.id}]`;
+        const message = "Absen keluar berhasil dicatat.";
         await createCheckOutNotification(employee.id, message, { refType: "ATTENDANCE", refId: attendance.id });
         
         // Kirim respons dengan header notifikasi dan cache control

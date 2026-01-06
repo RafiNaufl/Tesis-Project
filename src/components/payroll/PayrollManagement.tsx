@@ -5,7 +5,18 @@ import { useSession } from "next-auth/react";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { Status } from "@/generated/prisma/enums";
-
+import Image from "next/image";
+import { 
+  Calendar, 
+  Download, 
+  FileText, 
+  DollarSign, 
+  Clock, 
+  CheckCircle, 
+  AlertCircle, 
+  XCircle,
+  ChevronRight,
+} from "lucide-react";
 
 type PayrollRecord = {
   id: string;
@@ -32,7 +43,13 @@ type PayrollRecord = {
   // Properti tambahan untuk kasbon dan pinjaman lunak
   advanceAmount?: number;
   softLoanDeduction?: number;
-  softLoanRemaining?: number;
+  lateDeduction?: number;
+  absenceDeduction?: number;
+  otherDeductions?: number;
+  positionAllowance?: number;
+  mealAllowance?: number;
+  transportAllowance?: number;
+  shiftAllowance?: number;
 };
 
 function PayrollManagement() {
@@ -91,44 +108,7 @@ function PayrollManagement() {
         
         const data = await response.json();
         
-        // Fetch advance and soft loan data for each payroll record
-        const recordsWithDeductions = await Promise.all(
-          data.map(async (record: PayrollRecord) => {
-            try {
-              // Fetch advance data
-              const advanceResponse = await fetch(
-                `/api/payroll/advances?employeeId=${record.employeeId}&month=${record.month}&year=${record.year}&status=APPROVED`
-              );
-              
-              // Fetch soft loan data
-              const softLoanResponse = await fetch(
-                `/api/payroll/soft-loans?employeeId=${record.employeeId}&status=ACTIVE`
-              );
-              
-              if (advanceResponse.ok) {
-                const advanceData = await advanceResponse.json();
-                if (advanceData && advanceData.length > 0) {
-                  record.advanceAmount = advanceData[0].amount;
-                }
-              }
-              
-              if (softLoanResponse.ok) {
-                const softLoanData = await softLoanResponse.json();
-                if (softLoanData && softLoanData.length > 0) {
-                  record.softLoanDeduction = softLoanData[0].monthlyAmount;
-                  record.softLoanRemaining = softLoanData[0].remainingAmount;
-                }
-              }
-              
-              return record;
-            } catch (error) {
-              console.error("Error fetching deductions:", error);
-              return record;
-            }
-          })
-        );
-        
-        setPayrollRecords(recordsWithDeductions);
+        setPayrollRecords(data);
       } catch (err) {
         console.error("Error fetching payroll:", err);
         setError("Gagal memuat data penggajian");
@@ -418,24 +398,87 @@ function PayrollManagement() {
       doc.setFont("helvetica", "bold");
       doc.text("RINCIAN GAJI", 10, lastY);
       
+      // Calculate other allowances
+      const positionAllowance = selectedRecord.positionAllowance || 0;
+      const mealAllowance = selectedRecord.mealAllowance || 0;
+      const transportAllowance = selectedRecord.transportAllowance || 0;
+      const shiftAllowance = selectedRecord.shiftAllowance || 0;
+      const totalKnownAllowances = positionAllowance + mealAllowance + transportAllowance + shiftAllowance;
+      const otherAllowances = Math.max(0, selectedRecord.totalAllowances - totalKnownAllowances);
+
+      // Helper style for deductions (Red color)
+      const deductionStyle = { textColor: [220, 53, 69] as [number, number, number] };
+
       autoTable(doc, {
         startY: lastY + 5,
         head: [['Deskripsi', 'Jumlah']],
         body: [
           ['Gaji Pokok', formatCurrency(selectedRecord.baseSalary)],
-          ['Tunjangan', formatCurrency(selectedRecord.totalAllowances)],
+          
+          ...(positionAllowance > 0 ? [['Tunjangan Jabatan', formatCurrency(positionAllowance)]] : []),
+          ...(mealAllowance > 0 ? [['Tunjangan Makan', formatCurrency(mealAllowance)]] : []),
+          ...(transportAllowance > 0 ? [['Tunjangan Transport', formatCurrency(transportAllowance)]] : []),
+          ...(shiftAllowance > 0 ? [['Tunjangan Shift', formatCurrency(shiftAllowance)]] : []),
+          ...(otherAllowances > 0 ? [['Tunjangan Lainnya', formatCurrency(otherAllowances)]] : []),
+          
           ['Lembur', formatCurrency(selectedRecord.overtimeAmount)],
-          ['Potongan Keterlambatan/Absensi', formatCurrency(selectedRecord.totalDeductions)],
-          // Tambahkan BPJS
-          ['BPJS Kesehatan', formatCurrency(selectedRecord.bpjsKesehatanAmount || 0)],
-          ['BPJS Ketenagakerjaan', formatCurrency(selectedRecord.bpjsKetenagakerjaanAmount || 0)],
-          // Tambahkan informasi kasbon jika ada
-          ...(selectedRecord.advanceAmount ? [['Potongan Kasbon', formatCurrency(selectedRecord.advanceAmount)]] : []),
-          // Tambahkan informasi pinjaman lunak jika ada
-          ...(selectedRecord.softLoanDeduction ? [['Cicilan Pinjaman Lunak', formatCurrency(selectedRecord.softLoanDeduction)]] : []),
-          // Hitung total gaji bersih dengan mempertimbangkan kasbon dan pinjaman lunak
-          ['Total Gaji Bersih', formatCurrency(selectedRecord.netSalary - (selectedRecord.advanceAmount || 0) - (selectedRecord.softLoanDeduction || 0))],
-        ],
+          
+          // Potongan Keterlambatan
+          [
+            { content: 'Potongan Keterlambatan', styles: deductionStyle },
+            { content: `- ${formatCurrency(selectedRecord.lateDeduction || 0)}`, styles: deductionStyle }
+          ],
+          
+          // Potongan Absensi
+          ...(selectedRecord.absenceDeduction ? [[
+            { content: 'Potongan Absensi', styles: deductionStyle },
+            { content: `- ${formatCurrency(selectedRecord.absenceDeduction)}`, styles: deductionStyle }
+          ]] : []),
+          
+          // Potongan Lain-lain
+          ...(selectedRecord.otherDeductions ? [[
+            { content: 'Potongan Lain-lain', styles: deductionStyle },
+            { content: `- ${formatCurrency(selectedRecord.otherDeductions)}`, styles: deductionStyle }
+          ]] : []),
+          
+          // BPJS
+          [
+            { content: 'BPJS Kesehatan', styles: deductionStyle },
+            { content: `- ${formatCurrency(selectedRecord.bpjsKesehatanAmount || 0)}`, styles: deductionStyle }
+          ],
+          [
+            { content: 'BPJS Ketenagakerjaan', styles: deductionStyle },
+            { content: `- ${formatCurrency(selectedRecord.bpjsKetenagakerjaanAmount || 0)}`, styles: deductionStyle }
+          ],
+          
+          // Potongan Kasbon
+          ...(selectedRecord.advanceAmount ? [[
+            { content: 'Potongan Kasbon', styles: deductionStyle },
+            { content: `- ${formatCurrency(selectedRecord.advanceAmount)}`, styles: deductionStyle }
+          ]] : []),
+          
+          // Potongan Pinjaman Lunak
+          ...(selectedRecord.softLoanDeduction ? [[
+            { content: 'Cicilan Pinjaman Lunak', styles: deductionStyle },
+            { content: `- ${formatCurrency(selectedRecord.softLoanDeduction)}`, styles: deductionStyle }
+          ]] : []),
+          
+          // Total Gaji Bersih
+          ['Total Gaji Bersih', formatCurrency(
+            selectedRecord.baseSalary + 
+            selectedRecord.totalAllowances + 
+            selectedRecord.overtimeAmount - 
+            (
+              (selectedRecord.lateDeduction || 0) + 
+              (selectedRecord.absenceDeduction || 0) + 
+              (selectedRecord.otherDeductions || 0) + 
+              (selectedRecord.bpjsKesehatanAmount || 0) + 
+              (selectedRecord.bpjsKetenagakerjaanAmount || 0) +
+              (selectedRecord.advanceAmount || 0) +
+              (selectedRecord.softLoanDeduction || 0)
+            )
+          )],
+        ] as any[],
         theme: 'striped',
         headStyles: { fillColor: [66, 66, 66] },
         columnStyles: {
@@ -573,14 +616,18 @@ function PayrollManagement() {
         throw new Error(errorData.message || "Gagal membuat penggajian");
       }
       
-      // Refresh data setelah berhasil membuat penggajian
-      const payrollResponse = await fetch(
-        `/api/payroll?month=${selectedMonth}&year=${selectedYear}`
-      );
-      
-      if (payrollResponse.ok) {
-        const data = await payrollResponse.json();
-        setPayrollRecords(data);
+      const result = await response.json();
+
+      // Update state directly with the returned payroll data (which is now enriched and authoritative)
+      // This avoids race conditions where a subsequent fetch might miss the just-committed deductions
+      if (result.payroll) {
+        setPayrollRecords(prev => {
+          const exists = prev.some(p => p.id === result.payroll.id);
+          if (exists) {
+            return prev.map(p => p.id === result.payroll.id ? result.payroll : p);
+          }
+          return [result.payroll, ...prev];
+        });
       }
       
     } catch (err: any) {
@@ -648,541 +695,553 @@ function PayrollManagement() {
   const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i);
 
   return (
-    <div className="px-4 sm:px-6 lg:px-8 py-8">
-      <div className="sm:flex sm:items-center">
-        <div className="sm:flex-auto">
-          <h1 className="text-xl font-semibold text-gray-900">
-            {isAdmin ? "Manajemen Penggajian" : "Riwayat Gaji"}
-          </h1>
-          <p className="mt-2 text-sm text-gray-700">
-            {isAdmin
-              ? "Kelola penggajian karyawan, lihat riwayat, dan cetak slip gaji."
-              : "Lihat riwayat gaji dan unduh slip gaji Anda."}
-          </p>
+    <div className="bg-gray-50 min-h-screen pb-20 sm:pb-12">
+      {/* Header Section - Sticky on Mobile */}
+      <div className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-20 transition-all duration-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between py-4 gap-4">
+            <div>
+              <h1 className="text-xl sm:text-2xl font-bold text-gray-900 flex items-center gap-2">
+                <div className="p-2 bg-indigo-100 rounded-lg">
+                  <DollarSign className="h-6 w-6 text-indigo-600" />
+                </div>
+                {isAdmin ? "Manajemen Penggajian" : "Riwayat Gaji"}
+              </h1>
+              <p className="mt-1 text-sm text-gray-500 hidden sm:block">
+                {isAdmin
+                  ? "Kelola penggajian, lihat riwayat, dan cetak slip."
+                  : "Lihat riwayat dan unduh slip gaji Anda."}
+              </p>
+            </div>
+            
+            {/* Filters */}
+            <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
+              <div className="relative min-w-[120px]">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Calendar className="h-4 w-4 text-gray-400" />
+                </div>
+                <select
+                  id="month"
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                  className="block w-full pl-10 pr-10 py-2 text-sm border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 rounded-lg bg-gray-50 hover:bg-white transition-colors cursor-pointer appearance-none"
+                >
+                  {months.map((month) => (
+                    <option key={month.value} value={month.value}>{month.label}</option>
+                  ))}
+                </select>
+                <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                  <ChevronRight className="h-4 w-4 text-gray-400 rotate-90" />
+                </div>
+              </div>
+
+              <div className="relative min-w-[100px]">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Clock className="h-4 w-4 text-gray-400" />
+                </div>
+                <select
+                  id="year"
+                  value={selectedYear}
+                  onChange={(e) => setSelectedYear(Number(e.target.value))}
+                  className="block w-full pl-10 pr-10 py-2 text-sm border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 rounded-lg bg-gray-50 hover:bg-white transition-colors cursor-pointer appearance-none"
+                >
+                  {years.map((year) => (
+                    <option key={year} value={year}>{year}</option>
+                  ))}
+                </select>
+                <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                  <ChevronRight className="h-4 w-4 text-gray-400 rotate-90" />
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="mt-6 flex flex-col">
-        <div className="-my-2 -mx-4 overflow-x-auto sm:-mx-6 lg:-mx-8">
-          <div className="inline-block min-w-full py-2 align-middle md:px-6 lg:px-8">
-            <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <div>
-                <label htmlFor="month" className="block text-sm font-medium text-gray-700">
-                  Bulan
-                </label>
-                <select
-                  id="month"
-                  name="month"
-                  className="mt-1 block w-full rounded-md border-gray-300 py-2 pl-3 pr-10 text-base focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm"
-                  value={selectedMonth}
-                  onChange={(e) => setSelectedMonth(Number(e.target.value))}
-                >
-                  {months.map((month) => (
-                    <option key={month.value} value={month.value}>
-                      {month.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label htmlFor="year" className="block text-sm font-medium text-gray-700">
-                  Tahun
-                </label>
-                <select
-                  id="year"
-                  name="year"
-                  className="mt-1 block w-full rounded-md border-gray-300 py-2 pl-3 pr-10 text-base focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm"
-                  value={selectedYear}
-                  onChange={(e) => setSelectedYear(Number(e.target.value))}
-                >
-                  {years.map((year) => (
-                    <option key={year} value={year}>
-                      {year}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {isAdmin && (
-                <div className="flex items-end">
-                  <button
-                    type="button"
-                    className="inline-flex items-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-                    onClick={handleGeneratePayroll}
-                    disabled={generatingPayroll}
-                  >
-                    {generatingPayroll ? "Memproses..." : "Buat Penggajian"}
-                  </button>
-                </div>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+        {/* Admin Actions */}
+        {isAdmin && (
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={handleGeneratePayroll}
+              disabled={generatingPayroll}
+              className="w-full sm:w-auto inline-flex justify-center items-center px-4 py-2.5 border border-transparent text-sm font-medium rounded-xl text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 shadow-sm active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {generatingPayroll ? (
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+              ) : (
+                <CheckCircle className="h-4 w-4 mr-2" />
               )}
+              {generatingPayroll ? "Memproses..." : "Buat Penggajian Bulan Ini"}
+            </button>
+          </div>
+        )}
+
+        {/* Error Alert */}
+        {error && (
+          <div className="rounded-xl bg-red-50 p-4 border border-red-100 shadow-sm animate-fade-in">
+            <div className="flex">
+              <div className="flex-shrink-0">
+                <AlertCircle className="h-5 w-5 text-red-400" aria-hidden="true" />
+              </div>
+              <div className="ml-3">
+                <h3 className="text-sm font-medium text-red-800">{error}</h3>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Content Area */}
+        {isLoading ? (
+          <div className="flex flex-col justify-center items-center h-64 space-y-4">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-500"></div>
+            <p className="text-gray-500 animate-pulse">Memuat data penggajian...</p>
+          </div>
+        ) : payrollRecords.length === 0 ? (
+          <div className="flex flex-col justify-center items-center h-64 bg-white rounded-2xl shadow-sm border border-gray-100 p-8 text-center">
+            <div className="bg-gray-50 p-4 rounded-full mb-4">
+              <FileText className="h-10 w-10 text-gray-400" />
+            </div>
+            <h3 className="text-lg font-medium text-gray-900">Belum Ada Data</h3>
+            <p className="mt-1 text-gray-500 max-w-sm">
+              Tidak ada data penggajian ditemukan untuk periode {getMonthName(selectedMonth)} {selectedYear}.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {/* Mobile View (Cards) */}
+            <div className="grid grid-cols-1 gap-4 sm:hidden">
+              {payrollRecords.map((record) => (
+                <div 
+                  key={record.id} 
+                  id={`payroll-card-${record.id}`} 
+                  className={`bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden active:scale-[0.99] transition-transform duration-200 ${
+                    highlightPayrollId === record.id ? 'ring-2 ring-indigo-500' : ''
+                  }`}
+                >
+                  <div className="p-4 space-y-4">
+                    <div className="flex justify-between items-start">
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 font-bold text-sm">
+                          {record.employeeName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()}
+                        </div>
+                        <div>
+                          <h3 className="text-sm font-bold text-gray-900">{record.employeeName}</h3>
+                          <p className="text-xs text-gray-500">{record.position || record.empId}</p>
+                        </div>
+                      </div>
+                      <span
+                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          record.status === "PAID"
+                            ? "bg-green-100 text-green-800"
+                            : record.status === "PENDING"
+                            ? "bg-yellow-100 text-yellow-800"
+                            : "bg-gray-100 text-gray-800"
+                        }`}
+                      >
+                        {record.status === "PAID" ? "DIBAYAR" : 
+                         record.status === "PENDING" ? "TERTUNDA" : "BATAL"}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4 bg-gray-50 rounded-xl p-3">
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1">Gaji Pokok</p>
+                        <p className="text-sm font-semibold text-gray-900">{formatCurrency(record.baseSalary)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1">Gaji Bersih</p>
+                        <p className="text-sm font-bold text-indigo-600">{formatCurrency(record.netSalary)}</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                       <button
+                        onClick={() => generatePayslipPreview(record)}
+                        disabled={generatingPdf === record.id}
+                        className="flex-1 inline-flex justify-center items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-xl text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+                      >
+                        {generatingPdf === record.id ? (
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-700"></div>
+                        ) : (
+                          <>
+                            <FileText className="h-4 w-4 mr-2" />
+                            Slip Gaji
+                          </>
+                        )}
+                      </button>
+                      
+                      {isAdmin && record.status === "PENDING" && (
+                        <button
+                          onClick={() => handleMarkAsPaid(record.id)}
+                          disabled={processingId === record.id}
+                          className="flex-1 inline-flex justify-center items-center px-3 py-2 border border-transparent text-sm font-medium rounded-xl text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 shadow-sm disabled:opacity-50"
+                        >
+                          {processingId === record.id ? (
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                          ) : (
+                            <>
+                              <CheckCircle className="h-4 w-4 mr-2" />
+                              Bayar
+                            </>
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
 
-            {error && (
-              <div className="rounded-md bg-red-50 p-4 mb-4">
-                <div className="flex">
-                  <div className="flex-shrink-0">
-                    <svg
-                      className="h-5 w-5 text-red-400"
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 20 20"
-                      fill="currentColor"
-                      aria-hidden="true"
+            {/* Desktop View (Table) */}
+            <div className="hidden sm:block overflow-hidden shadow ring-1 ring-black ring-opacity-5 rounded-lg bg-white">
+              <table className="min-w-full divide-y divide-gray-300">
+                <thead className="bg-gray-50">
+                  <tr>
+                    {isAdmin && (
+                      <th scope="col" className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">
+                        Karyawan
+                      </th>
+                    )}
+                    <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                      Periode
+                    </th>
+                    <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                      Gaji Pokok
+                    </th>
+                    <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                      Gaji Bersih
+                    </th>
+                    <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                      Status
+                    </th>
+                    <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                      Tanggal Bayar
+                    </th>
+                    <th scope="col" className="relative py-3.5 pl-3 pr-4 sm:pr-6">
+                      <span className="sr-only">Aksi</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200 bg-white">
+                  {payrollRecords.map((record) => (
+                    <tr 
+                      key={record.id} 
+                      id={`payroll-row-${record.id}`} 
+                      className={`hover:bg-gray-50 transition-colors ${highlightPayrollId === record.id ? 'bg-indigo-50' : ''}`}
                     >
-                      <path
-                        fillRule="evenodd"
-                        d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                  </div>
-                  <div className="ml-3">
-                    <h3 className="text-sm font-medium text-red-800">{error}</h3>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
-              {isLoading ? (
-                <div className="flex justify-center items-center h-64">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-500"></div>
-                </div>
-              ) : payrollRecords.length === 0 ? (
-                <div className="flex justify-center items-center h-64">
-                  <p className="text-gray-500">
-                    Tidak ada data penggajian untuk periode ini.
-                  </p>
-                </div>
-              ) : (
-                <div className="flow-root">
-                  {/* Mobile View (Cards) */}
-                  <div className="block sm:hidden space-y-4 p-4 bg-gray-50">
-                    {payrollRecords.map((record) => (
-                      <div key={record.id} id={`payroll-card-${record.id}`} className={`bg-white shadow rounded-lg p-4 space-y-3 ${highlightPayrollId === record.id ? 'ring-2 ring-indigo-500' : ''}`}>
-                        <div className="flex justify-between items-start">
-                          <div>
-                            {isAdmin && (
-                              <>
-                                <h3 className="text-sm font-medium text-gray-900">{record.employeeName}</h3>
-                                <p className="text-xs text-gray-500">{record.empId}</p>
-                              </>
-                            )}
-                            <p className="text-sm text-gray-700 mt-1">{getMonthName(record.month)} {record.year}</p>
+                      {isAdmin && (
+                        <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm sm:pl-6">
+                          <div className="flex items-center">
+                            <div className="h-10 w-10 flex-shrink-0">
+                              <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold">
+                                {record.employeeName.charAt(0)}
+                              </div>
+                            </div>
+                            <div className="ml-4">
+                              <div className="font-medium text-gray-900">{record.employeeName}</div>
+                              <div className="text-gray-500">{record.empId}</div>
+                            </div>
                           </div>
-                          <span
-                            className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold leading-5 ${
-                              record.status === "PAID"
-                                ? "bg-green-100 text-green-800"
-                                : record.status === "PENDING"
-                                ? "bg-yellow-100 text-yellow-800"
-                                : "bg-gray-100 text-gray-800"
-                            }`}
-                          >
-                            {record.status === "PAID" ? "DIBAYAR" : 
-                             record.status === "PENDING" ? "TERTUNDA" : 
-                             record.status === "CANCELLED" ? "DIBATALKAN" : record.status}
-                          </span>
+                        </td>
+                      )}
+                      <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                        <div className="flex items-center gap-1">
+                          <Calendar className="h-4 w-4 text-gray-400" />
+                          {getMonthName(record.month)} {record.year}
                         </div>
-                        
-                        <div className="grid grid-cols-2 gap-2 text-sm border-t border-b border-gray-100 py-2">
-                          <div>
-                            <p className="text-xs text-gray-500">Gaji Pokok</p>
-                            <p>{formatCurrency(record.baseSalary)}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-gray-500">Gaji Bersih</p>
-                            <p className="font-bold text-indigo-600">{formatCurrency(record.netSalary)}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-gray-500">Tunjangan</p>
-                            <p>{formatCurrency(record.totalAllowances)}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-gray-500">Potongan</p>
-                            <p>{formatCurrency(record.totalDeductions)}</p>
-                          </div>
-                        </div>
-
-                        <div className="flex flex-col space-y-2 pt-1">
-                           <button
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-900 font-medium">
+                        {formatCurrency(record.baseSalary)}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-4 text-sm text-indigo-600 font-bold">
+                        {formatCurrency(record.netSalary)}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-4 text-sm">
+                        <span
+                          className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold leading-5 ${
+                            record.status === "PAID"
+                              ? "bg-green-100 text-green-800"
+                              : record.status === "PENDING"
+                              ? "bg-yellow-100 text-yellow-800"
+                              : "bg-gray-100 text-gray-800"
+                          }`}
+                        >
+                          {record.status === "PAID" ? "DIBAYAR" : 
+                           record.status === "PENDING" ? "TERTUNDA" : "DIBATALKAN"}
+                        </span>
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                        {formatDate(record.paidAt)}
+                      </td>
+                      <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
                             onClick={() => generatePayslipPreview(record)}
                             disabled={generatingPdf === record.id}
-                            className="w-full inline-flex justify-center items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 disabled:opacity-50"
+                            className="text-indigo-600 hover:text-indigo-900 disabled:opacity-50 p-1 hover:bg-indigo-50 rounded-lg transition-colors"
+                            title="Lihat Slip Gaji"
                           >
-                            {generatingPdf === record.id ? "Memproses..." : "Lihat Slip Gaji"}
+                            {generatingPdf === record.id ? (
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-indigo-600"></div>
+                            ) : (
+                              <FileText className="h-5 w-5" />
+                            )}
                           </button>
                           
                           {isAdmin && record.status === "PENDING" && (
                             <button
                               onClick={() => handleMarkAsPaid(record.id)}
                               disabled={processingId === record.id}
-                              className="w-full inline-flex justify-center items-center rounded-md border border-transparent bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+                              className="text-green-600 hover:text-green-900 disabled:opacity-50 p-1 hover:bg-green-50 rounded-lg transition-colors"
+                              title="Tandai Dibayar"
                             >
-                              {processingId === record.id ? "Memproses..." : "Tandai Dibayar"}
+                              {processingId === record.id ? (
+                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-green-600"></div>
+                              ) : (
+                                <CheckCircle className="h-5 w-5" />
+                              )}
                             </button>
                           )}
                         </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Desktop View (Table) */}
-                  <table className="hidden sm:table min-w-full divide-y divide-gray-300">
-                    <thead className="bg-gray-50">
-                    <tr>
-                      {isAdmin && (
-                        <th
-                          scope="col"
-                          className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6"
-                        >
-                          Karyawan
-                        </th>
-                      )}
-                      <th
-                        scope="col"
-                        className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
-                      >
-                        Periode
-                      </th>
-                      <th
-                        scope="col"
-                        className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
-                      >
-                        Gaji Pokok
-                      </th>
-                      <th
-                        scope="col"
-                        className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
-                      >
-                        Tunjangan
-                      </th>
-                      <th
-                        scope="col"
-                        className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
-                      >
-                        Potongan
-                      </th>
-                      <th
-                        scope="col"
-                        className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
-                      >
-                        Gaji Bersih
-                      </th>
-                      <th
-                        scope="col"
-                        className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
-                      >
-                        Status
-                      </th>
-                      <th
-                        scope="col"
-                        className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
-                      >
-                        Tanggal Bayar
-                      </th>
-                      <th
-                        scope="col"
-                        className="relative py-3.5 pl-3 pr-4"
-                      >
-                        <span className="sr-only">Unduh</span>
-                      </th>
-                      {isAdmin && (
-                        <th
-                          scope="col"
-                          className="relative py-3.5 pl-3 pr-4 sm:pr-6"
-                        >
-                          <span className="sr-only">Tindakan</span>
-                        </th>
-                      )}
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200 bg-white">
-                    {payrollRecords.map((record) => (
-                      <tr key={record.id} id={`payroll-row-${record.id}`} className={highlightPayrollId === record.id ? 'bg-indigo-50' : ''}>
-                        {isAdmin && (
-                          <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6">
-                            {record.employeeName}
-                            <div className="text-xs text-gray-500">
-                              {record.empId}
-                            </div>
-                          </td>
-                        )}
-                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                          {getMonthName(record.month)} {record.year}
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                          {formatCurrency(record.baseSalary)}
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                          {formatCurrency(record.totalAllowances)}
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                          {formatCurrency(record.totalDeductions)}
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-4 text-sm font-medium text-gray-900">
-                          {formatCurrency(record.netSalary)}
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-4 text-sm">
-                          <span
-                            className={`inline-flex rounded-full px-2 text-xs font-semibold leading-5 ${
-                              record.status === "PAID"
-                                ? "bg-green-100 text-green-800"
-                                : record.status === "PENDING"
-                                ? "bg-yellow-100 text-yellow-800"
-                                : "bg-gray-100 text-gray-800"
-                            }`}
-                          >
-                            {record.status === "PAID" ? "DIBAYAR" : 
-                             record.status === "PENDING" ? "TERTUNDA" : 
-                             record.status === "CANCELLED" ? "DIBATALKAN" : record.status}
-                          </span>
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                          {formatDate(record.paidAt)}
-                        </td>
-                        <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium">
-                          <button
-                            onClick={() => generatePayslipPreview(record)}
-                            disabled={generatingPdf === record.id}
-                            className="text-green-600 hover:text-green-900 disabled:opacity-50 mr-4"
-                          >
-                            {generatingPdf === record.id ? "Memproses..." : "Lihat Slip Gaji"}
-                          </button>
-                        </td>
-                        {isAdmin && (
-                          <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
-                            {record.status === "PENDING" && (
-                              <button
-                                onClick={() => handleMarkAsPaid(record.id)}
-                                disabled={processingId === record.id}
-                                className="text-indigo-600 hover:text-indigo-900 disabled:opacity-50"
-                              >
-                                {processingId === record.id ? "Memproses..." : "Tandai Dibayar"}
-                              </button>
-                            )}
-                          </td>
-                        )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                </div>
-              )}
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
-        </div>
+        )}
       </div>
     
-      {/* Modal Preview Slip Gaji (Pop-up Window) */}
+      {/* Enhanced Modal Preview */}
       {showPreview && selectedRecord && (
-        <div className="fixed inset-0 z-50 overflow-y-auto" ref={previewRef}>
-          <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center">
-            {/* Overlay dengan opacity lebih rendah */}
-            <div className="fixed inset-0 bg-black/50 backdrop-blur-md transition-opacity" onClick={() => setShowPreview(false)}></div>
-            
-            {/* Pop-up Window dengan ukuran yang lebih kecil */}
-            <div className="relative bg-white rounded-lg shadow-xl transform transition-all max-w-2xl w-full mx-auto">
-              {/* Header dengan judul dan tombol tutup */}
-              <div className="flex items-center justify-between p-4 border-b border-gray-200">
-                <h3 className="text-lg font-medium text-gray-900">Slip Gaji Karyawan</h3>
+        <div className="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true" ref={previewRef}>
+          <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            {/* Background overlay */}
+            <div 
+              className="fixed inset-0 bg-gray-900/75 backdrop-blur-sm transition-opacity" 
+              aria-hidden="true"
+              onClick={() => setShowPreview(false)}
+            ></div>
+
+            <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+
+            <div className="relative inline-block align-bottom bg-white rounded-2xl text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full border border-gray-100 z-10">
+              {/* Modal Header */}
+              <div className="bg-indigo-600 px-4 py-3 sm:px-6 flex justify-between items-center">
+                <h3 className="text-lg leading-6 font-medium text-white flex items-center gap-2" id="modal-title">
+                  <FileText className="h-5 w-5" />
+                  Slip Gaji Karyawan
+                </h3>
                 <button
                   type="button"
-                  className="text-gray-400 hover:text-gray-500 focus:outline-none"
+                  className="bg-indigo-600 rounded-full p-1 text-indigo-200 hover:text-white focus:outline-none"
                   onClick={() => setShowPreview(false)}
                 >
-                  <span className="sr-only">Tutup</span>
-                  <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
+                  <XCircle className="h-6 w-6" />
                 </button>
               </div>
-              
-              {/* Body dengan HTML content */}
-              <div className="p-4">
-                <div className="h-[60vh] overflow-auto">
-                  <div className="text-center mb-4">
-                    <div className="flex justify-center mb-2">
-                      <Image src="/logoctu.png" alt="Logo Perusahaan" width={80} height={40} priority />
-                    </div>
-                    <h2 className="text-xl font-bold">SLIP GAJI KARYAWAN</h2>
-                    <p className="text-sm">CV. Catur Teknik Utama</p>
-                    <p className="text-sm">Kmp Jerang Baru Permai, Jl, Cendana Raya No 26</p>
-                    <p className="text-sm">Telp: (0254) 378489</p>
-                  </div>
-                  
-                  <div className="border-t border-b border-gray-300 my-4"></div>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                    <div>
-                      <h3 className="font-bold text-sm mb-2">INFORMASI KARYAWAN</h3>
-                      <p className="text-sm">Nama: {selectedRecord.employeeName}</p>
-                      <p className="text-sm">ID Karyawan: {selectedRecord.empId}</p>
-                      <p className="text-sm">Jabatan: {selectedRecord.position || '-'}</p>
-                      <p className="text-sm">Divisi: {selectedRecord.division || '-'}</p>
-                    </div>
-                    
-                    <div>
-                      <h3 className="font-bold text-sm mb-2">PERIODE PENGGAJIAN</h3>
-                      <p className="text-sm">Bulan: {getMonthName(selectedRecord.month)} {selectedRecord.year}</p>
-                      <p className="text-sm">Tanggal Pembayaran: {formatDate(selectedRecord.paidAt) || 'Belum dibayar'}</p>
-                      <p className="text-sm">Status: {selectedRecord.status === "PAID" ? "DIBAYAR" : selectedRecord.status === "PENDING" ? "TERTUNDA" : "DIBATALKAN"}</p>
-                    </div>
-                  </div>
-                  
-                  <div className="border-t border-gray-300 my-4"></div>
-                  
-                  
 
-                  
-                  {/* Tampilkan data kehadiran hanya jika ada */}
-                  <div className="mb-4">
-                    <h3 className="font-bold text-sm mb-2">JAM MASUK & JAM PULANG</h3>
-                    {attendanceData && attendanceData.length > 0 ? (
-                      <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-gray-300">
-                          <thead>
-                            <tr>
-                              <th className="py-2 text-left text-sm font-semibold text-gray-900">Tanggal</th>
-                              <th className="py-2 text-left text-sm font-semibold text-gray-900">Jam Masuk</th>
-                              <th className="py-2 text-left text-sm font-semibold text-gray-900">Jam Pulang</th>
-                              <th className="py-2 text-left text-sm font-semibold text-gray-900">Status</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-200">
-                            {attendanceData.map((item, index) => (
-                              <tr key={index}>
-                                <td className="py-2 text-sm text-gray-900">{item.date}</td>
-                                <td className="py-2 text-sm text-gray-900">{item.checkIn}</td>
-                                <td className="py-2 text-sm text-gray-900">{item.checkOut}</td>
-                                <td className="py-2 text-sm text-gray-900">{item.status}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    ) : (
-                      <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-md">
-                        <p className="text-sm text-yellow-700">Data kehadiran tidak tersedia untuk periode ini.</p>
-                      </div>
-                    )}
-                  </div>
-                  
-                  <div className="mb-4">
-                    <h3 className="font-bold text-sm mb-2">INFORMASI KEHADIRAN</h3>
-                    <table className="min-w-full divide-y divide-gray-300">
-                      <thead>
-                        <tr>
-                          <th className="py-2 text-left text-sm font-semibold text-gray-900">Deskripsi</th>
-                          <th className="py-2 text-right text-sm font-semibold text-gray-900">Jumlah</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-200">
-                        <tr>
-                          <td className="py-2 text-sm text-gray-900">Hari Kerja</td>
-                          <td className="py-2 text-sm text-gray-900 text-right">{selectedRecord.daysPresent} hari</td>
-                        </tr>
-                        <tr>
-                          <td className="py-2 text-sm text-gray-900">Hari Tidak Hadir</td>
-                          <td className="py-2 text-sm text-gray-900 text-right">{selectedRecord.daysAbsent} hari</td>
-                        </tr>
-                        <tr>
-                          <td className="py-2 text-sm text-gray-900">Jam Lembur</td>
-                          <td className="py-2 text-sm text-gray-900 text-right">{selectedRecord.overtimeHours} jam</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
+              {/* Modal Body */}
+              <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4 max-h-[70vh] overflow-y-auto custom-scrollbar">
+                <div className="text-center mb-6">
+                   <div className="flex justify-center mb-3">
+                     <div className="h-16 w-16 relative">
+                       <Image src="/logoctu.png" alt="Logo" fill className="object-contain" priority />
+                     </div>
+                   </div>
+                   <h2 className="text-xl font-bold text-gray-900">CV. Catur Teknik Utama</h2>
+                   <p className="text-sm text-gray-500">Jl. Cendana Raya No 26, Cilegon</p>
+                </div>
 
-                  <div className="mb-4">
-                    <h3 className="font-bold text-sm mb-2">RINCIAN GAJI</h3>
-                    <table className="min-w-full divide-y divide-gray-300">
-                      <thead>
-                        <tr>
-                          <th className="py-2 text-left text-sm font-semibold text-gray-900">Deskripsi</th>
-                          <th className="py-2 text-right text-sm font-semibold text-gray-900">Jumlah</th>
+                <div className="bg-gray-50 rounded-xl p-4 mb-6 border border-gray-100">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Informasi Karyawan</h4>
+                      <p className="text-sm font-medium text-gray-900">{selectedRecord.employeeName}</p>
+                      <p className="text-sm text-gray-500">{selectedRecord.empId}</p>
+                      <p className="text-sm text-gray-500">{selectedRecord.position || '-'}</p>
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Periode</h4>
+                      <p className="text-sm font-medium text-gray-900">{getMonthName(selectedRecord.month)} {selectedRecord.year}</p>
+                      <p className="text-sm text-gray-500">
+                        Status: <span className={selectedRecord.status === "PAID" ? "text-green-600 font-medium" : "text-yellow-600 font-medium"}>
+                          {selectedRecord.status === "PAID" ? "DIBAYAR" : "TERTUNDA"}
+                        </span>
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Attendance Summary */}
+                <div className="mb-6">
+                  <h4 className="text-sm font-bold text-gray-900 mb-3 flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-indigo-500" />
+                    Ringkasan Kehadiran
+                  </h4>
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div className="bg-blue-50 p-2 rounded-lg">
+                      <p className="text-xs text-blue-600 font-medium">Hadir</p>
+                      <p className="text-lg font-bold text-blue-700">{selectedRecord.daysPresent}</p>
+                    </div>
+                    <div className="bg-red-50 p-2 rounded-lg">
+                      <p className="text-xs text-red-600 font-medium">Absen</p>
+                      <p className="text-lg font-bold text-red-700">{selectedRecord.daysAbsent}</p>
+                    </div>
+                    <div className="bg-green-50 p-2 rounded-lg">
+                      <p className="text-xs text-green-600 font-medium">Lembur</p>
+                      <p className="text-lg font-bold text-green-700">{selectedRecord.overtimeHours}j</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Salary Details Table */}
+                <div className="mb-6">
+                  <h4 className="text-sm font-bold text-gray-900 mb-3 flex items-center gap-2">
+                    <DollarSign className="h-4 w-4 text-indigo-500" />
+                    Rincian Gaji
+                  </h4>
+                  <div className="border border-gray-200 rounded-lg overflow-hidden">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <tbody className="divide-y divide-gray-200 bg-white">
+                        <tr className="bg-gray-50">
+                          <td className="px-4 py-2 text-sm font-medium text-gray-900">Gaji Pokok</td>
+                          <td className="px-4 py-2 text-sm text-gray-900 text-right">{formatCurrency(selectedRecord.baseSalary)}</td>
                         </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-200">
-                        <tr>
-                          <td className="py-2 text-sm text-gray-900">Gaji Pokok</td>
-                          <td className="py-2 text-sm text-gray-900 text-right">{formatCurrency(selectedRecord.baseSalary)}</td>
-                        </tr>
-                        <tr>
-                          <td className="py-2 text-sm text-gray-900">Tunjangan</td>
-                          <td className="py-2 text-sm text-gray-900 text-right">{formatCurrency(selectedRecord.totalAllowances)}</td>
-                        </tr>
-                        <tr>
-                          <td className="py-2 text-sm text-gray-900">Lembur</td>
-                          <td className="py-2 text-sm text-gray-900 text-right">{formatCurrency(selectedRecord.overtimeAmount)}</td>
-                        </tr>
-                        <tr>
-                          <td className="py-2 text-sm text-gray-900">Potongan Keterlambatan/Absensi</td>
-                          <td className="py-2 text-sm text-gray-900 text-right">{formatCurrency(selectedRecord.totalDeductions)}</td>
-                        </tr>
-                        {/* Tampilkan potongan kasbon jika ada */}
-                        {selectedRecord.advanceAmount ? (
+                        {(selectedRecord.positionAllowance || 0) > 0 && (
                           <tr>
-                            <td className="py-2 text-sm text-gray-900 font-medium">Potongan Kasbon</td>
-                            <td className="py-2 text-sm text-gray-900 text-right font-medium text-red-600">{formatCurrency(selectedRecord.advanceAmount)}</td>
+                            <td className="px-4 py-2 text-sm text-gray-500">Tunjangan Jabatan</td>
+                            <td className="px-4 py-2 text-sm text-gray-900 text-right">{formatCurrency(selectedRecord.positionAllowance || 0)}</td>
                           </tr>
-                        ) : (
+                        )}
+                        {(selectedRecord.mealAllowance || 0) > 0 && (
                           <tr>
-                            <td className="py-2 text-sm text-gray-900">Potongan Kasbon</td>
-                            <td className="py-2 text-sm text-gray-900 text-right">Rp0</td>
+                            <td className="px-4 py-2 text-sm text-gray-500">Tunjangan Makan</td>
+                            <td className="px-4 py-2 text-sm text-gray-900 text-right">{formatCurrency(selectedRecord.mealAllowance || 0)}</td>
+                          </tr>
+                        )}
+                        {(selectedRecord.transportAllowance || 0) > 0 && (
+                          <tr>
+                            <td className="px-4 py-2 text-sm text-gray-500">Tunjangan Transport</td>
+                            <td className="px-4 py-2 text-sm text-gray-900 text-right">{formatCurrency(selectedRecord.transportAllowance || 0)}</td>
+                          </tr>
+                        )}
+                        {(selectedRecord.shiftAllowance || 0) > 0 && (
+                          <tr>
+                            <td className="px-4 py-2 text-sm text-gray-500">Tunjangan Shift</td>
+                            <td className="px-4 py-2 text-sm text-gray-900 text-right">{formatCurrency(selectedRecord.shiftAllowance || 0)}</td>
+                          </tr>
+                        )}
+                        {Math.max(0, selectedRecord.totalAllowances - ((selectedRecord.positionAllowance || 0) + (selectedRecord.mealAllowance || 0) + (selectedRecord.transportAllowance || 0) + (selectedRecord.shiftAllowance || 0))) > 0 && (
+                          <tr>
+                            <td className="px-4 py-2 text-sm text-gray-500">Tunjangan Lainnya</td>
+                            <td className="px-4 py-2 text-sm text-gray-900 text-right">{formatCurrency(Math.max(0, selectedRecord.totalAllowances - ((selectedRecord.positionAllowance || 0) + (selectedRecord.mealAllowance || 0) + (selectedRecord.transportAllowance || 0) + (selectedRecord.shiftAllowance || 0))))}</td>
+                          </tr>
+                        )}
+                        <tr>
+                          <td className="px-4 py-2 text-sm text-gray-500">Lembur</td>
+                          <td className="px-4 py-2 text-sm text-gray-900 text-right">{formatCurrency(selectedRecord.overtimeAmount)}</td>
+                        </tr>
+                        {/* Potongan Keterlambatan - Tampilkan jika ada nilai atau jika ini record non-shift (untuk konsistensi) */}
+                        {(selectedRecord.lateDeduction || 0) > 0 && (
+                          <tr>
+                            <td className="px-4 py-2 text-sm text-red-500">Potongan Keterlambatan</td>
+                            <td className="px-4 py-2 text-sm text-red-600 text-right">- {formatCurrency(selectedRecord.lateDeduction || 0)}</td>
                           </tr>
                         )}
                         
-                        {/* Tampilkan cicilan pinjaman lunak jika ada */}
-                        {selectedRecord.softLoanDeduction ? (
-                          <>
-                            <tr>
-                              <td className="py-2 text-sm text-gray-900 font-medium">Cicilan Pinjaman Lunak</td>
-                              <td className="py-2 text-sm text-gray-900 text-right font-medium text-red-600">{formatCurrency(selectedRecord.softLoanDeduction)}</td>
-                            </tr>
-                            {selectedRecord.softLoanRemaining !== undefined && selectedRecord.softLoanRemaining !== null && (
-                              <tr>
-                                <td className="py-2 text-sm text-gray-900 font-medium">Sisa Pinjaman Lunak</td>
-                                <td className="py-2 text-sm text-gray-900 text-right font-medium">{formatCurrency(selectedRecord.softLoanRemaining)}</td>
-                              </tr>
-                            )}
-                          </>
-                        ) : (
+                        {/* Potongan Absensi */}
+                        {(selectedRecord.absenceDeduction || 0) > 0 && (
                           <tr>
-                            <td className="py-2 text-sm text-gray-900">Cicilan Pinjaman Lunak</td>
-                            <td className="py-2 text-sm text-gray-900 text-right">Rp0</td>
+                            <td className="px-4 py-2 text-sm text-red-500">Potongan Absensi</td>
+                            <td className="px-4 py-2 text-sm text-red-600 text-right">- {formatCurrency(selectedRecord.absenceDeduction || 0)}</td>
                           </tr>
                         )}
-                        <tr className="font-bold">
-                          <td className="py-2 text-sm text-gray-900">Total Gaji Bersih</td>
-                          <td className="py-2 text-sm text-gray-900 text-right">{formatCurrency(selectedRecord.netSalary - (selectedRecord.advanceAmount || 0) - (selectedRecord.softLoanDeduction || 0))}</td>
+
+                        {/* Potongan Lain-lain */}
+                        {(selectedRecord.otherDeductions || 0) > 0 && (
+                          <tr>
+                            <td className="px-4 py-2 text-sm text-red-500">Potongan Lain-lain</td>
+                            <td className="px-4 py-2 text-sm text-red-600 text-right">- {formatCurrency(selectedRecord.otherDeductions || 0)}</td>
+                          </tr>
+                        )}
+
+                        {/* BPJS Kesehatan */}
+                        {(selectedRecord.bpjsKesehatanAmount || 0) > 0 && (
+                          <tr>
+                            <td className="px-4 py-2 text-sm text-red-500">BPJS Kesehatan</td>
+                            <td className="px-4 py-2 text-sm text-red-600 text-right">- {formatCurrency(selectedRecord.bpjsKesehatanAmount || 0)}</td>
+                          </tr>
+                        )}
+
+                        {/* BPJS Ketenagakerjaan */}
+                        {(selectedRecord.bpjsKetenagakerjaanAmount || 0) > 0 && (
+                          <tr>
+                            <td className="px-4 py-2 text-sm text-red-500">BPJS Ketenagakerjaan</td>
+                            <td className="px-4 py-2 text-sm text-red-600 text-right">- {formatCurrency(selectedRecord.bpjsKetenagakerjaanAmount || 0)}</td>
+                          </tr>
+                        )}
+                        {(selectedRecord.advanceAmount || 0) > 0 && (
+                          <tr>
+                            <td className="px-4 py-2 text-sm text-red-500">Potongan Kasbon</td>
+                            <td className="px-4 py-2 text-sm text-red-600 text-right">- {formatCurrency(selectedRecord.advanceAmount || 0)}</td>
+                          </tr>
+                        )}
+
+                        {(selectedRecord.softLoanDeduction || 0) > 0 && (
+                          <tr>
+                            <td className="px-4 py-2 text-sm text-red-500">Cicilan Pinjaman Lunak</td>
+                            <td className="px-4 py-2 text-sm text-red-600 text-right">- {formatCurrency(selectedRecord.softLoanDeduction || 0)}</td>
+                          </tr>
+                        )}
+                        <tr className="bg-indigo-50">
+                          <td className="px-4 py-3 text-base font-bold text-indigo-900">Total Gaji Bersih</td>
+                          <td className="px-4 py-3 text-base font-bold text-indigo-700 text-right">
+                            {formatCurrency(
+                              selectedRecord.baseSalary + 
+                              selectedRecord.totalAllowances + 
+                              selectedRecord.overtimeAmount - 
+                              (
+                                (selectedRecord.lateDeduction || 0) + 
+                                (selectedRecord.absenceDeduction || 0) + 
+                                (selectedRecord.otherDeductions || 0) + 
+                                (selectedRecord.bpjsKesehatanAmount || 0) + 
+                                (selectedRecord.bpjsKetenagakerjaanAmount || 0) +
+                                (selectedRecord.advanceAmount || 0) +
+                                (selectedRecord.softLoanDeduction || 0)
+                              )
+                            )}
+                          </td>
                         </tr>
                       </tbody>
                     </table>
                   </div>
-                  
-                  <div className="mt-6 text-sm italic text-gray-600">
-                    <p>Catatan: Slip gaji ini diterbitkan secara elektronik dan sah tanpa tanda tangan.</p>
-                    <p className="mt-1">Diterbitkan pada: {new Date().toLocaleDateString('id-ID')}</p>
-                  </div>
                 </div>
+                
+                <p className="text-xs text-gray-400 text-center italic">
+                  Dokumen ini diterbitkan secara digital oleh sistem Catur Teknik Utama.
+                </p>
               </div>
-              
-              {/* Footer dengan tombol aksi */}
-              <div className="px-4 py-3 bg-gray-50 flex justify-end space-x-3 rounded-b-lg">
+
+              {/* Modal Footer */}
+              <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse gap-2">
                 <button
                   type="button"
-                  className="inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-3 py-1.5 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                  onClick={() => setShowPreview(false)}
+                  className="w-full inline-flex justify-center rounded-xl border border-transparent shadow-sm px-4 py-2 bg-indigo-600 text-base font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:ml-3 sm:w-auto sm:text-sm items-center gap-2"
+                  onClick={downloadPdf}
                 >
-                  Tutup
+                  <Download className="h-4 w-4" />
+                  Unduh PDF
                 </button>
                 <button
                   type="button"
-                  className="inline-flex justify-center rounded-md border border-transparent shadow-sm px-3 py-1.5 bg-green-600 text-sm font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
-                  onClick={downloadPdf}
+                  className="mt-3 w-full inline-flex justify-center rounded-xl border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
+                  onClick={() => setShowPreview(false)}
                 >
-                  Unduh PDF
+                  Tutup
                 </button>
               </div>
             </div>
@@ -1194,4 +1253,3 @@ function PayrollManagement() {
 }
 
 export default PayrollManagement;
-import Image from "next/image";

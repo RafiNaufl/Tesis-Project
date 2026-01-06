@@ -115,7 +115,7 @@ export async function PUT(request: NextRequest) {
     const { status } = body;
 
     // Use the centralized function to update soft loan status
-    const updatedSoftLoan = await updateSoftLoanStatus(id, status);
+    const updatedSoftLoan = await updateSoftLoanStatus(id, status, session.user.id);
 
     return NextResponse.json(updatedSoftLoan);
   } catch (error) {

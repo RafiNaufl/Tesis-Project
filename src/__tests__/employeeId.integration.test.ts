@@ -64,8 +64,7 @@ describe("Employee ID Generation Integration", () => {
         console.error("Res1 error:", res1.error);
     }
     expect(res1.ok).toBe(true);
-    // @ts-ignore
-    const id1 = res1.employeeId;
+    const id1 = res1.employeeId as string;
     expect(id1).toMatch(/^CTU-\d{3}$/);
 
     const input2 = {
@@ -85,8 +84,7 @@ describe("Employee ID Generation Integration", () => {
         console.error("Res2 error:", res2.error);
     }
     expect(res2.ok).toBe(true);
-    // @ts-ignore
-    const id2 = res2.employeeId;
+    const id2 = res2.employeeId as string;
     expect(id2).toMatch(/^CTU-\d{3}$/);
     
     // Check sequence
@@ -95,10 +93,8 @@ describe("Employee ID Generation Integration", () => {
     expect(num2).toBe(num1 + 1);
 
     // Store for update test
-    // @ts-ignore
-    employeeIdToUpdate = res2.id;
-    // @ts-ignore
-    userIdToUpdate = res2.userId;
+    employeeIdToUpdate = res2.id as string;
+    userIdToUpdate = res2.userId as string;
   });
 
   it("should generate ID for MT", async () => {
@@ -116,7 +112,6 @@ describe("Employee ID Generation Integration", () => {
 
     const res3 = await registerEmployee(input3);
     expect(res3.ok).toBe(true);
-    // @ts-ignore
     expect(res3.employeeId).toMatch(/^MT-\d{3}$/);
   });
 
@@ -145,8 +140,8 @@ describe("Employee ID Generation Integration", () => {
     expect(result.ok).toBe(true);
 
     // Verify new ID
-    // @ts-ignore
-    const updatedEmployee = result.data;
+    const updatedEmployee = result.data as any; // Cast to any to access properties if type is partial
+    expect(updatedEmployee).toBeDefined();
     expect(updatedEmployee.organization).toBe("MT");
     expect(updatedEmployee.employeeId).toMatch(/^MT-\d{3}$/);
 

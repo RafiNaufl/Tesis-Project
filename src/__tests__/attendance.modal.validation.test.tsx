@@ -29,7 +29,7 @@ describe('AttendanceCapture overtime form validation', () => {
       />
     );
 
-    const button = await screen.findByText('Kirim Permintaan Lembur');
+    const button = await screen.findByText('Kirim');
     expect(button).toBeDisabled();
 
     const textarea = screen.getByLabelText('Alasan lembur');
@@ -39,7 +39,7 @@ describe('AttendanceCapture overtime form validation', () => {
     fireEvent.change(textarea, { target: { value: 'Ini adalah alasan lembur yang cukup panjang.' } });
     expect(button).toBeDisabled();
 
-    const checkbox = screen.getByLabelText('Saya memahami kebijakan lembur perusahaan');
+    const checkbox = screen.getByLabelText('Saya menyatakan bahwa lembur ini dilakukan atas instruksi atasan dan sesuai dengan kebijakan perusahaan yang berlaku.');
     fireEvent.click(checkbox);
     expect(button).not.toBeDisabled();
 
@@ -49,4 +49,3 @@ describe('AttendanceCapture overtime form validation', () => {
     expect((window as any).overtimeConsentConfirmed).toBe(true);
   });
 });
-

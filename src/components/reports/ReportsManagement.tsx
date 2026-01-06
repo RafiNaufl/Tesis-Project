@@ -418,10 +418,87 @@ export default function ReportsManagement() {
                                 <span className="text-gray-500">Tunjangan</span>
                                 <span className="text-gray-900">{formatCurrency(record.totalAllowances)}</span>
                               </div>
+                              {/* Rincian Tunjangan */}
+                              {(record.positionAllowance > 0 || record.mealAllowance > 0 || record.transportAllowance > 0 || record.shiftAllowance > 0) && (
+                                <div className="pl-4 space-y-1 text-xs border-l-2 border-gray-200">
+                                  {record.positionAllowance > 0 && (
+                                    <div className="flex justify-between">
+                                      <span className="text-gray-500">Jabatan</span>
+                                      <span className="text-gray-700">{formatCurrency(record.positionAllowance)}</span>
+                                    </div>
+                                  )}
+                                  {record.mealAllowance > 0 && (
+                                    <div className="flex justify-between">
+                                      <span className="text-gray-500">Makan</span>
+                                      <span className="text-gray-700">{formatCurrency(record.mealAllowance)}</span>
+                                    </div>
+                                  )}
+                                  {record.transportAllowance > 0 && (
+                                    <div className="flex justify-between">
+                                      <span className="text-gray-500">Transport</span>
+                                      <span className="text-gray-700">{formatCurrency(record.transportAllowance)}</span>
+                                    </div>
+                                  )}
+                                  {record.shiftAllowance > 0 && (
+                                    <div className="flex justify-between">
+                                      <span className="text-gray-500">Shift</span>
+                                      <span className="text-gray-700">{formatCurrency(record.shiftAllowance)}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
                               <div className="flex justify-between">
                                 <span className="text-gray-500">Potongan</span>
                                 <span className="text-gray-900 text-red-600">-{formatCurrency(record.totalDeductions)}</span>
                               </div>
+                              {/* Rincian Potongan */}
+                              {(record.lateDeduction > 0 || record.absenceDeduction > 0 || record.bpjsKesehatanAmount > 0 || record.bpjsKetenagakerjaanAmount > 0 || record.advanceAmount > 0 || record.softLoanDeduction > 0 || record.otherDeductions > 0) && (
+                                <div className="pl-4 space-y-1 text-xs border-l-2 border-red-200">
+                                  {record.lateDeduction > 0 && (
+                                    <div className="flex justify-between">
+                                      <span className="text-gray-500">Terlambat</span>
+                                      <span className="text-red-600">-{formatCurrency(record.lateDeduction)}</span>
+                                    </div>
+                                  )}
+                                  {record.absenceDeduction > 0 && (
+                                    <div className="flex justify-between">
+                                      <span className="text-gray-500">Absen</span>
+                                      <span className="text-red-600">-{formatCurrency(record.absenceDeduction)}</span>
+                                    </div>
+                                  )}
+                                  {record.bpjsKesehatanAmount > 0 && (
+                                    <div className="flex justify-between">
+                                      <span className="text-gray-500">BPJS Kes</span>
+                                      <span className="text-red-600">-{formatCurrency(record.bpjsKesehatanAmount)}</span>
+                                    </div>
+                                  )}
+                                  {record.bpjsKetenagakerjaanAmount > 0 && (
+                                    <div className="flex justify-between">
+                                      <span className="text-gray-500">BPJS TK</span>
+                                      <span className="text-red-600">-{formatCurrency(record.bpjsKetenagakerjaanAmount)}</span>
+                                    </div>
+                                  )}
+                                  {record.advanceAmount > 0 && (
+                                    <div className="flex justify-between">
+                                      <span className="text-gray-500">Kasbon</span>
+                                      <span className="text-red-600">-{formatCurrency(record.advanceAmount)}</span>
+                                    </div>
+                                  )}
+                                  {record.softLoanDeduction > 0 && (
+                                     <div className="flex justify-between">
+                                       <span className="text-gray-500">Pinjaman</span>
+                                       <span className="text-red-600">-{formatCurrency(record.softLoanDeduction)}</span>
+                                     </div>
+                                   )}
+                                   {record.otherDeductions > 0 && (
+                                     <div className="flex justify-between">
+                                       <span className="text-gray-500">Lainnya</span>
+                                       <span className="text-red-600">-{formatCurrency(record.otherDeductions)}</span>
+                                     </div>
+                                   )}
+                                 </div>
+                               )}
                               <div className="flex justify-between">
                                 <span className="text-gray-500">Lembur</span>
                                 <span className="text-gray-900">{formatCurrency(record.overtimeAmount)}</span>
@@ -466,37 +543,69 @@ export default function ReportsManagement() {
                         <table className="min-w-full divide-y divide-gray-300">
                           <thead className="bg-gray-50">
                             <tr>
-                              <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Karyawan</th>
-                              <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Gaji Pokok</th>
-                              <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Tunjangan</th>
-                              <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Potongan</th>
-                              <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Lembur</th>
-                              <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Gaji Bersih</th>
-                              <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Status</th>
+                              <th className="px-2 py-3.5 text-left text-xs font-semibold text-gray-900">Karyawan</th>
+                              <th className="px-2 py-3.5 text-left text-xs font-semibold text-gray-900">Gaji Pokok</th>
+                              <th className="px-2 py-3.5 text-left text-xs font-semibold text-gray-900">Tunj. Jabatan</th>
+                              <th className="px-2 py-3.5 text-left text-xs font-semibold text-gray-900">Tunj. Makan</th>
+                              <th className="px-2 py-3.5 text-left text-xs font-semibold text-gray-900">Tunj. Trans</th>
+                              <th className="px-2 py-3.5 text-left text-xs font-semibold text-gray-900">Tunj. Shift</th>
+                              <th className="px-2 py-3.5 text-left text-xs font-semibold text-gray-900">Lembur</th>
+                              <th className="px-2 py-3.5 text-left text-xs font-semibold text-red-600">Pot. Telat</th>
+                              <th className="px-2 py-3.5 text-left text-xs font-semibold text-red-600">Pot. Absen</th>
+                              <th className="px-2 py-3.5 text-left text-xs font-semibold text-red-600">Pot. BPJS</th>
+                              <th className="px-2 py-3.5 text-left text-xs font-semibold text-red-600">Pot. Kasbon</th>
+                              <th className="px-2 py-3.5 text-left text-xs font-semibold text-red-600">Pot. Pinjam</th>
+                              <th className="px-2 py-3.5 text-left text-xs font-semibold text-red-600">Pot. Lain</th>
+                              <th className="px-2 py-3.5 text-left text-xs font-semibold text-gray-900">Gaji Bersih</th>
+                              <th className="px-2 py-3.5 text-left text-xs font-semibold text-gray-900">Status</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-200 bg-white">
                             {reportData.payroll.map((record: any) => (
                               <tr key={record.id}>
-                                <td className="whitespace-nowrap px-3 py-4 text-sm font-medium text-gray-900">
+                                <td className="whitespace-nowrap px-2 py-4 text-xs font-medium text-gray-900">
                                   {record.employee.name}
                                 </td>
-                                <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                                <td className="whitespace-nowrap px-2 py-4 text-xs text-gray-500">
                                   {formatCurrency(record.baseSalary)}
                                 </td>
-                                <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                                  {formatCurrency(record.totalAllowances)}
+                                <td className="whitespace-nowrap px-2 py-4 text-xs text-gray-500">
+                                  {formatCurrency(record.positionAllowance)}
                                 </td>
-                                <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                                  {formatCurrency(record.totalDeductions)}
+                                <td className="whitespace-nowrap px-2 py-4 text-xs text-gray-500">
+                                  {formatCurrency(record.mealAllowance)}
                                 </td>
-                                <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                                <td className="whitespace-nowrap px-2 py-4 text-xs text-gray-500">
+                                  {formatCurrency(record.transportAllowance)}
+                                </td>
+                                <td className="whitespace-nowrap px-2 py-4 text-xs text-gray-500">
+                                  {formatCurrency(record.shiftAllowance)}
+                                </td>
+                                <td className="whitespace-nowrap px-2 py-4 text-xs text-gray-500">
                                   {formatCurrency(record.overtimeAmount)}
                                 </td>
-                                <td className="whitespace-nowrap px-3 py-4 text-sm font-medium text-gray-900">
+                                <td className="whitespace-nowrap px-2 py-4 text-xs text-red-500">
+                                  {record.lateDeduction > 0 ? `-${formatCurrency(record.lateDeduction)}` : '-'}
+                                </td>
+                                <td className="whitespace-nowrap px-2 py-4 text-xs text-red-500">
+                                  {record.absenceDeduction > 0 ? `-${formatCurrency(record.absenceDeduction)}` : '-'}
+                                </td>
+                                <td className="whitespace-nowrap px-2 py-4 text-xs text-red-500">
+                                  {(record.bpjsKesehatanAmount + record.bpjsKetenagakerjaanAmount) > 0 ? `-${formatCurrency(record.bpjsKesehatanAmount + record.bpjsKetenagakerjaanAmount)}` : '-'}
+                                </td>
+                                <td className="whitespace-nowrap px-2 py-4 text-xs text-red-500">
+                                  {record.advanceAmount > 0 ? `-${formatCurrency(record.advanceAmount)}` : '-'}
+                                </td>
+                                <td className="whitespace-nowrap px-2 py-4 text-xs text-red-500">
+                                  {record.softLoanDeduction > 0 ? `-${formatCurrency(record.softLoanDeduction)}` : '-'}
+                                </td>
+                                <td className="whitespace-nowrap px-2 py-4 text-xs text-red-500">
+                                  {record.otherDeductions > 0 ? `-${formatCurrency(record.otherDeductions)}` : '-'}
+                                </td>
+                                <td className="whitespace-nowrap px-2 py-4 text-xs font-medium text-gray-900">
                                   {formatCurrency(record.netSalary)}
                                 </td>
-                                <td className="whitespace-nowrap px-3 py-4 text-sm">
+                                <td className="whitespace-nowrap px-2 py-4 text-xs">
                                   <span
                                     className={`inline-flex rounded-full px-2 text-xs font-semibold leading-5 ${
                                       record.status === "PAID"
@@ -514,23 +623,47 @@ export default function ReportsManagement() {
                           </tbody>
                           <tfoot className="bg-gray-50">
                             <tr>
-                              <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Total</th>
-                              <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                              <th className="px-2 py-3.5 text-left text-xs font-semibold text-gray-900">Total</th>
+                              <th className="px-2 py-3.5 text-left text-xs font-semibold text-gray-900">
                                 {formatCurrency(reportData.totals.baseSalary)}
                               </th>
-                              <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
-                                {formatCurrency(reportData.totals.totalAllowances)}
+                              <th className="px-2 py-3.5 text-left text-xs font-semibold text-gray-900">
+                                {formatCurrency(reportData.totals.totalPositionAllowance)}
                               </th>
-                              <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
-                                {formatCurrency(reportData.totals.totalDeductions)}
+                              <th className="px-2 py-3.5 text-left text-xs font-semibold text-gray-900">
+                                {formatCurrency(reportData.totals.totalMealAllowance)}
                               </th>
-                              <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                              <th className="px-2 py-3.5 text-left text-xs font-semibold text-gray-900">
+                                {formatCurrency(reportData.totals.totalTransportAllowance)}
+                              </th>
+                              <th className="px-2 py-3.5 text-left text-xs font-semibold text-gray-900">
+                                {formatCurrency(reportData.totals.totalShiftAllowance)}
+                              </th>
+                              <th className="px-2 py-3.5 text-left text-xs font-semibold text-gray-900">
                                 {formatCurrency(reportData.totals.overtimeAmount)}
                               </th>
-                              <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                              <th className="px-2 py-3.5 text-left text-xs font-semibold text-red-600">
+                                -{formatCurrency(reportData.totals.totalLateDeduction)}
+                              </th>
+                              <th className="px-2 py-3.5 text-left text-xs font-semibold text-red-600">
+                                -{formatCurrency(reportData.totals.totalAbsenceDeduction)}
+                              </th>
+                              <th className="px-2 py-3.5 text-left text-xs font-semibold text-red-600">
+                                -{formatCurrency(reportData.totals.totalBpjsKesehatan + reportData.totals.totalBpjsKetenagakerjaan)}
+                              </th>
+                              <th className="px-2 py-3.5 text-left text-xs font-semibold text-red-600">
+                                -{formatCurrency(reportData.totals.totalAdvanceAmount)}
+                              </th>
+                              <th className="px-2 py-3.5 text-left text-xs font-semibold text-red-600">
+                                -{formatCurrency(reportData.totals.totalSoftLoanDeduction)}
+                              </th>
+                              <th className="px-2 py-3.5 text-left text-xs font-semibold text-red-600">
+                                -{formatCurrency(reportData.totals.totalOtherDeductions)}
+                              </th>
+                              <th className="px-2 py-3.5 text-left text-xs font-semibold text-gray-900">
                                 {formatCurrency(reportData.totals.netSalary)}
                               </th>
-                              <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"></th>
+                              <th className="px-2 py-3.5 text-left text-xs font-semibold text-gray-900"></th>
                             </tr>
                           </tfoot>
                         </table>

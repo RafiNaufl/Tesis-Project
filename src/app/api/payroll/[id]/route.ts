@@ -204,35 +204,19 @@ export async function PATCH(
         id,
       },
       data: updateData,
-      include: {
-        employee: true
-      }
     });
     
-    // Kirim notifikasi jika status berubah menjadi PAID
+    // If status changed to PAID, send notification
     if (body.status === "PAID" && payroll.status !== "PAID") {
       try {
-        // Gunakan layanan notifikasi untuk membuat notifikasi gaji dibayarkan
         await createPayrollPaidNotification(
           updatedPayroll.employeeId,
           updatedPayroll.month,
           updatedPayroll.year,
           updatedPayroll.netSalary
         );
-        await db.notification.create({
-          data: {
-            userId: updatedPayroll.employee.userId,
-            title: "Gaji Telah Dibayarkan",
-            message: `Gaji Anda untuk periode ${new Date(updatedPayroll.year, updatedPayroll.month - 1).toLocaleDateString('id-ID', { year: 'numeric', month: 'long' })} telah dibayarkan. [#ref:PAYROLL:${updatedPayroll.id}]`,
-            type: "success",
-            read: false,
-            refType: "PAYROLL",
-            refId: updatedPayroll.id,
-          }
-        });
-      } catch (notifError) {
-        console.error("Error creating payment notification:", notifError);
-        // Tidak perlu menghentikan proses jika notifikasi gagal
+      } catch (error) {
+        console.error("Error creating notification:", error);
       }
     }
     
@@ -277,10 +261,10 @@ export async function DELETE(
       );
     }
     
-    // Cannot delete paid payrolls
+    // Only allow deleting PENDING or CANCELLED payrolls
     if (payroll.status === "PAID") {
       return NextResponse.json(
-        { error: "Cannot delete a paid payroll record" },
+        { error: "Cannot delete a PAID payroll record. Mark it as CANCELLED first." },
         { status: 400 }
       );
     }
@@ -292,10 +276,7 @@ export async function DELETE(
       },
     });
     
-    return NextResponse.json({
-      success: true,
-      message: "Payroll record deleted successfully",
-    });
+    return NextResponse.json({ message: "Payroll record deleted successfully" });
   } catch (error) {
     console.error("Error deleting payroll record:", error);
     return NextResponse.json(

@@ -273,7 +273,8 @@ export const createPayrollPaidNotification = async (
   employeeId: string,
   month: number,
   year: number,
-  amount: number
+  amount: number,
+  payrollId?: string
 ) => {
   try {
     const formattedDate = new Date(year, month - 1).toLocaleDateString('id-ID', {
@@ -286,7 +287,7 @@ export const createPayrollPaidNotification = async (
     const title = "Gaji Telah Dibayarkan";
     const message = `Gaji Anda untuk periode ${formattedDate} telah dibayarkan. Jumlah: ${formattedAmount}`;
     
-    return createEmployeeNotification(employeeId, title, message, "success");
+    return createEmployeeNotification(employeeId, title, message, "success", payrollId ? { refType: "PAYROLL", refId: payrollId } : undefined);
   } catch (error) {
     console.error("Error creating payroll paid notification:", error);
     throw new Error(`Gagal membuat notifikasi gaji dibayarkan: ${error}`);

@@ -1,7 +1,6 @@
 import { requireAuth } from "@/lib/session";
 import DashboardLayout from "@/components/layouts/DashboardLayout";
 import SoftLoanRequest from "@/components/payroll/softloanrequest";
-import SoftLoanApproval from "@/components/payroll/softloanapproval";
 import SoftLoanManagement from "@/components/payroll/softloanmanagement";
 
 export default async function SoftLoanPage() {
@@ -10,28 +9,15 @@ export default async function SoftLoanPage() {
   
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        
-        {isAdmin ? (
-          <div className="space-y-6">
-            <div className="bg-white shadow rounded-lg p-6">
-              <SoftLoanApproval />
-            </div>
-            
-            <div className="bg-white shadow rounded-lg p-6">
-              <h2 className="text-lg font-medium mb-4">Manajemen Pinjaman Lunak</h2>
-              <SoftLoanManagement />
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-6">
-            <div className="bg-white shadow rounded-lg p-6">
-              <h2 className="text-lg font-medium mb-4">Pengajuan Pinjaman Lunak</h2>
-              <SoftLoanRequest />
-            </div>
-          </div>
-        )}
-      </div>
+      {isAdmin ? (
+        <div className="pt-0 sm:pt-2 space-y-8 pb-6">
+          <SoftLoanManagement />
+        </div>
+      ) : (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-0 sm:pt-3 pb-6">
+          <SoftLoanRequest />
+        </div>
+      )}
     </DashboardLayout>
   );
 }

@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { getSoftLoanDeductions } from "@/lib/softloan";
-import { getAdvanceDeductions } from "@/lib/advance";
 
 export async function GET(
   request: NextRequest,
@@ -35,12 +33,6 @@ export async function GET(
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    // Get advance deductions for this payroll period
-    const advanceDeduction = await getAdvanceDeductions(payroll.employeeId, payroll.month, payroll.year);
-
-    // Get soft loan deductions for this payroll period
-    const softLoanDeduction = await getSoftLoanDeductions(payroll.employeeId, payroll.month, payroll.year);
-
     // Get other deductions for this payroll period
     const deductions = await prisma.deduction.findMany({
       where: {
@@ -50,6 +42,14 @@ export async function GET(
       },
     });
 
+    const advanceDeduction = deductions
+      .filter((d) => d.type === "KASBON")
+      .reduce((sum, d) => sum + d.amount, 0);
+
+    const softLoanDeduction = deductions
+      .filter((d) => d.type === "PINJAMAN")
+      .reduce((sum, d) => sum + d.amount, 0);
+
     const absenceDeduction = deductions
       .filter((d) => d.type === "ABSENCE")
       .reduce((sum, d) => sum + d.amount, 0);
@@ -57,7 +57,7 @@ export async function GET(
     const otherDeductionsTotal = deductions
       .filter(
         (d) =>
-          !["ABSENCE", "LATE", "BPJS_KESEHATAN", "BPJS_KETENAGAKERJAAN"].includes(d.type)
+          !["ABSENCE", "LATE", "BPJS_KESEHATAN", "BPJS_KETENAGAKERJAAN", "KASBON", "PINJAMAN"].includes(d.type)
       )
       .reduce((sum, d) => sum + d.amount, 0);
 

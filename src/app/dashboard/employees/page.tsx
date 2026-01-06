@@ -12,9 +12,9 @@ export default async function EmployeesPage() {
   
   return (
     <DashboardLayout>
-      <div className="py-3">
+      <div className="pt-1 sm:pt-3 pb-3">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 md:px-8">
-          <div className="py-3">
+          <div className="pt-1 sm:pt-3 pb-3">
             <EmployeeManagement />
           </div>
         </div>

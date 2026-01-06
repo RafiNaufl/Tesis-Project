@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { Geolocation } from '@capacitor/geolocation';
 
 interface LocationCaptureProps {
   onLocationCaptured: (latitude: number, longitude: number) => void;
@@ -14,6 +16,60 @@ const LocationCapture: React.FC<LocationCaptureProps> = ({ onLocationCaptured, o
   const captureLocation = useCallback(async (retryCount = 0) => {
     setIsCapturing(true);
     setLocationError(null);
+
+    // Helper for native capture
+    const captureNative = async () => {
+      try {
+        const permissions = await Geolocation.checkPermissions();
+        
+        if (permissions.location !== 'granted') {
+          const requested = await Geolocation.requestPermissions();
+          if (requested.location !== 'granted') {
+            throw new Error('Izin lokasi ditolak. Silakan berikan izin lokasi di pengaturan aplikasi.');
+          }
+        }
+
+        const position = await Geolocation.getCurrentPosition({
+          enableHighAccuracy: true,
+          timeout: 20000,
+          maximumAge: 60000
+        });
+
+        onLocationCaptured(position.coords.latitude, position.coords.longitude);
+        setIsCapturing(false);
+      } catch (err: any) {
+        console.error('Native location error:', err);
+        
+        // Retry logic for generic errors, but not for disabled services
+        const isServiceDisabled = err.message?.includes('Location services are not enabled');
+        
+        if (!isServiceDisabled && retryCount < 2) {
+          console.log(`Native GPS retry attempt ${retryCount + 1}/2`);
+          setTimeout(() => {
+            captureLocation(retryCount + 1);
+          }, 2000);
+          return;
+        }
+
+        let errorMessage = err.message || 'Gagal mendapatkan lokasi dari perangkat.';
+        
+        if (isServiceDisabled) {
+          errorMessage = 'GPS tidak aktif. Mohon aktifkan lokasi/GPS di pengaturan HP Anda.';
+        } else if (err.message?.includes('permission')) {
+          errorMessage = 'Izin lokasi ditolak. Mohon berikan izin lokasi di pengaturan aplikasi.';
+        }
+
+        setLocationError(errorMessage);
+        onError(errorMessage);
+        setIsCapturing(false);
+      }
+    };
+
+    // Use native implementation if on mobile
+    if (Capacitor.isNativePlatform()) {
+      await captureNative();
+      return;
+    }
 
     try {
       if (!navigator.geolocation) {

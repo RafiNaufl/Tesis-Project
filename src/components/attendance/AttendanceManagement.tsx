@@ -1,15 +1,16 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { NOTIFICATION_UPDATE_EVENT } from "../notifications/NotificationDropdown";
 import { ACTIVITY_UPDATE_EVENT } from "../dashboard/AdminDashboard";
-import { getWorkdayType, WorkdayType, isOvertimeCheckIn, isOvertimeCheckOut } from "@/lib/attendanceRules";
-import AttendanceCapture from "./AttendanceCapture";
+import { getWorkdayType, WorkdayType, isOvertimeCheckOut } from "@/lib/attendanceRules";
 import Image from "next/image";
+import { LogIn, LogOut, Clock, UserCheck, XCircle, Coffee } from "lucide-react";
+import { toast } from "react-hot-toast";
 import { organizationNames, organizations } from "@/lib/registrationValidation";
 
-type AttendanceRecord = {
+export type AttendanceRecord = {
   id: string;
   date: Date;
   checkIn: Date | null;
@@ -37,6 +38,8 @@ type AttendanceRecord = {
   overtimeEndPhotoUrl?: string | null;
   overtimeEndLatitude?: number | null;
   overtimeEndLongitude?: number | null;
+  overtimeStartAddressNote?: string | null;
+  overtimeEndAddressNote?: string | null;
   lateReason?: string | null;
   latePhotoUrl?: string | null;
   lateSubmittedAt?: Date | null;
@@ -69,12 +72,13 @@ export const getAttendanceActionState = (record: AttendanceRecord | null): 'chec
   return 'check-in';
 };
 
+import { AttendanceFilter, FilterState } from "./AttendanceFilter";
+import AttendanceCapture from "./AttendanceCapture";
+
 export default function AttendanceManagement() {
   const { data: session } = useSession();
   const [isLoading, setIsLoading] = useState(true);
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
-  const [_isCheckingIn, setIsCheckingIn] = useState(false);
-  const [_isCheckingOut, setIsCheckingOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lateReason, setLateReason] = useState("");
   const [latePhotoFile, setLatePhotoFile] = useState<File | null>(null);
@@ -84,9 +88,61 @@ export default function AttendanceManagement() {
   const [todayRecord, setTodayRecord] = useState<AttendanceRecord | null>(null);
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+  const [selectedDate, setSelectedDate] = useState<number | null>(null);
   const isAdmin = session?.user?.role === "ADMIN" || session?.user?.role === "MANAGER";
   const [isLateModalOpen, setIsLateModalOpen] = useState(false);
+  const [employees, setEmployees] = useState<any[]>([]);
   
+  // Admin Filters State
+  const [filters, setFilters] = useState<FilterState>({
+    search: "",
+    employeeId: undefined,
+    department: "",
+    position: "",
+    status: [],
+    dateRange: undefined,
+    isLate: false,
+    hasLocation: false,
+    dayType: "ALL"
+  });
+
+  // Fetch employees for autocomplete and filters
+  useEffect(() => {
+    if (isAdmin) {
+      const fetchEmployees = async () => {
+        try {
+          const res = await fetch('/api/employees');
+          if (res.ok) {
+            const data = await res.json();
+            setEmployees(data);
+          }
+        } catch (error) {
+          console.error("Failed to fetch employees", error);
+        }
+      };
+      fetchEmployees();
+    }
+  }, [isAdmin]);
+
+  // Load filters from localStorage
+  useEffect(() => {
+    if (isAdmin) {
+      const saved = localStorage.getItem("adminAttendanceFilters");
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (parsed.dateRange) {
+            parsed.dateRange.from = parsed.dateRange.from ? new Date(parsed.dateRange.from) : undefined;
+            if (parsed.dateRange.to) parsed.dateRange.to = new Date(parsed.dateRange.to);
+          }
+          setFilters(parsed);
+        } catch (e) {
+          console.error("Failed to parse saved filters", e);
+        }
+      }
+    }
+  }, [isAdmin]);
+
   // Edit modal state
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<AttendanceRecord | null>(null);
@@ -106,18 +162,19 @@ export default function AttendanceManagement() {
   const [detailRecord, setDetailRecord] = useState<AttendanceRecord | null>(null);
   const [detailLogs, setDetailLogs] = useState<any[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [, setActionLoading] = useState(false);
+  const [showAttendanceCapture, setShowAttendanceCapture] = useState(false);
+  const [captureAction, _setCaptureAction] = useState<'check-in' | 'check-out' | 'overtime-start' | 'overtime-end'>('check-in');
+  const [_capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
+  const [_capturedLatitude, setCapturedLatitude] = useState<number | null>(null);
+  const [_capturedLongitude, setCapturedLongitude] = useState<number | null>(null);
+  const [_isCheckingIn, setIsCheckingIn] = useState(false);
+  const [_isCheckingOut, setIsCheckingOut] = useState(false);
+  const [_isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
   // Tambahkan state untuk menyimpan data absensi sebelum refresh
   const [_persistedAttendance, _setPersistedAttendance] = useState<AttendanceRecord | null>(null);
   
-  // State untuk AttendanceCapture
-  const [showAttendanceCapture, setShowAttendanceCapture] = useState(false);
-  const [captureAction, setCaptureAction] = useState<'check-in' | 'check-out' | 'overtime-start' | 'overtime-end'>('check-in');
-  const [actionLoading, setActionLoading] = useState(false);
-  const [_capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
-  const [_capturedLatitude, setCapturedLatitude] = useState<number | null>(null);
-  const [_capturedLongitude, setCapturedLongitude] = useState<number | null>(null);
-  const [_isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [selectedAttendanceId, setSelectedAttendanceId] = useState<string | null>(null);
   const [highlightAttendanceId, setHighlightAttendanceId] = useState<string | null>(null);
 
@@ -132,20 +189,64 @@ export default function AttendanceManagement() {
       setIsLoading(true);
       setError(null);
       try {
-        const queryParams = new URLSearchParams({
-          month: selectedMonth.toString(),
-          year: selectedYear.toString(),
-        });
+        const queryParams = new URLSearchParams();
+
+        if (isAdmin) {
+          if (filters.search) queryParams.set("search", filters.search);
+          if (filters.employeeId) queryParams.set("employeeId", filters.employeeId);
+          if (filters.department) queryParams.set("department", filters.department);
+          if (filters.position) queryParams.set("position", filters.position);
+          if (filters.status.length > 0) queryParams.set("status", filters.status.join(","));
+          if (filters.isLate) queryParams.set("isLate", "true");
+          if (filters.hasLocation) queryParams.set("hasLocation", "true");
+          if (filters.dayType && filters.dayType !== "ALL") queryParams.set("dayType", filters.dayType);
+          
+          if (selectedDate) {
+             const start = new Date(selectedYear, selectedMonth - 1, selectedDate);
+             start.setHours(0, 0, 0, 0);
+             const end = new Date(selectedYear, selectedMonth - 1, selectedDate);
+             end.setHours(23, 59, 59, 999);
+             queryParams.set("startDate", start.toISOString());
+             queryParams.set("endDate", end.toISOString());
+          } else {
+             // Fallback to month/year selectors if no specific date selected
+             queryParams.set("month", selectedMonth.toString());
+             queryParams.set("year", selectedYear.toString());
+          }
+        } else {
+          queryParams.set("month", selectedMonth.toString());
+          queryParams.set("year", selectedYear.toString());
+        }
 
         const response = await fetch(`/api/attendance?${queryParams}`, {
           method: "GET",
         });
 
+        let data: any = null;
         if (!response.ok) {
-          throw new Error("Gagal mengambil data kehadiran");
+          let serverError: any = null;
+          try {
+            serverError = await response.json();
+          } catch {
+            try {
+              serverError = await response.text();
+            } catch {
+              serverError = null;
+            }
+          }
+          try {
+            const fallbackParams = new URLSearchParams({ month: selectedMonth.toString(), year: selectedYear.toString() });
+            const fallback = await fetch(`/api/attendance?${fallbackParams}`, { method: "GET" });
+            if (!fallback.ok) {
+              throw new Error(serverError?.error || "Gagal mengambil data kehadiran");
+            }
+            data = await fallback.json();
+          } catch (e: any) {
+            throw new Error(serverError?.error || e.message || "Gagal mengambil data kehadiran");
+          }
+        } else {
+          data = await response.json();
         }
-
-        const data = await response.json();
         
         // Pastikan data yang diterima dalam format yang benar
         let processedData: AttendanceRecord[] = [];
@@ -214,7 +315,6 @@ export default function AttendanceManagement() {
             return processedAttendance;
           });
         } else {
-          // Jika format data tidak dikenali, tetap gunakan array kosong
           console.warn("Format data tidak dikenali:", data);
         }
         
@@ -255,18 +355,50 @@ export default function AttendanceManagement() {
     };
 
     if (session) {
-      fetchAttendance();
+      if (isAdmin) {
+        const timeoutId = setTimeout(() => {
+          fetchAttendance();
+          localStorage.setItem("adminAttendanceFilters", JSON.stringify(filters));
+        }, 500);
+        return () => clearTimeout(timeoutId);
+      } else {
+        fetchAttendance();
+      }
     }
-  }, [session, selectedMonth, selectedYear]);
+  }, [session, selectedMonth, selectedYear, selectedDate, filters, isAdmin]);
 
   // Tambahkan effect untuk refresh otomatis ketika ada update dari penolakan
   // Function untuk fetch attendance - dipindahkan keluar dari useEffect
   const fetchAttendanceRecords = useCallback(async (retryCount = 0) => {
     try {
-      const queryParams = new URLSearchParams({
-        month: selectedMonth.toString(),
-        year: selectedYear.toString(),
-      });
+      const queryParams = new URLSearchParams();
+
+      if (isAdmin) {
+        if (filters.search) queryParams.set("search", filters.search);
+        if (filters.employeeId) queryParams.set("employeeId", filters.employeeId);
+        if (filters.department) queryParams.set("department", filters.department);
+        if (filters.position) queryParams.set("position", filters.position);
+        if (filters.status.length > 0) queryParams.set("status", filters.status.join(","));
+        if (filters.isLate) queryParams.set("isLate", "true");
+        if (filters.hasLocation) queryParams.set("hasLocation", "true");
+        if (filters.dayType && filters.dayType !== "ALL") queryParams.set("dayType", filters.dayType);
+        
+        if (selectedDate) {
+            const start = new Date(selectedYear, selectedMonth - 1, selectedDate);
+            start.setHours(0, 0, 0, 0);
+            const end = new Date(selectedYear, selectedMonth - 1, selectedDate);
+            end.setHours(23, 59, 59, 999);
+            queryParams.set("startDate", start.toISOString());
+            queryParams.set("endDate", end.toISOString());
+        } else {
+            // Fallback to month/year selectors if no specific date selected
+            queryParams.set("month", selectedMonth.toString());
+            queryParams.set("year", selectedYear.toString());
+        }
+      } else {
+        queryParams.set("month", selectedMonth.toString());
+        queryParams.set("year", selectedYear.toString());
+      }
 
       // Tambahkan timeout dan headers untuk mobile compatibility
       const controller = new AbortController();
@@ -285,11 +417,29 @@ export default function AttendanceManagement() {
 
       clearTimeout(timeoutId);
 
+      let data: any = null;
       if (!response.ok) {
-        throw new Error("Gagal mengambil data kehadiran");
+        let serverError: any = null;
+        try {
+          serverError = await response.json();
+        } catch {
+          try {
+            serverError = await response.text();
+          } catch {
+            serverError = null;
+          }
+        }
+        const fbParams = new URLSearchParams();
+        fbParams.set("month", selectedMonth.toString());
+        fbParams.set("year", selectedYear.toString());
+        const fbResponse = await fetch(`/api/attendance?${fbParams}`, { method: "GET" });
+        if (!fbResponse.ok) {
+          throw new Error(serverError?.error || "Gagal mengambil data kehadiran");
+        }
+        data = await fbResponse.json();
+      } else {
+        data = await response.json();
       }
-
-      const data = await response.json();
       
       let processedData: AttendanceRecord[] = [];
       
@@ -367,6 +517,7 @@ export default function AttendanceManagement() {
       }
       
       setError(errorMessage);
+      toast.error(errorMessage);
       setIsLoading(false);
       
       // Error fallback: coba gunakan data dari localStorage jika ada
@@ -413,7 +564,7 @@ export default function AttendanceManagement() {
         }
       }
     }
-  }, [selectedMonth, selectedYear]);
+  }, [selectedMonth, selectedYear, selectedDate, filters, isAdmin]);
 
   useEffect(() => {
     // Function untuk menangani event storage
@@ -553,34 +704,13 @@ export default function AttendanceManagement() {
     setIsCheckingOut(false);
   };
 
-  // Fungsi untuk memulai proses check-in
-  const handleCheckIn = () => {
-    // Pre-warm GPS sebelum membuka modal check-in
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        () => {
-          console.log("GPS pre-warmed successfully before check-in");
-        },
-        (err) => {
-          console.warn("GPS pre-warming failed, but continuing anyway:", err.message);
-        },
-        { 
-          timeout: 5000,
-          maximumAge: 30000,
-          enableHighAccuracy: true 
-        }
-      );
-    }
-    
-    setCaptureAction('check-in');
-    setShowAttendanceCapture(true);
-    setIsCheckingIn(true);
-    setError(null);
-  };
+
 
   // Fungsi untuk memproses check-in setelah foto dan lokasi didapatkan
   const processCheckIn = async (photoUrl: string, latitude: number, longitude: number) => {
     setError(null);
+    setIsCheckingIn(true);
+    const toastId = toast.loading("Mengirim absen masuk...");
     
     // Add retry logic for network failures
     const maxRetries = 3;
@@ -619,6 +749,8 @@ export default function AttendanceManagement() {
           if (data.error === "Anda sudah melakukan check-in hari ini") {
             // Jangan tampilkan alert, tampilkan saja pesan di UI dengan ramah
             setError(`Anda sudah melakukan check-in hari ini. Data kehadiran sebelumnya: ${todayRecord?.checkIn ? formatTime(todayRecord.checkIn) : '-'}`);
+            toast.dismiss(toastId);
+            toast("Anda sudah melakukan check-in hari ini");
             return; // Hentikan eksekusi
           }
           
@@ -650,6 +782,8 @@ export default function AttendanceManagement() {
         console.log(`⏳ Waiting ${delay}ms before retry...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
+      toast.dismiss(toastId);
+      toast.success("Absen masuk berhasil");
     }
     
     try {
@@ -770,6 +904,8 @@ export default function AttendanceManagement() {
     } catch (err: any) {
       console.error("Error checking in:", err);
       setError(err.message || "Gagal melakukan absen masuk");
+      toast.dismiss(toastId);
+      toast.error(err.message || "Gagal melakukan absen masuk");
     } finally {
       setIsCheckingIn(false);
     }
@@ -783,56 +919,9 @@ export default function AttendanceManagement() {
     }
   }, [todayRecord, isAdmin]);
 
-  // Fungsi untuk memulai proses check-out
-  const handleCheckOut = () => {
-    // Pre-warm GPS sebelum membuka modal check-out
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        () => {
-          console.log("GPS pre-warmed successfully before check-out");
-        },
-        (err) => {
-          console.warn("GPS pre-warming failed, but continuing anyway:", err.message);
-        },
-        { 
-          timeout: 5000,
-          maximumAge: 30000,
-          enableHighAccuracy: true 
-        }
-      );
-    }
-    
-    setCaptureAction('check-out');
-    setShowAttendanceCapture(true);
-    setIsCheckingOut(true);
-    setError(null);
-  };
 
-  const handleOvertimeStart = () => {
-    setError(null);
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        () => {},
-        () => {},
-        { timeout: 5000, maximumAge: 30000, enableHighAccuracy: true }
-      );
-    }
-    setCaptureAction('overtime-start');
-    setShowAttendanceCapture(true);
-  };
 
-  const handleOvertimeEnd = () => {
-    setError(null);
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        () => {},
-        () => {},
-        { timeout: 5000, maximumAge: 30000, enableHighAccuracy: true }
-      );
-    }
-    setCaptureAction('overtime-end');
-    setShowAttendanceCapture(true);
-  };
+
 
   const processOvertimeStart = async (photoUrl: string, latitude: number, longitude: number, locationNote?: string, reason?: string, consentConfirmed?: boolean) => {
     try {
@@ -902,7 +991,8 @@ export default function AttendanceManagement() {
   const processCheckOut = async (photoUrl: string, latitude: number, longitude: number, retryCount = 0) => {
     const maxRetries = 3;
     setError(null);
-    
+    setIsCheckingOut(true);
+    const toastId = toast.loading("Mengirim absen keluar...");
     try {
       console.log(`🔄 Attempting check-out (attempt ${retryCount + 1}/${maxRetries})`);
       
@@ -953,6 +1043,8 @@ export default function AttendanceManagement() {
           
           // Tampilkan pesan ramah di UI
           setError(`Anda sudah melakukan check-out hari ini. Data kehadiran sebelumnya: Check-in ${todayRecord?.checkIn ? formatTime(todayRecord.checkIn) : '-'}, Check-out ${todayRecord?.checkOut ? formatTime(todayRecord.checkOut) : '-'}`);
+          toast.dismiss(toastId);
+          toast("Anda sudah melakukan check-out hari ini");
           return; // Hentikan eksekusi
         }
         
@@ -1008,6 +1100,8 @@ export default function AttendanceManagement() {
       if (window.showAttendanceSuccess) {
         window.showAttendanceSuccess("✅ Absen keluar berhasil dicatat! Terima kasih atas kerja keras Anda hari ini!");
       }
+      toast.dismiss(toastId);
+      toast.success("Absen keluar berhasil");
       
       // Check if the response header indicates a notification update
       if (response.headers.get('X-Notification-Update') === 'true') {
@@ -1064,10 +1158,12 @@ export default function AttendanceManagement() {
 
   const formatDateDMY = (date: Date): string => {
     const d = new Date(date);
+    const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+    const dayName = days[d.getDay()];
     const day = String(d.getDate()).padStart(2, '0');
     const month = String(d.getMonth() + 1).padStart(2, '0');
     const year = d.getFullYear();
-    return `${day}-${month}-${year}`;
+    return `${dayName}, ${day}-${month}-${year}`;
   };
 
   const getStatusProps = (status: string): { label: string; cls: string } => {
@@ -1264,320 +1360,19 @@ export default function AttendanceManagement() {
   const months = Array.from({ length: 12 }, (_, i) => i + 1);
   const years = Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - 5 + i);
 
-  
+  const attendanceStats = useMemo(() => {
+    return {
+      present: attendanceRecords.filter((item) => item.status === 'PRESENT').length,
+      absent: attendanceRecords.filter((item) => item.status === 'ABSENT').length,
+      late: attendanceRecords.filter((item) => item.status === 'LATE').length,
+      halfday: attendanceRecords.filter((item) => item.status === 'HALFDAY').length,
+    };
+  }, [attendanceRecords]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+
       <div>
-        <h1 className="text-2xl font-semibold text-gray-900">Kehadiran</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          {isAdmin ? "Kelola kehadiran karyawan" : "Lihat dan kelola kehadiran Anda"}
-        </p>
-      </div>
-
-      {!isAdmin && (
-        <div className="overflow-hidden bg-white shadow sm:rounded-lg">
-          <div className="px-4 py-5 sm:p-6">
-            <h3 className="text-lg font-medium leading-6 text-gray-900">
-              Kehadiran Hari Ini
-            </h3>
-            <div className="mt-5">
-              <div className="rounded-md bg-gray-50 px-6 py-5 sm:flex sm:items-center sm:justify-between">
-                <div className="sm:flex sm:items-center">
-                  <svg
-                    className="h-8 w-8 text-gray-400"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    strokeWidth="1.5"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"
-                    />
-                  </svg>
-                  <div className="mt-3 sm:ml-4 sm:mt-0">
-                    <p className="text-sm font-medium text-gray-900">
-                      {todayRecord?.checkIn
-                        ? `Absen masuk: ${formatTime(todayRecord.checkIn)}`
-                        : "Anda belum absen masuk hari ini"}
-                    </p>
-                    {/* Tampilkan checkout hanya jika tidak ditolak */}
-                    {todayRecord?.checkOut && 
-                     !(todayRecord.notes && todayRecord.notes.includes("Di Tolak")) &&
-                     !(todayRecord.approvedAt && 
-                       ((todayRecord.overtime > 0 && !todayRecord.isOvertimeApproved) || 
-                        (todayRecord.isSundayWork && !todayRecord.isSundayWorkApproved))) && (
-                      <p className="text-sm font-medium text-gray-900">
-                        Absen keluar: {formatTime(todayRecord.checkOut)}
-                      </p>
-                    )}
-                    {todayRecord?.status && (
-                      <p className="text-sm font-medium mt-1">
-                        <span
-                          className={`inline-flex rounded-full px-2 text-xs font-semibold leading-5 ${
-                            todayRecord.status === "PRESENT"
-                              ? "bg-green-100 text-green-800"
-                              : todayRecord.status === "ABSENT"
-                              ? "bg-red-100 text-red-800"
-                              : todayRecord.status === "LATE"
-                              ? "bg-yellow-100 text-yellow-800"
-                              : "bg-gray-100 text-gray-800"
-                          }`}
-                        >
-                          {todayRecord.status}
-                        </span>
-                        {todayRecord.isLate && (
-                          <span className="ml-2 text-red-600 text-xs">
-                            Terlambat {todayRecord.lateMinutes} menit
-                          </span>
-                        )}
-                        {todayRecord.overtime > 0 && (
-                          <span className={`ml-2 text-xs ${todayRecord.isOvertimeApproved ? "text-green-600" : "text-yellow-600"}`}>
-                            Lembur {Math.floor(todayRecord.overtime / 60)}j {todayRecord.overtime % 60}m 
-                            {!todayRecord.isOvertimeApproved && " (menunggu persetujuan)"}
-                          </span>
-                        )}
-                      </p>
-                    )}
-                    <p className="mt-1 text-sm text-gray-500">
-                      {new Date().toLocaleDateString('id-ID', {
-                        weekday: "long",
-                        year: "numeric",
-                        month: "long",
-                        day: "numeric",
-                      })}
-                    </p>
-                  </div>
-                </div>
-                <div className="mt-2">
-                  {(() => {
-                    const nowTime = new Date();
-                    const outsideWorkHours = getWorkdayType(nowTime) === WorkdayType.SUNDAY || isOvertimeCheckIn(nowTime, nowTime);
-                    const canStartOvertime = !!todayRecord?.checkOut && !todayRecord?.overtimeStart && outsideWorkHours;
-                    const canEndOvertime = !!todayRecord?.overtimeStart && !todayRecord?.overtimeEnd;
-                    return (
-                      <div className="space-x-2">
-                        {canStartOvertime && (
-                          <button
-                            onClick={handleOvertimeStart}
-                            disabled={actionLoading}
-                            className="inline-flex items-center rounded-md border border-transparent bg-orange-600 px-4 py-2 font-medium text-white shadow-sm hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 sm:text-sm disabled:opacity-50"
-                          >
-                            {actionLoading ? 'Memproses...' : 'Mulai Lembur'}
-                          </button>
-                        )}
-                        {canEndOvertime && (
-                          <button
-                            onClick={handleOvertimeEnd}
-                            disabled={actionLoading}
-                            className="inline-flex items-center rounded-md border border-transparent bg-green-600 px-4 py-2 font-medium text-white shadow-sm hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 sm:text-sm disabled:opacity-50"
-                          >
-                            {actionLoading ? 'Memproses...' : 'Selesai Lembur'}
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })()}
-                </div>
-                <div className="mt-4 sm:ml-6 sm:mt-0 sm:flex-shrink-0">
-                  {(() => {
-                    // Debug logging untuk button condition
-                    console.log("🔍 [BUTTON DEBUG] todayRecord:", todayRecord);
-                    console.log("🔍 [BUTTON DEBUG] todayRecord?.checkIn:", todayRecord?.checkIn);
-                    console.log("🔍 [BUTTON DEBUG] typeof todayRecord?.checkIn:", typeof todayRecord?.checkIn);
-                    console.log("🔍 [BUTTON DEBUG] todayRecord?.checkIn instanceof Date:", todayRecord?.checkIn instanceof Date);
-                    console.log("🔍 [BUTTON DEBUG] !todayRecord?.checkIn:", !todayRecord?.checkIn);
-                    
-                    const hasCheckIn = !!todayRecord?.checkIn;
-                    const isRejected = !!(todayRecord?.notes && todayRecord.notes.includes("Di Tolak"));
-                    const hasUnapprovedWork = !!(todayRecord?.approvedAt && 
-                      (((todayRecord.overtime ?? 0) > 0 && !todayRecord.isOvertimeApproved) || 
-                       (todayRecord.isSundayWork && !todayRecord.isSundayWorkApproved)));
-                    
-                    const showCheckInButton = !hasCheckIn || isRejected || hasUnapprovedWork;
-                    
-                    console.log("🔍 [BUTTON DEBUG] hasCheckIn:", hasCheckIn);
-                    console.log("🔍 [BUTTON DEBUG] isRejected:", isRejected);
-                    console.log("🔍 [BUTTON DEBUG] hasUnapprovedWork:", hasUnapprovedWork);
-                    console.log("🔍 [BUTTON DEBUG] showCheckInButton:", showCheckInButton);
-                    
-                  return showCheckInButton;
-                  })() ? (
-                    (() => {
-                      const now = new Date();
-                      const outsideWork = getWorkdayType(now) === WorkdayType.SUNDAY || isOvertimeCheckIn(now, now);
-                      if (outsideWork) {
-                        return (
-                          <button
-                            onClick={handleOvertimeStart}
-                            disabled={actionLoading}
-                            className="inline-flex items-center gap-2 rounded-md border border-transparent bg-orange-600 px-4 py-2 font-medium text-white shadow-sm hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:ring-offset-2 sm:text-sm disabled:opacity-50"
-                          >
-                            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m6-6H6" />
-                            </svg>
-                            {actionLoading ? "Memproses..." : "Mulai Lembur"}
-                          </button>
-                        );
-                      }
-                      return (
-                        <button
-                          onClick={handleCheckIn}
-                          disabled={actionLoading}
-                          className="inline-flex items-center gap-2 rounded-md border border-transparent bg-blue-600 px-4 py-2 font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 sm:text-sm disabled:opacity-50"
-                        >
-                          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                          </svg>
-                          {actionLoading ? "Memproses..." : "Absen"}
-                        </button>
-                      );
-                    })()
-                  ) : todayRecord?.checkIn && !todayRecord?.checkOut && !todayRecord?.overtimeStart ? (
-                    <button
-                      onClick={handleCheckOut}
-                      disabled={actionLoading}
-                      className="inline-flex items-center rounded-md border border-transparent bg-red-600 px-4 py-2 font-medium text-white shadow-sm hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 sm:text-sm disabled:opacity-50"
-                    >
-                      {actionLoading ? "Memproses..." : "Absen Keluar"}
-                    </button>
-                  ) : todayRecord?.overtimeStart && !todayRecord?.overtimeEnd ? (
-                    null // Tombol Selesai Lembur sudah dirender di atas
-                  ) : (
-                    <span className="inline-flex items-center rounded-md bg-green-50 px-4 py-2 text-sm font-medium text-green-700">
-                      Kehadiran hari ini sudah lengkap
-                    </span>
-                  )}
-                </div>
-              </div>
-              {error && (
-                <div className={`mt-4 rounded-md ${error.includes("sudah melakukan") ? "bg-blue-50" : "bg-red-50"} p-4`}>
-                  <div className="flex">
-                    <div className="flex-shrink-0">
-                      {error.includes("sudah melakukan") ? (
-                        <svg
-                          className="h-5 w-5 text-blue-400"
-                          viewBox="0 0 20 20"
-                          fill="currentColor"
-                        >
-                          <path
-                            fillRule="evenodd"
-                            d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2h-1V9a1 1 0 00-1-1z"
-                            clipRule="evenodd"
-                          />
-                        </svg>
-                      ) : (
-                        <svg
-                          className="h-5 w-5 text-red-400"
-                          viewBox="0 0 20 20"
-                          fill="currentColor"
-                        >
-                          <path
-                            fillRule="evenodd"
-                            d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                            clipRule="evenodd"
-                          />
-                        </svg>
-                      )}
-                    </div>
-                    <div className="ml-3">
-                      <p className={`text-sm ${error.includes("sudah melakukan") ? "text-blue-700" : "text-red-700"}`}>{error}</p>
-                    </div>
-                  </div>
-                </div>
-              )}
-              {(() => {
-                const shouldShow = !!todayRecord && !isAdmin && ((todayRecord.status === "LATE" || todayRecord.status === "ABSENT") && !todayRecord.lateSubmittedAt);
-                return shouldShow;
-              })() && (
-                <div className="mt-4 rounded-md bg-yellow-50 p-4">
-                  <div className="text-sm font-medium text-yellow-800">Formulir Keterlambatan</div>
-                  <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <div className="sm:col-span-2">
-                      <label className="block text-sm font-medium text-gray-700">Alasan keterlambatan</label>
-                      <textarea
-                        value={lateReason}
-                        onChange={(e) => { setLateReason(e.target.value); if (lateError) setLateError(null); }}
-                        rows={3}
-                        className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500"
-                        placeholder="Tuliskan alasan keterlambatan minimal 20 karakter"
-                      />
-                      {lateReason.trim().length > 0 && lateReason.trim().length < 20 && (
-                        <div className="mt-1 text-xs text-red-600">Minimal 20 karakter</div>
-                      )}
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">Upload bukti foto (opsional)</label>
-                      <input
-                        type="file"
-                        accept="image/jpeg,image/png"
-                        onChange={(e) => {
-                          const f = e.target.files?.[0] || null;
-                          if (!f) { setLatePhotoFile(null); setLatePhotoPreview(null); return; }
-                          if (f.size > 2 * 1024 * 1024) { setLateError("Ukuran file maksimal 2MB"); return; }
-                          const typeOk = ["image/jpeg", "image/png"].includes(f.type);
-                          if (!typeOk) { setLateError("Format file harus JPG/PNG"); return; }
-                          setLatePhotoFile(f);
-                          const reader = new FileReader();
-                          reader.onload = () => setLatePhotoPreview(reader.result as string);
-                          reader.readAsDataURL(f);
-                        }}
-                        className="mt-1 block w-full text-sm"
-                      />
-                      {latePhotoPreview && (
-                        <div className="mt-2">
-                          <Image src={latePhotoPreview} alt="Preview" width={96} height={96} className="h-24 w-24 rounded object-cover" />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  {lateError && (
-                    <div className="mt-2 rounded-md bg-red-50 p-2 text-sm text-red-700">{lateError}</div>
-                  )}
-                  <div className="mt-3 flex items-center justify-end gap-2">
-                    <button
-                      disabled={lateSubmitting || lateReason.trim().length < 20}
-                      onClick={async () => {
-                        setLateError(null);
-                        setLateSubmitting(true);
-                        try {
-                          let uploadedUrl: string | undefined;
-                          if (latePhotoFile) {
-                            const formData = new FormData();
-                            formData.append("file", latePhotoFile);
-                            const up = await fetch("/api/upload", { method: "POST", body: formData });
-                            const upData = await up.json();
-                            if (!up.ok) throw new Error(upData.error || "Gagal upload foto");
-                            uploadedUrl = upData.url;
-                          }
-                          const res = await fetch("/api/attendance/late", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: lateReason.trim(), photoUrl: uploadedUrl }) });
-                          const data = await res.json();
-                          if (!res.ok) throw new Error(data.error || "Gagal submit keterlambatan");
-                          setLateReason("");
-                          setLatePhotoFile(null);
-                          setLatePhotoPreview(null);
-                          setTodayRecord((prev) => prev ? { ...prev, lateSubmittedAt: new Date(data.lateSubmittedAt || Date.now()), lateApprovalStatus: data.lateApprovalStatus, lateReason: data.lateReason, latePhotoUrl: data.latePhotoUrl } : prev);
-                        } catch (e: any) {
-                          setLateError(e.message || "Terjadi kesalahan");
-                        } finally {
-                          setLateSubmitting(false);
-                        }
-                      }}
-                      className="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
-                    >
-                      {lateSubmitting ? "Mengirim..." : "Kirim Pengajuan"}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="mt-8">
         <div className="sm:flex sm:items-center">
           <div className="sm:flex-auto">
             <h2 className="text-xl font-semibold text-gray-900">
@@ -1588,56 +1383,119 @@ export default function AttendanceManagement() {
                 ? "Lihat dan kelola catatan kehadiran karyawan"
                 : "Lihat catatan kehadiran Anda"}
             </p>
-            {!isAdmin && Array.isArray(attendanceRecords) && attendanceRecords.some(record => 
-              (record.notes && record.notes.includes("Di Tolak")) ||
-              (record.approvedAt && ((record.overtime > 0 && !record.isOvertimeApproved) || 
-              (record.isSundayWork && !record.isSundayWorkApproved)))
-            ) && (
-              <div className="mt-2 rounded-md bg-blue-50 p-4">
-                <div className="flex">
-                  <div className="flex-shrink-0">
-                    <svg className="h-5 w-5 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2h-1V9a1 1 0 00-1-1z" clipRule="evenodd" />
-                    </svg>
-                  </div>
-                  <div className="ml-3">
-                    <p className="text-sm text-blue-700">
-                      Anda memiliki permintaan yang ditolak. Anda dapat mengajukan check-in kembali dengan menekan tombol "Absen Masuk" di atas.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
-          <div className="mt-4 sm:mt-0 sm:ml-16 sm:flex-none space-x-2">
-            <select
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
-              className="rounded-md border border-gray-300 py-2 pl-3 pr-10 text-base focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm"
-            >
-              {months.map((month) => (
-                <option key={`month-${month}`} value={month}>
-                  {getMonthName(month)}
-                </option>
-              ))}
-            </select>
-            <select
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(parseInt(e.target.value))}
-              className="rounded-md border border-gray-300 py-2 pl-3 pr-10 text-base focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm"
-            >
-              {years.map((year) => (
-                <option key={`year-${year}`} value={year}>
-                  {year}
-                </option>
-              ))}
-            </select>
-          </div>
+          {!isAdmin && (
+            <div className="mt-4 grid grid-cols-2 gap-2 sm:mt-0 sm:ml-16 sm:flex sm:flex-none sm:space-x-2">
+              <select
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
+                className="w-full rounded-md border border-gray-300 py-2 pl-3 pr-10 text-base focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm"
+              >
+                {months.map((month) => (
+                  <option key={`month-${month}`} value={month}>
+                    {getMonthName(month)}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+                className="w-full rounded-md border border-gray-300 py-2 pl-3 pr-10 text-base focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm"
+              >
+                {years.map((year) => (
+                  <option key={`year-${year}`} value={year}>
+                    {year}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
-        <div className="mt-4 flex flex-col">
+
+        {/* Attendance Stats for Employee */}
+        {!isAdmin && (
+          <div className="grid grid-cols-2 gap-3 sm:gap-6 lg:grid-cols-4 mt-6 mb-6">
+            {/* Present */}
+            <div className="bg-white rounded-2xl p-3 sm:p-4 shadow-sm border border-gray-100 flex items-center gap-3 sm:gap-4 hover:shadow-md transition-all">
+              <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-xl bg-green-50 flex items-center justify-center text-green-600">
+                <UserCheck className="h-5 w-5 sm:h-6 sm:w-6" />
+              </div>
+              <div>
+                <p className="text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-wider">Hadir</p>
+                <p className="text-lg sm:text-2xl font-bold text-gray-900">{isLoading ? "..." : attendanceStats.present}</p>
+              </div>
+            </div>
+
+            {/* Absent */}
+            <div className="bg-white rounded-2xl p-3 sm:p-4 shadow-sm border border-gray-100 flex items-center gap-3 sm:gap-4 hover:shadow-md transition-all">
+              <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-xl bg-red-50 flex items-center justify-center text-red-600">
+                <XCircle className="h-5 w-5 sm:h-6 sm:w-6" />
+              </div>
+              <div>
+                <p className="text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-wider">Tidak Hadir</p>
+                <p className="text-lg sm:text-2xl font-bold text-gray-900">{isLoading ? "..." : attendanceStats.absent}</p>
+              </div>
+            </div>
+
+            {/* Late */}
+            <div className="bg-white rounded-2xl p-3 sm:p-4 shadow-sm border border-gray-100 flex items-center gap-3 sm:gap-4 hover:shadow-md transition-all">
+              <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-xl bg-yellow-50 flex items-center justify-center text-yellow-600">
+                <Clock className="h-5 w-5 sm:h-6 sm:w-6" />
+              </div>
+              <div>
+                <p className="text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-wider">Terlambat</p>
+                <p className="text-lg sm:text-2xl font-bold text-gray-900">{isLoading ? "..." : attendanceStats.late}</p>
+              </div>
+            </div>
+
+            {/* Half Day */}
+            <div className="bg-white rounded-2xl p-3 sm:p-4 shadow-sm border border-gray-100 flex items-center gap-3 sm:gap-4 hover:shadow-md transition-all">
+              <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-xl bg-orange-50 flex items-center justify-center text-orange-600">
+                <Coffee className="h-5 w-5 sm:h-6 sm:w-6" />
+              </div>
+              <div>
+                <p className="text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-wider">Setengah Hari</p>
+                <p className="text-lg sm:text-2xl font-bold text-gray-900">{isLoading ? "..." : attendanceStats.halfday}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        
+
+        {isAdmin && (
+          <div className="sticky top-0 z-30 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60 border-b border-gray-100 py-3">
+            <AttendanceFilter
+              filters={filters}
+              onChange={setFilters}
+              onClear={() => {
+                setFilters({
+                  search: "",
+                  employeeId: undefined,
+                  department: "",
+                  position: "",
+                  status: [],
+                  dateRange: undefined,
+                  isLate: false,
+                  hasLocation: false,
+                  dayType: "ALL"
+                });
+                setSelectedDate(null);
+              }}
+              employees={employees}
+              selectedDate={selectedDate}
+              onDateChange={setSelectedDate}
+              selectedMonth={selectedMonth}
+              onMonthChange={setSelectedMonth}
+              selectedYear={selectedYear}
+              onYearChange={setSelectedYear}
+            />
+          </div>
+        )}
+        <div className="mt-4 flex flex-col hidden md:flex">
           <div className="-my-2 overflow-x-auto">
             <div className="inline-block min-w-full py-2 align-middle">
-              <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 rounded-lg">
+              <div className="overflow-hidden rounded-xl border border-gray-200 shadow-sm">
                 <table className="min-w-full divide-y divide-gray-300">
                   <thead className="bg-gray-50">
                     <tr>
@@ -1885,288 +1743,421 @@ export default function AttendanceManagement() {
             </div>
           </div>
         </div>
+
+        {/* Mobile View - Simplified Cards */}
+        <div className="md:hidden mt-4 space-y-4 pb-20">
+          {isLoading ? (
+             <div className="text-center py-10 text-gray-500">Memuat data...</div>
+          ) : !Array.isArray(attendanceRecords) || attendanceRecords.length === 0 ? (
+             <div className="text-center py-10 text-gray-500">Tidak ditemukan catatan kehadiran</div>
+          ) : (
+            attendanceRecords.map((record, index) => (
+              <div
+                key={`${record.id}-${index}-mobile`}
+                className={`bg-white rounded-xl shadow-sm border border-gray-100 p-4 active:scale-[0.98] transition-transform duration-200 ${highlightAttendanceId === record.id ? 'ring-2 ring-indigo-500 bg-indigo-50' : ''}`}
+                onClick={async () => {
+                   setDetailRecord(record);
+                   setDetailOpen(true);
+                   try {
+                     setDetailLoading(true);
+                     const res = await fetch(`/api/attendance/${record.id}/logs`);
+                     const data = res.ok ? await res.json() : {};
+                     const logs = Array.isArray(data.logs) ? data.logs : [];
+                     const allowed = [
+                        "REQUEST_SUBMITTED", "APPROVE", "REJECT", "LATE_REQUEST_SUBMITTED"
+                     ];
+                     const uniqueLogs = Array.from(new Map(logs.map((item: any) => [item.id, item])).values()).filter((x: any) => allowed.includes(x.action));
+                     setDetailLogs(uniqueLogs);
+                   } catch (e) {
+                     console.error("Error fetching logs:", e);
+                     setDetailLogs([]);
+                   } finally {
+                     setDetailLoading(false);
+                   }
+                }}
+              >
+                {/* Header: Date & Status */}
+                <div className="flex justify-between items-start mb-3">
+                  <div>
+                    <h3 className="font-semibold text-gray-900 text-base">
+                      {record.employee?.user?.name || record.employee?.name || "Unknown"}
+                    </h3>
+                    <p className="text-sm text-gray-500 mt-0.5">{formatDateDMY(record.date)}</p>
+                  </div>
+                  <div className="flex flex-col items-end gap-1">
+                     <span
+                      className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium ${
+                        record.status === 'PRESENT'
+                          ? 'bg-green-50 text-green-700 border border-green-100'
+                          : record.status === 'ABSENT'
+                          ? 'bg-red-50 text-red-700 border border-red-100'
+                          : record.status === 'LATE'
+                          ? 'bg-yellow-50 text-yellow-700 border border-yellow-100'
+                          : 'bg-gray-50 text-gray-700 border border-gray-100'
+                      }`}
+                    >
+                      {record.status}
+                    </span>
+                    {record.isLate && (
+                       <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-50 text-red-600 border border-red-100">
+                        Terlambat
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Time Grid */}
+                <div className="grid grid-cols-2 gap-3 mb-3">
+                  <div className="bg-gray-50 rounded-lg p-2.5">
+                    <div className="flex items-center gap-2 mb-1">
+                      <LogIn className="w-3.5 h-3.5 text-green-600" />
+                      <span className="text-xs font-medium text-gray-500">Masuk</span>
+                    </div>
+                    <p className="text-sm font-bold text-gray-900 pl-[22px]">
+                      {record.checkIn ? formatTime(record.checkIn) : '-'}
+                    </p>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-2.5">
+                    <div className="flex items-center gap-2 mb-1">
+                      <LogOut className="w-3.5 h-3.5 text-red-600" />
+                      <span className="text-xs font-medium text-gray-500">Keluar</span>
+                    </div>
+                    <p className="text-sm font-bold text-gray-900 pl-[22px]">
+                      {record.checkOut ? formatTime(record.checkOut) : '-'}
+                    </p>
+                  </div>
+                </div>
+                
+                {/* Footer Info */}
+                <div className="flex items-center justify-between pt-2 border-t border-gray-50 text-xs text-gray-500">
+                   <div className="flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5" />
+                      <span>
+                        {(() => {
+                            const ci = record.checkIn ? new Date(record.checkIn).getTime() : null;
+                            const co = record.checkOut ? new Date(record.checkOut).getTime() : null;
+                            if (!ci || !co || co < ci) return '-';
+                            const mins = Math.round((co - ci) / 60000);
+                            const h = Math.floor(mins/60);
+                            const m = mins%60;
+                            return `${h}j ${m}m`;
+                        })()}
+                      </span>
+                   </div>
+                   <div className="flex items-center gap-3">
+                       {record.overtime > 0 && (
+                          <span className="text-orange-600 font-medium flex items-center gap-1">
+                            + Lembur {formatMinutesToHours(record.overtime)}
+                          </span>
+                       )}
+                       {isAdmin && (
+                         <button
+                            onClick={(e) => {
+                               e.stopPropagation();
+                               handleEditClick(record);
+                            }}
+                            className="text-indigo-600 font-medium hover:text-indigo-800 p-1 -mr-1"
+                         >
+                            Edit
+                         </button>
+                       )}
+                   </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
       </div>
 
       {/* Edit Modal */}
       {isEditModalOpen && editingRecord && (
-        <div className="fixed inset-0 z-[100] overflow-y-auto">
-          <div className="flex min-h-screen items-center justify-center px-4 pt-4 pb-20 text-center sm:block sm:p-0">
-            {/* Background overlay */}
-            <div
-              className="fixed inset-0 bg-black/50 backdrop-blur-md transition-opacity"
-              aria-hidden="true"
-              onClick={() => setIsEditModalOpen(false)}
-            ></div>
+        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center sm:p-4">
+          {/* Background overlay */}
+          <div
+            className="fixed inset-0 bg-black/50 backdrop-blur-md transition-opacity"
+            aria-hidden="true"
+            onClick={() => setIsEditModalOpen(false)}
+          ></div>
 
-            {/* Modal positioning */}
-            <span
-              className="hidden sm:inline-block sm:h-screen sm:align-middle"
-              aria-hidden="true"
-            >
-              &#8203;
-            </span>
+          {/* Modal content */}
+          <div className="relative w-full h-[90vh] sm:h-auto sm:max-w-lg bg-white rounded-t-2xl sm:rounded-2xl shadow-xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-10 sm:zoom-in duration-200">
+            {/* Modal header */}
+            <div className="flex items-center justify-between px-4 py-4 border-b border-gray-100 bg-white sticky top-0 z-10">
+              <h3 className="text-lg font-semibold text-gray-900" id="modal-title">
+                Edit Data Kehadiran
+              </h3>
+              <button
+                type="button"
+                className="p-2 -mr-2 text-gray-400 hover:text-gray-500 rounded-full hover:bg-gray-100 transition-colors"
+                onClick={() => setIsEditModalOpen(false)}
+              >
+                <span className="sr-only">Close</span>
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
 
-            {/* Modal content */}
-            <div className="relative inline-block transform overflow-hidden rounded-lg bg-white text-left align-bottom shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:align-middle">
-              {/* Modal header */}
-              <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                <div className="sm:flex sm:items-start">
-                  <div className="mt-3 w-full text-center sm:mt-0 sm:text-left">
-                    <div className="flex items-center justify-between">
-                      <h3
-                        className="text-lg font-medium leading-6 text-gray-900"
-                        id="modal-title"
-                      >
-                        Edit Attendance Record
-                      </h3>
-                      <button
-                        type="button"
-                        className="rounded-md bg-white text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-                        onClick={() => setIsEditModalOpen(false)}
-                      >
-                        <span className="sr-only">Close</span>
-                        <svg
-                          className="h-6 w-6"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          strokeWidth="1.5"
-                          stroke="currentColor"
-                          aria-hidden="true"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="M6 18L18 6M6 6l12 12"
-                          />
-                        </svg>
-                      </button>
-                    </div>
+            {/* Scrollable Content */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+              <div className="mb-6 bg-gray-50 p-4 rounded-xl border border-gray-100">
+                <p className="text-sm font-medium text-gray-900">
+                  {editingRecord.employee?.user?.name || editingRecord.employee?.name || "Unknown"}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {formatDate(editingRecord.date)}
+                </p>
+              </div>
 
-                    <div className="mt-2">
-                      <p className="text-sm text-gray-500">
-                        {editingRecord.employee?.user?.name || editingRecord.employee?.name || "Unknown"} - {formatDate(editingRecord.date)}
-                      </p>
-                    </div>
-
-                    <div className="mt-4">
-                      <form onSubmit={handleEditSubmit}>
-                        <div className="grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-2">
-                          <div>
-                            <label htmlFor="checkIn" className="block text-sm font-medium text-gray-700">
-                              Check In Time
-                            </label>
-                            <div className="mt-1">
-                              <input
-                                type="datetime-local"
-                                name="checkIn"
-                                id="checkIn"
-                                value={editFormData.checkIn}
-                                onChange={handleEditFormChange}
-                                className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm"
-                              />
-                            </div>
-                          </div>
-                          
-                          <div>
-                            <label htmlFor="checkOut" className="block text-sm font-medium text-gray-700">
-                              Check Out Time
-                            </label>
-                            <div className="mt-1">
-                              <input
-                                type="datetime-local"
-                                name="checkOut"
-                                id="checkOut"
-                                value={editFormData.checkOut}
-                                onChange={handleEditFormChange}
-                                className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm"
-                              />
-                            </div>
-                          </div>
-                          
-                          <div>
-                            <label htmlFor="status" className="block text-sm font-medium text-gray-700">
-                              Status
-                            </label>
-                            <div className="mt-1">
-                              <select
-                                name="status"
-                                id="status"
-                                value={editFormData.status}
-                                onChange={handleEditFormChange}
-                                className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm"
-                              >
-                                <option value="PRESENT">PRESENT</option>
-                                <option value="ABSENT">ABSENT</option>
-                                <option value="LATE">LATE</option>
-                                <option value="HALFDAY">HALFDAY</option>
-                              </select>
-                            </div>
-                          </div>
-                          
-                          <div className="sm:col-span-2">
-                            <label htmlFor="notes" className="block text-sm font-medium text-gray-700">
-                              Notes
-                            </label>
-                            <div className="mt-1">
-                              <textarea
-                                name="notes"
-                                id="notes"
-                                rows={3}
-                                value={editFormData.notes}
-                                onChange={handleEditFormChange}
-                                className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm"
-                              />
-                            </div>
-                          </div>
-                        </div>
-
-                        {error && (
-                          <div className="mt-4 rounded-md bg-red-50 p-4">
-                            <div className="flex">
-                              <div className="flex-shrink-0">
-                                <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                                </svg>
-                              </div>
-                              <div className="ml-3">
-                                <p className="text-sm text-red-700">{error}</p>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        <div className="mt-6 sm:mt-8 sm:flex sm:flex-row-reverse">
-                          <button
-                            type="submit"
-                            disabled={isSubmitting}
-                            className="inline-flex w-full justify-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-base font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:bg-indigo-300 disabled:cursor-not-allowed sm:ml-3 sm:w-auto sm:text-sm transition-colors duration-200"
-                          >
-                            {isSubmitting ? "Saving..." : "Save Changes"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setIsEditModalOpen(false)}
-                            className="mt-3 inline-flex w-full justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-base font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 sm:mt-0 sm:w-auto sm:text-sm transition-colors duration-200"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      </form>
-                    </div>
+              <form onSubmit={handleEditSubmit} id="edit-form">
+                <div className="grid grid-cols-1 gap-6">
+                  <div>
+                    <label htmlFor="checkIn" className="block text-sm font-medium text-gray-700 mb-1">
+                      Waktu Check In
+                    </label>
+                    <input
+                      type="datetime-local"
+                      name="checkIn"
+                      id="checkIn"
+                      value={editFormData.checkIn}
+                      onChange={handleEditFormChange}
+                      className="block w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-3"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label htmlFor="checkOut" className="block text-sm font-medium text-gray-700 mb-1">
+                      Waktu Check Out
+                    </label>
+                    <input
+                      type="datetime-local"
+                      name="checkOut"
+                      id="checkOut"
+                      value={editFormData.checkOut}
+                      onChange={handleEditFormChange}
+                      className="block w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-3"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label htmlFor="status" className="block text-sm font-medium text-gray-700 mb-1">
+                      Status Kehadiran
+                    </label>
+                    <select
+                      name="status"
+                      id="status"
+                      value={editFormData.status}
+                      onChange={handleEditFormChange}
+                      className="block w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-3"
+                    >
+                      <option value="PRESENT">HADIR (PRESENT)</option>
+                      <option value="ABSENT">TIDAK HADIR (ABSENT)</option>
+                      <option value="LATE">TERLAMBAT (LATE)</option>
+                      <option value="HALFDAY">SETENGAH HARI (HALFDAY)</option>
+                    </select>
+                  </div>
+                  
+                  <div>
+                    <label htmlFor="notes" className="block text-sm font-medium text-gray-700 mb-1">
+                      Catatan
+                    </label>
+                    <textarea
+                      name="notes"
+                      id="notes"
+                      rows={3}
+                      value={editFormData.notes}
+                      onChange={handleEditFormChange}
+                      className="block w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-3"
+                      placeholder="Tambahkan catatan jika ada..."
+                    />
                   </div>
                 </div>
-              </div>
+
+                {error && (
+                  <div className="mt-6 rounded-xl bg-red-50 p-4 border border-red-100">
+                    <div className="flex">
+                      <div className="flex-shrink-0">
+                        <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                        </svg>
+                      </div>
+                      <div className="ml-3">
+                        <p className="text-sm text-red-700">{error}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </form>
+            </div>
+
+            {/* Footer actions */}
+            <div className="bg-gray-50 px-4 py-4 sm:px-6 flex flex-col-reverse sm:flex-row gap-3 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={() => setIsEditModalOpen(false)}
+                className="w-full inline-flex justify-center rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all active:scale-[0.98] sm:w-auto"
+              >
+                Batal
+              </button>
+              <button
+                type="submit"
+                form="edit-form"
+                disabled={isSubmitting}
+                className="w-full inline-flex justify-center rounded-xl border border-transparent bg-indigo-600 px-4 py-3 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:bg-indigo-300 disabled:cursor-not-allowed transition-all active:scale-[0.98] sm:ml-3 sm:w-auto"
+              >
+                {isSubmitting ? "Menyimpan..." : "Simpan Perubahan"}
+              </button>
             </div>
           </div>
         </div>
       )}
 
       {isLateModalOpen && (
-        <div className="fixed inset-0 z-[100] overflow-y-auto">
-          <div className="flex min-h-screen items-center justify-center px-4 pt-4 pb-20 text-center sm:block sm:p-0">
-            <div
-              className="fixed inset-0 bg-black/50 backdrop-blur-md transition-opacity"
-              aria-hidden="true"
-              onClick={() => setIsLateModalOpen(false)}
-            ></div>
-            <span className="hidden sm:inline-block sm:h-screen sm:align-middle" aria-hidden="true">&#8203;</span>
-            <div className="relative inline-block transform overflow-hidden rounded-lg bg-white text-left align-bottom shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:align-middle">
-              <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                <div className="sm:flex sm:items-start">
-                  <div className="mt-3 w-full text-center sm:mt-0 sm:text-left">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-lg font-medium leading-6 text-gray-900">Formulir Keterlambatan</h3>
-                      <button
-                        type="button"
-                        className="rounded-md bg-white text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-                        onClick={() => setIsLateModalOpen(false)}
-                      >
-                        <span className="sr-only">Close</span>
-                        <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" aria-hidden="true">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center sm:p-4">
+          <div
+            className="fixed inset-0 bg-black/50 backdrop-blur-md transition-opacity"
+            aria-hidden="true"
+            onClick={() => setIsLateModalOpen(false)}
+          ></div>
+
+          <div className="relative w-full bg-white rounded-t-2xl sm:rounded-2xl shadow-xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-10 sm:zoom-in duration-200 sm:max-w-lg max-h-[90vh]">
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 py-4 border-b border-gray-100 bg-white sticky top-0 z-10">
+              <h3 className="text-lg font-semibold text-gray-900">Formulir Keterlambatan</h3>
+              <button
+                type="button"
+                className="p-2 -mr-2 text-gray-400 hover:text-gray-500 rounded-full hover:bg-gray-100 transition-colors"
+                onClick={() => setIsLateModalOpen(false)}
+              >
+                <span className="sr-only">Close</span>
+                <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-4 sm:p-6 overflow-y-auto">
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Alasan keterlambatan <span className="text-red-500">*</span></label>
+                  <textarea
+                    value={lateReason}
+                    onChange={(e) => { setLateReason(e.target.value); if (lateError) setLateError(null); }}
+                    rows={4}
+                    className="block w-full rounded-xl border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm resize-none"
+                    placeholder="Jelaskan alasan keterlambatan Anda (min. 20 karakter)..."
+                  />
+                  {lateReason.trim().length > 0 && lateReason.trim().length < 20 && (
+                    <p className="mt-1 text-xs text-red-600">Minimal 20 karakter ({lateReason.trim().length}/20)</p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Bukti Foto (Opsional)</label>
+                  <div className="mt-1 flex justify-center rounded-xl border-2 border-dashed border-gray-300 px-6 pt-5 pb-6 hover:bg-gray-50 transition-colors relative">
+                    {latePhotoPreview ? (
+                      <div className="relative w-full text-center">
+                        <Image src={latePhotoPreview} alt="Preview" width={200} height={200} className="mx-auto h-48 object-contain rounded-lg" />
+                        <button
+                          type="button"
+                          onClick={() => { setLatePhotoFile(null); setLatePhotoPreview(null); }}
+                          className="absolute top-0 right-0 -mt-2 -mr-2 bg-red-100 text-red-600 rounded-full p-1 hover:bg-red-200"
+                        >
+                          <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                          </svg>
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-1 text-center">
+                        <svg className="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true">
+                          <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                         </svg>
-                      </button>
-                    </div>
-                    <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      <div className="sm:col-span-2">
-                        <label className="block text-sm font-medium text-gray-700">Alasan keterlambatan</label>
-                        <textarea
-                          value={lateReason}
-                          onChange={(e) => { setLateReason(e.target.value); if (lateError) setLateError(null); }}
-                          rows={3}
-                          className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500"
-                          placeholder="Tuliskan alasan keterlambatan minimal 20 karakter"
-                        />
-                        {lateReason.trim().length > 0 && lateReason.trim().length < 20 && (
-                          <div className="mt-1 text-xs text-red-600">Minimal 20 karakter</div>
-                        )}
+                        <div className="flex text-sm text-gray-600 justify-center">
+                          <label htmlFor="file-upload" className="relative cursor-pointer rounded-md bg-white font-medium text-indigo-600 focus-within:outline-none focus-within:ring-2 focus-within:ring-indigo-500 focus-within:ring-offset-2 hover:text-indigo-500">
+                            <span>Upload file</span>
+                            <input
+                              id="file-upload"
+                              name="file-upload"
+                              type="file"
+                              className="sr-only"
+                              accept="image/jpeg,image/png"
+                              onChange={(e) => {
+                                const f = e.target.files?.[0] || null;
+                                if (!f) { setLatePhotoFile(null); setLatePhotoPreview(null); return; }
+                                if (f.size > 2 * 1024 * 1024) { setLateError("Ukuran file maksimal 2MB"); return; }
+                                const typeOk = ["image/jpeg", "image/png"].includes(f.type);
+                                if (!typeOk) { setLateError("Format file harus JPG/PNG"); return; }
+                                setLatePhotoFile(f);
+                                const reader = new FileReader();
+                                reader.onload = () => setLatePhotoPreview(reader.result as string);
+                                reader.readAsDataURL(f);
+                              }}
+                            />
+                          </label>
+                          <p className="pl-1">atau drag and drop</p>
+                        </div>
+                        <p className="text-xs text-gray-500">PNG, JPG up to 2MB</p>
                       </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700">Upload bukti foto (opsional)</label>
-                        <input
-                          type="file"
-                          accept="image/jpeg,image/png"
-                          onChange={(e) => {
-                            const f = e.target.files?.[0] || null;
-                            if (!f) { setLatePhotoFile(null); setLatePhotoPreview(null); return; }
-                            if (f.size > 2 * 1024 * 1024) { setLateError("Ukuran file maksimal 2MB"); return; }
-                            const typeOk = ["image/jpeg", "image/png"].includes(f.type);
-                            if (!typeOk) { setLateError("Format file harus JPG/PNG"); return; }
-                            setLatePhotoFile(f);
-                            const reader = new FileReader();
-                            reader.onload = () => setLatePhotoPreview(reader.result as string);
-                            reader.readAsDataURL(f);
-                          }}
-                          className="mt-1 block w-full text-sm"
-                        />
-                        {latePhotoPreview && (
-                          <div className="mt-2">
-                            <Image src={latePhotoPreview} alt="Preview" width={96} height={96} className="h-24 w-24 rounded object-cover" />
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    {lateError && (
-                      <div className="mt-2 rounded-md bg-red-50 p-2 text-sm text-red-700">{lateError}</div>
                     )}
-                    <div className="mt-3 flex items-center justify-end gap-2">
-                      <button
-                        disabled={lateSubmitting || lateReason.trim().length < 20}
-                        onClick={async () => {
-                          setLateError(null);
-                          setLateSubmitting(true);
-                          try {
-                            let uploadedUrl: string | undefined;
-                            if (latePhotoFile) {
-                              const formData = new FormData();
-                              formData.append("file", latePhotoFile);
-                              const up = await fetch("/api/upload", { method: "POST", body: formData });
-                              const upData = await up.json();
-                              if (!up.ok) throw new Error(upData.error || "Gagal upload foto");
-                              uploadedUrl = upData.url;
-                            }
-                            const res = await fetch("/api/attendance/late", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: lateReason.trim(), photoUrl: uploadedUrl }) });
-                            const data = await res.json();
-                            if (!res.ok) throw new Error(data.error || "Gagal submit keterlambatan");
-                            setLateReason("");
-                            setLatePhotoFile(null);
-                            setLatePhotoPreview(null);
-                            setTodayRecord((prev) => prev ? { ...prev, lateSubmittedAt: new Date(data.lateSubmittedAt || Date.now()), lateApprovalStatus: data.lateApprovalStatus, lateReason: data.lateReason, latePhotoUrl: data.latePhotoUrl } : prev);
-                            setIsLateModalOpen(false);
-                          } catch (e: any) {
-                            setLateError(e.message || "Terjadi kesalahan");
-                          } finally {
-                            setLateSubmitting(false);
-                          }
-                        }}
-                        className="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
-                      >
-                        {lateSubmitting ? "Mengirim..." : "Kirim Pengajuan"}
-                      </button>
-                    </div>
                   </div>
                 </div>
+
+                {lateError && (
+                  <div className="rounded-xl bg-red-50 p-3 text-sm text-red-700 flex items-start gap-2">
+                    <svg className="h-5 w-5 text-red-400 shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                    </svg>
+                    {lateError}
+                  </div>
+                )}
               </div>
+            </div>
+
+            {/* Footer */}
+            <div className="bg-gray-50 px-4 py-4 sm:px-6 flex flex-col-reverse sm:flex-row gap-3 border-t border-gray-100">
+              <button
+                type="button"
+                className="w-full inline-flex justify-center rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all active:scale-[0.98] sm:w-auto"
+                onClick={() => setIsLateModalOpen(false)}
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                disabled={lateSubmitting || lateReason.trim().length < 20}
+                onClick={async () => {
+                  setLateError(null);
+                  setLateSubmitting(true);
+                  try {
+                    let uploadedUrl: string | undefined;
+                    if (latePhotoFile) {
+                      const formData = new FormData();
+                      formData.append("file", latePhotoFile);
+                      const up = await fetch("/api/upload", { method: "POST", body: formData });
+                      const upData = await up.json();
+                      if (!up.ok) throw new Error(upData.error || "Gagal upload foto");
+                      uploadedUrl = upData.url;
+                    }
+                    const res = await fetch("/api/attendance/late", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: lateReason.trim(), photoUrl: uploadedUrl }) });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.error || "Gagal submit keterlambatan");
+                    setLateReason("");
+                    setLatePhotoFile(null);
+                    setLatePhotoPreview(null);
+                    setTodayRecord((prev) => prev ? { ...prev, lateSubmittedAt: new Date(data.lateSubmittedAt || Date.now()), lateApprovalStatus: data.lateApprovalStatus, lateReason: data.lateReason, latePhotoUrl: data.latePhotoUrl } : prev);
+                    setIsLateModalOpen(false);
+                  } catch (e: any) {
+                    setLateError(e.message || "Terjadi kesalahan");
+                  } finally {
+                    setLateSubmitting(false);
+                  }
+                }}
+                className="w-full inline-flex justify-center rounded-xl border border-transparent bg-indigo-600 px-4 py-3 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:bg-indigo-300 disabled:cursor-not-allowed transition-all active:scale-[0.98] sm:ml-3 sm:w-auto"
+              >
+                {lateSubmitting ? "Mengirim..." : "Kirim Pengajuan"}
+              </button>
             </div>
           </div>
         </div>
@@ -2174,65 +2165,42 @@ export default function AttendanceManagement() {
 
       {/* Photo Modal */}
       {photoModalOpen && (
-        <div className="fixed inset-0 z-[200] overflow-y-auto">
-          <div className="flex min-h-screen items-center justify-center px-4 pt-4 pb-20 text-center sm:block sm:p-0">
-            {/* Background overlay */}
-            <div
-              className="fixed inset-0 bg-black/50 backdrop-blur-md transition-opacity"
-              aria-hidden="true"
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 sm:p-0">
+          <div
+            className="fixed inset-0 bg-black/80 backdrop-blur-md transition-opacity"
+            aria-hidden="true"
+            onClick={() => setPhotoModalOpen(false)}
+          ></div>
+
+          <div className="relative w-full max-w-4xl bg-transparent flex flex-col items-center justify-center h-full sm:h-auto animate-in zoom-in duration-200">
+             {/* Close button - floating top right for desktop, fixed top right for mobile */}
+            <button
+              type="button"
+              className="absolute top-4 right-4 sm:-top-12 sm:-right-12 z-50 p-2 bg-white/10 hover:bg-white/20 text-white rounded-full backdrop-blur-sm transition-colors"
               onClick={() => setPhotoModalOpen(false)}
-            ></div>
-
-            {/* Modal positioning */}
-            <span
-              className="hidden sm:inline-block sm:align-middle sm:h-screen"
-              aria-hidden="true"
             >
-              &#8203;
-            </span>
-
-            {/* Modal panel */}
-            <div className="relative inline-block align-bottom bg-white rounded-lg px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl sm:w-full sm:p-6">
-              <div className="absolute top-0 right-0 pt-4 pr-4">
-                <button
-                  type="button"
-                  className="bg-white rounded-md text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                  onClick={() => setPhotoModalOpen(false)}
-                >
-                  <span className="sr-only">Close</span>
-                  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-              
-              <div className="sm:flex sm:items-start">
-                <div className="mt-3 text-center sm:mt-0 sm:text-left w-full">
-                  <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">
-                    {photoModalTitle}
-                  </h3>
-                  <div className="mt-2 flex justify-center">
+              <span className="sr-only">Close</span>
+              <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            
+            <div className="w-full max-h-[85vh] flex flex-col items-center">
+                {photoModalTitle && (
+                    <h3 className="text-white text-lg font-medium mb-4 text-center drop-shadow-md px-4">
+                        {photoModalTitle}
+                    </h3>
+                )}
+                <div className="relative w-full h-full flex items-center justify-center overflow-hidden rounded-lg">
                     <Image
                       src={selectedPhotoUrl || ""}
-                      alt={photoModalTitle}
+                      alt={photoModalTitle || "Photo"}
                       width={1024}
                       height={768}
                       unoptimized
-                      className="max-w-full max-h-[70vh] object-contain rounded-lg shadow-lg"
+                      className="max-w-full max-h-[75vh] object-contain rounded-lg shadow-2xl"
                     />
-                  </div>
                 </div>
-              </div>
-              
-              <div className="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
-                <button
-                  type="button"
-                  className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-indigo-600 text-base font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:ml-3 sm:w-auto sm:text-sm"
-                  onClick={() => setPhotoModalOpen(false)}
-                >
-                  Tutup
-                </button>
-              </div>
             </div>
           </div>
         </div>
@@ -2260,11 +2228,17 @@ export default function AttendanceManagement() {
         />
       )}
       {detailOpen && detailRecord && (
-        <div className="fixed inset-0 z-[190] flex items-center justify-center bg-black/50 backdrop-blur-md transition-opacity duration-200 ease-out p-4 sm:p-0" role="dialog" aria-modal="true">
-          <div className="w-full max-w-3xl rounded-xl bg-white shadow-2xl transition-all duration-200 ease-out scale-100 opacity-100 max-h-[90vh] overflow-y-auto flex flex-col">
+        <div className="fixed inset-0 z-[190] flex items-end sm:items-center justify-center sm:p-4">
+          <div 
+             className="fixed inset-0 bg-black/50 backdrop-blur-md transition-opacity" 
+             aria-hidden="true"
+             onClick={() => setDetailOpen(false)}
+          ></div>
+          
+          <div className="relative w-full max-w-3xl bg-white rounded-t-2xl sm:rounded-2xl shadow-xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-10 sm:zoom-in duration-200 max-h-[85vh] sm:max-h-[90vh]">
             
             {/* Sticky Header */}
-            <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 sm:px-6 sm:py-4 sticky top-0 bg-white z-10">
+            <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3 sm:px-6 sm:py-4 sticky top-0 bg-white z-10 shrink-0">
               <h3 className="text-lg font-semibold text-gray-900">Detail Kehadiran</h3>
               <button 
                 onClick={() => setDetailOpen(false)} 
@@ -2276,7 +2250,7 @@ export default function AttendanceManagement() {
             </div>
 
             {/* Scrollable Content */}
-            <div className="p-4 sm:p-6 space-y-6">
+            <div className="p-4 pb-10 sm:p-6 space-y-6 overflow-y-auto flex-1 overscroll-contain">
               
               {/* Employee Info */}
               <div className="flex items-center gap-3">
@@ -2287,9 +2261,9 @@ export default function AttendanceManagement() {
                     {(detailRecord.employee?.user?.name || detailRecord.employee?.name || '-').split(' ').map(s => s[0]).slice(0,2).join('')}
                   </div>
                 )}
-                <div>
-                  <div className="text-[16px] font-semibold text-gray-900">{detailRecord.employee?.user?.name || detailRecord.employee?.name || 'Unknown'}</div>
-                  <div className="text-xs text-gray-500 mt-0.5">
+                <div className="min-w-0 flex-1">
+                  <div className="text-[16px] font-semibold text-gray-900 truncate">{detailRecord.employee?.user?.name || detailRecord.employee?.name || 'Unknown'}</div>
+                  <div className="text-xs text-gray-500 mt-0.5 truncate">
                     {([
                       detailRecord.employee?.organization && (organizations as readonly string[]).includes(detailRecord.employee.organization) 
                         ? organizationNames[detailRecord.employee.organization as keyof typeof organizationNames] 
@@ -2320,22 +2294,22 @@ export default function AttendanceManagement() {
               </div>
 
               {/* Grid Info */}
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 bg-gray-50 p-4 rounded-xl border border-gray-100">
+              <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-3 bg-gray-50 p-3 sm:p-4 rounded-xl border border-gray-100">
                 <div>
-                  <div className="text-xs font-medium text-gray-500 uppercase tracking-wider">Tanggal</div>
-                  <div className="mt-1 text-sm font-semibold text-gray-900">{formatDate(detailRecord.date)}</div>
+                  <div className="text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-wider">Tanggal</div>
+                  <div className="mt-0.5 sm:mt-1 text-sm font-semibold text-gray-900">{formatDate(detailRecord.date)}</div>
                 </div>
                 <div>
-                  <div className="text-xs font-medium text-gray-500 uppercase tracking-wider">Tipe Hari</div>
-                  <div className="mt-1 text-sm font-semibold text-gray-900">{getDayTypeLabel(new Date(detailRecord.date))}</div>
+                  <div className="text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-wider">Tipe Hari</div>
+                  <div className="mt-0.5 sm:mt-1 text-sm font-semibold text-gray-900">{getDayTypeLabel(new Date(detailRecord.date))}</div>
                 </div>
                 <div>
-                  <div className="text-xs font-medium text-gray-500 uppercase tracking-wider">Total Shift</div>
-                  <div className="mt-1 text-sm font-semibold text-gray-900">{formatTime(detailRecord.checkIn)} — {formatTime(detailRecord.checkOut)}</div>
+                  <div className="text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-wider">Total Shift</div>
+                  <div className="mt-0.5 sm:mt-1 text-sm font-semibold text-gray-900">{formatTime(detailRecord.checkIn)} — {formatTime(detailRecord.checkOut)}</div>
                 </div>
                 <div>
-                  <div className="text-xs font-medium text-gray-500 uppercase tracking-wider">Durasi</div>
-                  <div className="mt-1 text-sm font-semibold text-gray-900">{(() => {
+                  <div className="text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-wider">Durasi</div>
+                  <div className="mt-0.5 sm:mt-1 text-sm font-semibold text-gray-900">{(() => {
                     const ci = detailRecord.checkIn ? new Date(detailRecord.checkIn).getTime() : null;
                     const co = detailRecord.checkOut ? new Date(detailRecord.checkOut).getTime() : null;
                     if (!ci || !co || co < ci) return '-';
@@ -2344,13 +2318,13 @@ export default function AttendanceManagement() {
                   })()}</div>
                 </div>
                 <div>
-                   <div className="text-xs font-medium text-gray-500 uppercase tracking-wider">Lembur</div>
-                   <div className="mt-1 text-sm font-semibold text-gray-900">{detailRecord.overtime > 0 ? formatMinutesToHours(detailRecord.overtime) : '-'}</div>
+                   <div className="text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-wider">Lembur</div>
+                   <div className="mt-0.5 sm:mt-1 text-sm font-semibold text-gray-900">{detailRecord.overtime > 0 ? formatMinutesToHours(detailRecord.overtime) : '-'}</div>
                 </div>
               </div>
 
               {/* Photos & Location Grid */}
-              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 sm:gap-6 sm:grid-cols-2">
                 {/* Masuk */}
                 <div className="space-y-3">
                   <h4 className="text-sm font-medium text-gray-900 border-b pb-2">Info Masuk {(!detailRecord.checkIn && detailRecord.overtimeStart) ? '(Lembur)' : ''}</h4>
@@ -2438,6 +2412,30 @@ export default function AttendanceManagement() {
                  </div>
               )}
 
+              {/* Overtime Info */}
+              {(detailRecord.overtimeStartAddressNote || detailRecord.overtimeEndAddressNote) && (
+                 <div className="bg-orange-50 rounded-xl p-4 border border-orange-100 mt-4">
+                    <h4 className="text-sm font-medium text-orange-900 mb-3 flex items-center gap-2">
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                      Info Lembur
+                    </h4>
+                    <div className="space-y-3">
+                       {detailRecord.overtimeStartAddressNote && (
+                           <div>
+                              <div className="text-xs text-orange-700 mb-1">Alasan / Catatan</div>
+                              <p className="text-sm text-gray-900 italic">"{detailRecord.overtimeStartAddressNote}"</p>
+                           </div>
+                       )}
+                       {detailRecord.overtimeEndAddressNote && (
+                           <div>
+                              <div className="text-xs text-orange-700 mb-1">Catatan Akhir</div>
+                              <p className="text-sm text-gray-900 italic">"{detailRecord.overtimeEndAddressNote}"</p>
+                           </div>
+                       )}
+                    </div>
+                 </div>
+              )}
+
               {/* Approval History */}
               {(detailRecord.overtime > 0 || detailRecord.overtimeStart) && (
                 <div className="pt-2">
@@ -2449,7 +2447,7 @@ export default function AttendanceManagement() {
                       <div className="p-4 text-center text-sm text-gray-500">Belum ada riwayat</div>
                     ) : (
                       <div className="divide-y divide-gray-100">
-                        {detailLogs.filter((l) => l.attendanceId === detailRecord.id && l.action !== "REQUEST_SUBMITTED").map((l, idx) => (
+                        {detailLogs.filter((l) => l.attendanceId === detailRecord.id && l.action !== "REQUEST_SUBMITTED" && l.action !== "LATE_REQUEST_SUBMITTED").map((l, idx) => (
                           <div key={`${l.id}-${idx}`} className="p-3 sm:px-4 hover:bg-gray-100 transition-colors">
                              <div className="flex justify-between items-start">
                                 <div>
@@ -2457,7 +2455,6 @@ export default function AttendanceManagement() {
                                       {l.action === "APPROVE" ? "Disetujui" : 
                                        l.action === "REJECT" ? "Ditolak" : 
                                        l.action === "REQUEST_SUBMITTED" ? "Permintaan Diajukan" :
-                                       l.action === "LATE_REQUEST_SUBMITTED" ? "Alasan Terlambat Diajukan" :
                                        l.action}
                                    </div>
                                    <div className="text-xs text-gray-500 mt-0.5">Oleh: {l.actorName || '-'}</div>

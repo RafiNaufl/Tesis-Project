@@ -3,6 +3,20 @@ import DashboardNavigation from "./DashboardNavigation";
 import { useSession } from "next-auth/react";
 import AttendanceCapture from "../attendance/AttendanceCapture";
 import { getWorkdayType, WorkdayType, getWorkEndTime } from "@/lib/attendanceRules";
+import { 
+  Calendar, 
+  Clock, 
+  CheckCircle2, 
+  XCircle, 
+  AlertTriangle, 
+  Coffee, 
+  UserCheck, 
+  AlertCircle,
+  Timer,
+  UserX,
+  ArrowRight,
+  History
+} from "lucide-react";
 
 type AttendanceRecord = {
   id: string;
@@ -501,18 +515,12 @@ export default function EmployeeDashboardMobile() {
   const renderMobileAttendanceCard = () => {
     if (isLoading) {
       return (
-        <div className="bg-white rounded-lg shadow-sm border p-4">
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 animate-pulse">
           <div className="flex items-center space-x-3">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-            <div>
-              <p className="text-sm font-medium text-gray-900">Memuat data...</p>
-              <p className="text-xs text-gray-500">
-                {new Date().toLocaleDateString("id-ID", {
-                  weekday: "short",
-                  day: "numeric",
-                  month: "short",
-                })}
-              </p>
+            <div className="h-10 w-10 bg-gray-200 rounded-full"></div>
+            <div className="flex-1">
+              <div className="h-4 bg-gray-200 rounded w-1/3 mb-2"></div>
+              <div className="h-3 bg-gray-200 rounded w-1/4"></div>
             </div>
           </div>
         </div>
@@ -528,17 +536,15 @@ export default function EmployeeDashboardMobile() {
     // Belum check-in atau pengajuan ulang
     if (!todayRecord || (!todayRecord.checkIn && !todayRecord.checkOut) || isPengajuanUlang) {
       return (
-        <div className="bg-white rounded-lg shadow-sm border p-4">
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
           <div className="text-center">
-            <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-blue-100 mb-3">
-              <svg className="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
+            <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-blue-50 mb-4">
+              <UserCheck className="h-8 w-8 text-blue-600" />
             </div>
-            <h3 className="text-sm font-medium text-gray-900 mb-1">
+            <h3 className="text-lg font-semibold text-gray-900 mb-1">
               {isPengajuanUlang ? "Pengajuan Ditolak" : "Belum Absen Masuk"}
             </h3>
-            <p className="text-xs text-gray-500 mb-4">
+            <p className="text-sm text-gray-500 mb-5">
               {new Date().toLocaleDateString("id-ID", {
                 weekday: "long",
                 day: "numeric",
@@ -546,8 +552,9 @@ export default function EmployeeDashboardMobile() {
               })}
             </p>
             {isPengajuanUlang && (
-              <div className="bg-blue-50 rounded-md p-3 mb-4">
-                <p className="text-xs text-blue-700">Silakan absen masuk kembali</p>
+              <div className="bg-blue-50 rounded-xl p-3 mb-5 border border-blue-100 flex items-center gap-3">
+                <AlertCircle className="h-5 w-5 text-blue-600 flex-shrink-0" />
+                <p className="text-sm text-blue-700 text-left">Silakan absen masuk kembali</p>
               </div>
             )}
             {(() => {
@@ -561,9 +568,16 @@ export default function EmployeeDashboardMobile() {
                   <button
                     onClick={handleOvertimeStart}
                     disabled={actionLoading}
-                    className="w-full bg-orange-600 text-white py-3 px-4 rounded-lg font-medium text-sm hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-full flex items-center justify-center gap-2 bg-orange-600 text-white py-3.5 px-4 rounded-xl font-semibold text-sm hover:bg-orange-700 active:bg-orange-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
                   >
-                    {actionLoading ? "Memproses..." : "Mulai Lembur"}
+                    {actionLoading ? (
+                      <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent" />
+                    ) : (
+                      <>
+                        <Clock className="h-5 w-5" />
+                        Mulai Lembur
+                      </>
+                    )}
                   </button>
                 );
               }
@@ -571,9 +585,16 @@ export default function EmployeeDashboardMobile() {
                 <button
                   onClick={handleCheckIn}
                   disabled={actionLoading}
-                  className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium text-sm hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white py-3.5 px-4 rounded-xl font-semibold text-sm hover:bg-blue-700 active:bg-blue-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
                 >
-                  {actionLoading ? "Memproses..." : "Absen Masuk"}
+                  {actionLoading ? (
+                    <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent" />
+                  ) : (
+                    <>
+                      <UserCheck className="h-5 w-5" />
+                      Absen Masuk
+                    </>
+                  )}
                 </button>
               );
             })()}
@@ -585,30 +606,31 @@ export default function EmployeeDashboardMobile() {
     // Sudah check-in tapi belum check-out
     if (todayRecord.checkIn && !todayRecord.checkOut && !todayRecord.overtimeStart) {
       return (
-        <div className="bg-white rounded-lg shadow-sm border p-4">
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
           <div className="text-center">
-            <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100 mb-3">
-              <svg className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
+            <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-green-50 mb-4">
+              <Clock className="h-8 w-8 text-green-600" />
             </div>
-            <h3 className="text-sm font-medium text-gray-900 mb-1">Sudah Absen Masuk</h3>
-            <p className="text-xs text-gray-500 mb-2">
-              Jam masuk: {formatTime(todayRecord.checkIn)}
+            <h3 className="text-lg font-semibold text-gray-900 mb-1">Sedang Bekerja</h3>
+            <p className="text-sm text-gray-500 mb-2">
+              Masuk pukul <span className="font-mono font-medium text-gray-900">{formatTime(todayRecord.checkIn)}</span>
             </p>
             {todayRecord.status && (
-              <div className="mb-3">
-                <span className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${
+              <div className="mb-5">
+                <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${
                   todayRecord.status === "PRESENT"
-                    ? "bg-green-100 text-green-800"
+                    ? "bg-green-50 text-green-700 border border-green-100"
                     : todayRecord.status === "LATE"
-                    ? "bg-yellow-100 text-yellow-800"
-                    : "bg-gray-100 text-gray-800"
+                    ? "bg-yellow-50 text-yellow-700 border border-yellow-100"
+                    : "bg-gray-50 text-gray-700 border border-gray-100"
                 }`}>
+                  {todayRecord.status === "PRESENT" && <CheckCircle2 className="h-3 w-3" />}
+                  {todayRecord.status === "LATE" && <AlertTriangle className="h-3 w-3" />}
                   {todayRecord.status}
                 </span>
                 {todayRecord.isLate && (
-                  <p className="text-xs text-red-600 mt-1">
+                  <p className="text-xs text-red-600 mt-2 flex items-center justify-center gap-1">
+                    <AlertCircle className="h-3 w-3" />
                     Terlambat {todayRecord.lateMinutes} menit
                   </p>
                 )}
@@ -617,9 +639,16 @@ export default function EmployeeDashboardMobile() {
             <button
               onClick={handleCheckOut}
               disabled={actionLoading}
-              className="w-full bg-red-600 text-white py-3 px-4 rounded-lg font-medium text-sm hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full flex items-center justify-center gap-2 bg-red-600 text-white py-3.5 px-4 rounded-xl font-semibold text-sm hover:bg-red-700 active:bg-red-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
             >
-              {actionLoading ? "Memproses..." : "Absen Keluar"}
+              {actionLoading ? (
+                <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent" />
+              ) : (
+                <>
+                  <CheckCircle2 className="h-5 w-5" />
+                  Absen Keluar
+                </>
+              )}
             </button>
           </div>
         </div>
@@ -629,36 +658,45 @@ export default function EmployeeDashboardMobile() {
     // Sudah check-in dan check-out
     if (todayRecord.checkIn && (todayRecord.checkOut || todayRecord.overtimeStart)) {
       return (
-        <div className="bg-white rounded-lg shadow-sm border p-4">
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
           <div className="text-center">
-            <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100 mb-3">
-              <svg className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-              </svg>
+            <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-green-50 mb-4">
+              <CheckCircle2 className="h-8 w-8 text-green-600" />
             </div>
-            <h3 className="text-sm font-medium text-gray-900 mb-2">Kehadiran Lengkap</h3>
-            <div className="space-y-1 text-xs text-gray-600 mb-3">
-              <p>Masuk: {formatTime(todayRecord.checkIn)}</p>
-              <p>Keluar: {formatTime(todayRecord.checkOut)}</p>
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Kehadiran Lengkap</h3>
+            <div className="flex justify-center gap-4 text-sm text-gray-600 mb-4">
+              <div className="bg-gray-50 px-3 py-2 rounded-lg border border-gray-100">
+                <span className="text-xs text-gray-500 block mb-1">Masuk</span>
+                <span className="font-mono font-medium text-gray-900">{formatTime(todayRecord.checkIn)}</span>
+              </div>
+              <div className="bg-gray-50 px-3 py-2 rounded-lg border border-gray-100">
+                <span className="text-xs text-gray-500 block mb-1">Keluar</span>
+                <span className="font-mono font-medium text-gray-900">{formatTime(todayRecord.checkOut)}</span>
+              </div>
             </div>
             {todayRecord.status && (
-              <div className="mb-3">
-                <span className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${
+              <div className="mb-5">
+                <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${
                   todayRecord.status === "PRESENT"
-                    ? "bg-green-100 text-green-800"
+                    ? "bg-green-50 text-green-700 border border-green-100"
                     : todayRecord.status === "LATE"
-                    ? "bg-yellow-100 text-yellow-800"
-                    : "bg-gray-100 text-gray-800"
+                    ? "bg-yellow-50 text-yellow-700 border border-yellow-100"
+                    : "bg-gray-50 text-gray-700 border border-gray-100"
                 }`}>
+                  {todayRecord.status === "PRESENT" && <CheckCircle2 className="h-3 w-3" />}
+                  {todayRecord.status === "LATE" && <AlertTriangle className="h-3 w-3" />}
                   {todayRecord.status}
                 </span>
                 {todayRecord.overtime > 0 && (
-                  <p className={`text-xs mt-1 ${
+                  <div className={`mt-2 flex items-center justify-center gap-1.5 text-xs ${
                     todayRecord.isOvertimeApproved ? "text-green-600" : "text-yellow-600"
                   }`}>
-                    Lembur {Math.floor(todayRecord.overtime / 60)}j {todayRecord.overtime % 60}m
-                    {!todayRecord.isOvertimeApproved && " (menunggu)"}
-                  </p>
+                    <Clock className="h-3 w-3" />
+                    <span>
+                      Lembur {Math.floor(todayRecord.overtime / 60)}j {todayRecord.overtime % 60}m
+                      {!todayRecord.isOvertimeApproved && " (menunggu)"}
+                    </span>
+                  </div>
                 )}
               </div>
             )}
@@ -674,22 +712,39 @@ export default function EmployeeDashboardMobile() {
                 <button
                   onClick={handleOvertimeStart}
                   disabled={actionLoading}
-                  className="w-full bg-orange-600 text-white py-3 px-4 rounded-lg font-medium text-sm hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full flex items-center justify-center gap-2 bg-orange-600 text-white py-3.5 px-4 rounded-xl font-semibold text-sm hover:bg-orange-700 active:bg-orange-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
                 >
-                  {actionLoading ? "Memproses..." : "Mulai Lembur"}
+                  {actionLoading ? (
+                    <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent" />
+                  ) : (
+                    <>
+                      <Clock className="h-5 w-5" />
+                      Mulai Lembur
+                    </>
+                  )}
                 </button>
               )}
               {todayRecord.overtimeStart && !todayRecord.overtimeEnd && (
                 <button
                   onClick={handleOvertimeEnd}
                   disabled={actionLoading}
-                  className="w-full bg-green-600 text-white py-3 px-4 rounded-lg font-medium text-sm hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full flex items-center justify-center gap-2 bg-green-600 text-white py-3.5 px-4 rounded-xl font-semibold text-sm hover:bg-green-700 active:bg-green-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
                 >
-                  {actionLoading ? "Memproses..." : "Selesai Lembur"}
+                  {actionLoading ? (
+                    <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent" />
+                  ) : (
+                    <>
+                      <CheckCircle2 className="h-5 w-5" />
+                      Selesai Lembur
+                    </>
+                  )}
                 </button>
               )}
               {todayRecord.overtimeStart && todayRecord.overtimeEnd && (
-                <div className="bg-green-50 text-green-700 py-2 px-3 rounded-lg text-xs font-medium">Kehadiran hari ini sudah lengkap</div>
+                <div className="bg-green-50 text-green-700 py-3 px-4 rounded-xl text-sm font-medium border border-green-100 flex items-center justify-center gap-2">
+                  <CheckCircle2 className="h-4 w-4" />
+                  Kehadiran hari ini sudah lengkap
+                </div>
               )}
             </div>
           </div>
@@ -750,9 +805,7 @@ export default function EmployeeDashboardMobile() {
               <div className="flex items-center">
                 <div className="flex-shrink-0">
                   <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
-                    <svg className="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
+                    <UserCheck className="w-4 h-4 text-green-600" />
                   </div>
                 </div>
                 <div className="ml-3">
@@ -768,9 +821,7 @@ export default function EmployeeDashboardMobile() {
               <div className="flex items-center">
                 <div className="flex-shrink-0">
                   <div className="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center">
-                    <svg className="w-4 h-4 text-red-600" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
+                    <UserX className="w-4 h-4 text-red-600" />
                   </div>
                 </div>
                 <div className="ml-3">
@@ -786,25 +837,7 @@ export default function EmployeeDashboardMobile() {
               <div className="flex items-center">
                 <div className="flex-shrink-0">
                   <div className="w-8 h-8 bg-yellow-100 rounded-lg flex items-center justify-center">
-                    <svg className="w-4 h-4 text-yellow-600" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
-                      {/* Modal untuk AttendanceCapture */}
-                      {showAttendanceCapture && (
-                        <AttendanceCapture
-                          onComplete={handleCaptureComplete}
-                          onCancel={() => {
-                            setShowAttendanceCapture(false);
-                            setIsCheckingIn(false);
-                            setIsCheckingOut(false);
-                          }}
-                          actionType={captureAction}
-                          onSuccess={(message) => {
-                            // Callback untuk menampilkan pesan sukses di modal
-                            console.log('Success message:', message);
-                          }}
-                        />
-                      )}
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
+                    <Timer className="w-4 h-4 text-yellow-600" />
                   </div>
                 </div>
                 <div className="ml-3">
@@ -820,9 +853,7 @@ export default function EmployeeDashboardMobile() {
               <div className="flex items-center">
                 <div className="flex-shrink-0">
                   <div className="w-8 h-8 bg-orange-100 rounded-lg flex items-center justify-center">
-                    <svg className="w-4 h-4 text-orange-600" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636" />
-                    </svg>
+                    <Coffee className="w-4 h-4 text-orange-600" />
                   </div>
                 </div>
                 <div className="ml-3">
@@ -839,40 +870,59 @@ export default function EmployeeDashboardMobile() {
         {/* Recent Attendance */}
         <div>
           <h2 className="text-base font-medium text-gray-900 mb-3 mt-6">Kehadiran Terbaru</h2>
-          <div className="bg-white rounded-lg shadow-sm border">
+          <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
             {isLoading ? (
-              <div className="p-4 text-center text-sm text-gray-500">
-                Memuat catatan kehadiran...
+              <div className="p-8 text-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-500 border-t-transparent mx-auto mb-2"></div>
+                <p className="text-sm text-gray-500">Memuat catatan kehadiran...</p>
               </div>
             ) : recentAttendance.length > 0 ? (
-              <div className="divide-y divide-gray-200">
+              <div className="divide-y divide-gray-100">
                 {recentAttendance.map((record) => (
-                  <div key={record.id} className="p-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center justify-between mb-1">
-                          <p className="text-sm font-medium text-gray-900">{record.date}</p>
-                          <span className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${
-                            record.status === 'PRESENT' ? 'bg-green-100 text-green-800' : 
-                            record.status === 'ABSENT' ? 'bg-red-100 text-red-800' :
-                            record.status === 'LATE' ? 'bg-yellow-100 text-yellow-800' :
-                            'bg-gray-100 text-gray-800'
-                          }`}>
-                            {record.status}
-                          </span>
+                  <div key={record.id} className="p-4 hover:bg-gray-50 transition-colors">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <Calendar className="w-4 h-4 text-gray-400" />
+                        <span className="text-sm font-medium text-gray-900">{record.date}</span>
+                      </div>
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        record.status === 'PRESENT' ? 'bg-green-100 text-green-800' : 
+                        record.status === 'ABSENT' ? 'bg-red-100 text-red-800' :
+                        record.status === 'LATE' ? 'bg-yellow-100 text-yellow-800' :
+                        'bg-gray-100 text-gray-800'
+                      }`}>
+                        {record.status === 'PRESENT' && <CheckCircle2 className="w-3 h-3 mr-1" />}
+                        {record.status === 'ABSENT' && <XCircle className="w-3 h-3 mr-1" />}
+                        {record.status === 'LATE' && <AlertTriangle className="w-3 h-3 mr-1" />}
+                        {record.status}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 mt-2">
+                      <div className="flex items-center gap-2 text-xs text-gray-500">
+                        <div className="p-1 bg-blue-50 rounded text-blue-600">
+                          <ArrowRight className="w-3 h-3" />
                         </div>
-                        <div className="flex items-center space-x-4 text-xs text-gray-500">
-                          <span>Masuk: {record.checkIn}</span>
-                          <span>Keluar: {record.checkOut}</span>
+                        <span>Masuk: <span className="font-medium text-gray-900">{record.checkIn}</span></span>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-gray-500">
+                        <div className="p-1 bg-orange-50 rounded text-orange-600">
+                          <ArrowRight className="w-3 h-3 rotate-180" />
                         </div>
+                        <span>Keluar: <span className="font-medium text-gray-900">{record.checkOut}</span></span>
                       </div>
                     </div>
                   </div>
                 ))}
               </div>
             ) : (
-              <div className="p-4 text-center text-sm text-gray-500">
-                Belum ada catatan kehadiran
+              <div className="p-8 text-center">
+                <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-gray-100 mb-3">
+                  <History className="h-6 w-6 text-gray-400" />
+                </div>
+                <h3 className="text-sm font-medium text-gray-900">Belum ada aktivitas</h3>
+                <p className="text-sm text-gray-500 mt-1">
+                  Catatan kehadiran Anda akan muncul di sini
+                </p>
               </div>
             )}
           </div>

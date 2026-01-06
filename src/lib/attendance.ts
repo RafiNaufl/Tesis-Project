@@ -152,20 +152,59 @@ export const checkIn = async (
   }
 
   // Buat catatan baru
-  return prisma.attendance.create({
-    data: {
-      employeeId,
-      date,
-      checkIn: now,
-      status,
-      isLate,
-      lateMinutes,
-      isSundayWork,
-      checkInPhotoUrl: photoUrl,
-      checkInLatitude: latitude,
-      checkInLongitude: longitude,
-    },
-  });
+  try {
+    return await prisma.attendance.create({
+      data: {
+        employeeId,
+        date,
+        checkIn: now,
+        status,
+        isLate,
+        lateMinutes,
+        isSundayWork,
+        checkInPhotoUrl: photoUrl,
+        checkInLatitude: latitude,
+        checkInLongitude: longitude,
+      },
+    });
+  } catch (error: any) {
+    // Handle race condition: Unique constraint failed
+    if (error.code === 'P2002') {
+      console.log("Race condition detected in checkIn, retrying with update...");
+      
+      const retryExisting = await prisma.attendance.findUnique({
+        where: {
+          employeeId_date: {
+            employeeId,
+            date,
+          },
+        },
+      });
+
+      if (retryExisting) {
+        return prisma.attendance.update({
+          where: { id: retryExisting.id },
+          data: {
+            checkIn: now,
+            checkOut: null,
+            status,
+            isLate,
+            lateMinutes,
+            isSundayWork,
+            approvedAt: null,
+            approvedBy: null,
+            isOvertimeApproved: false,
+            isSundayWorkApproved: false,
+            notes: retryExisting.notes?.includes("Di Tolak") ? "" : retryExisting.notes,
+            checkInPhotoUrl: photoUrl,
+            checkInLatitude: latitude,
+            checkInLongitude: longitude,
+          },
+        });
+      }
+    }
+    throw error;
+  }
 };
 
 /**
@@ -306,16 +345,12 @@ export const startOvertime = async (
  * Menyetujui lembur
  */
 export const approveOvertime = async (attendanceId: string, approverId: string) => {
-  const attendance = await prisma.attendance.findUnique({
-    where: { id: attendanceId },
-  });
-
-  if (!attendance) {
-    throw new Error("Data kehadiran tidak ditemukan");
-  }
-
-  const updatedAttendance = await prisma.attendance.update({
-    where: { id: attendanceId },
+  // Gunakan updateMany untuk memastikan update atomik hanya jika belum disetujui
+  const result = await prisma.attendance.updateMany({
+    where: { 
+      id: attendanceId,
+      isOvertimeApproved: false
+    },
     data: {
       isOvertimeApproved: true,
       approvedAt: new Date(),
@@ -323,8 +358,18 @@ export const approveOvertime = async (attendanceId: string, approverId: string) 
     },
   });
 
-  // Approve associated OvertimeRequest
-  if (updatedAttendance.overtimeStart) {
+  const updatedAttendance = await prisma.attendance.findUnique({
+    where: { id: attendanceId },
+  });
+
+  if (!updatedAttendance) {
+    throw new Error("Data kehadiran tidak ditemukan");
+  }
+
+  const wasUpdated = result.count > 0;
+
+  // Approve associated OvertimeRequest (hanya jika kita yang melakukan update)
+  if (wasUpdated && updatedAttendance.overtimeStart) {
       try {
         await prisma.overtimeRequest.updateMany({
             where: {
@@ -343,34 +388,78 @@ export const approveOvertime = async (attendanceId: string, approverId: string) 
       }
   }
 
-  return updatedAttendance;
+  // Kembalikan objek attendance dan flag apakah update dilakukan
+  return { attendance: updatedAttendance, wasUpdated };
 };
 
 /**
  * Menolak lembur
  */
 export const rejectOvertime = async (attendanceId: string, approverId: string, rejectionReason?: string) => {
-  const attendance = await prisma.attendance.findUnique({
-    where: { id: attendanceId },
-  });
-
-  if (!attendance) {
-    throw new Error("Data kehadiran tidak ditemukan");
-  }
-
-  const updatedAttendance = await prisma.attendance.update({
-    where: { id: attendanceId },
+  // Cek apakah sudah ditolak sebelumnya (optional check, tapi kita gunakan updateMany untuk atomicity)
+  // Kita ingin update jika isOvertimeApproved=true (dibatalkan) atau jika belum diproses?
+  // Biasanya reject bisa dilakukan jika belum approved ATAU jika sudah approved (pembatalan).
+  // Namun user minta "Ditolak". Jika sudah rejected, tidak perlu reject lagi.
+  // Tapi status rejected tidak ada field boolean khusus, hanya isOvertimeApproved=false.
+  // Dan approvedAt terisi jika sudah diproses.
+  // Jadi: jika (approvedAt != null && isOvertimeApproved == false), itu sudah rejected.
+  
+  // Kita asumsikan reject bisa dilakukan kapan saja, TAPI kita ingin tahu apakah ini perubahan status baru.
+  // Jika status sudah rejected, kita tidak perlu update (atau update timestamps saja).
+  
+  // Untuk menyederhanakan dan mencegah duplikat log, kita cek apakah statusnya BUKAN rejected.
+  // Status rejected: approvedAt != null && isOvertimeApproved == false.
+  
+  // Query: update jika (approvedAt == null) OR (isOvertimeApproved == true)
+  
+  const result = await prisma.attendance.updateMany({
+    where: { 
+      id: attendanceId,
+      OR: [
+        { approvedAt: null },
+        { isOvertimeApproved: true }
+      ]
+    },
     data: {
       isOvertimeApproved: false,
       approvedAt: new Date(),
       approvedBy: approverId,
       // Opsional: simpan alasan penolakan di notes atau field khusus jika ada
-      notes: rejectionReason ? (attendance.notes ? `${attendance.notes}. Ditolak: ${rejectionReason}` : `Ditolak: ${rejectionReason}`) : attendance.notes,
+      // Note: updateMany tidak support append string secara langsung di Prisma SQLite
+      // Jadi notes mungkin tidak ter-append dengan sempurna jika concurrency tinggi, 
+      // tapi untuk rejectReason kita handle di route atau ambil dulu.
+      // Karena keterbatasan updateMany, kita skip update notes di sini jika butuh append.
+      // Namun, requirements utama adalah status.
     },
   });
+  
+  // Fetch untuk mendapatkan data terbaru
+  const updatedAttendance = await prisma.attendance.findUnique({
+    where: { id: attendanceId },
+  });
+
+  if (!updatedAttendance) {
+    throw new Error("Data kehadiran tidak ditemukan");
+  }
+  
+  const wasUpdated = result.count > 0;
+
+  // Jika notes perlu diupdate (dan kita yang melakukan update status), kita lakukan update terpisah
+  if (wasUpdated && rejectionReason) {
+     const newNotes = updatedAttendance.notes 
+        ? `${updatedAttendance.notes}. Ditolak: ${rejectionReason}` 
+        : `Ditolak: ${rejectionReason}`;
+        
+     await prisma.attendance.update({
+        where: { id: attendanceId },
+        data: { notes: newNotes }
+     });
+     // Update object lokal untuk return
+     updatedAttendance.notes = newNotes;
+  }
 
   // Reject associated OvertimeRequest
-  if (updatedAttendance.overtimeStart) {
+  if (wasUpdated && updatedAttendance.overtimeStart) {
       try {
         await prisma.overtimeRequest.updateMany({
             where: {
@@ -390,7 +479,7 @@ export const rejectOvertime = async (attendanceId: string, approverId: string, r
       }
   }
 
-  return updatedAttendance;
+  return { attendance: updatedAttendance, wasUpdated };
 };
 
 /**
@@ -551,6 +640,33 @@ export const getMonthlyAttendanceReport = async (employeeId: string, year: numbe
     },
   });
 
+  // Fetch overtime requests to fallback for missing reasons
+  const overtimeRequests = await prisma.overtimeRequest.findMany({
+    where: {
+      employeeId,
+      date: {
+        gte: startDate,
+        lte: endDate,
+      },
+    },
+  });
+
+  // Merge overtime reasons if missing in attendance
+  const enhancedAttendances = attendances.map(att => {
+    if (!att.overtimeStartAddressNote && (att.overtime > 0 || att.overtimeStart)) {
+      // Find matching request for this date
+      // We compare dates by string to avoid time component issues if any (though stored as DateTime)
+      // Prisma DateTime objects are Date objects.
+      const attDateStr = att.date.toISOString().split('T')[0];
+      const req = overtimeRequests.find(r => r.date.toISOString().split('T')[0] === attDateStr);
+      
+      if (req && req.reason) {
+        return { ...att, overtimeStartAddressNote: req.reason };
+      }
+    }
+    return att;
+  });
+
   const summary = {
     present: attendances.filter((a) => a.status === Status.PRESENT).length,
     late: attendances.filter((a) => a.status === Status.LATE).length,
@@ -565,6 +681,6 @@ export const getMonthlyAttendanceReport = async (employeeId: string, year: numbe
     year,
     month,
     summary,
-    attendances,
+    attendances: enhancedAttendances,
   };
 };

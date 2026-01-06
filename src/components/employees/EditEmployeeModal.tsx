@@ -5,6 +5,11 @@ import Image from "next/image";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { 
+  X, Upload, User, Mail, Phone, Briefcase, 
+  CreditCard, Building, Users, FileText,
+  ChevronDown, MapPin
+} from "lucide-react";
 import { divisions, employmentStatuses, organizations, roles, workSchedules, phoneRegex, optionalNumber } from "@/lib/registrationValidation";
 
 const employeeEditFormSchema = z.object({
@@ -170,341 +175,343 @@ export default function EditEmployeeModal({
   if (!isOpen || !employee) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] overflow-y-auto">
-      <div className="flex min-h-screen items-center justify-center px-4 pt-4 pb-20 text-center sm:block sm:p-0">
-        {/* Background overlay */}
-        <div
-          className="fixed inset-0 bg-black/50 backdrop-blur-md transition-opacity"
-          aria-hidden="true"
-          onClick={onClose}
-        ></div>
+    <div className="fixed inset-0 z-[100] sm:flex sm:items-center sm:justify-center">
+      {/* Backdrop for Desktop */}
+      <div 
+        className="fixed inset-0 bg-black/60 backdrop-blur-sm transition-opacity hidden sm:block"
+        onClick={onClose}
+        aria-hidden="true"
+      />
 
-        {/* Modal positioning */}
-        <span
-          className="hidden sm:inline-block sm:h-screen sm:align-middle"
-          aria-hidden="true"
-        >
-          &#8203;
-        </span>
+      {/* Modal Container */}
+      <div className="relative w-full h-full sm:h-auto sm:max-h-[90vh] sm:max-w-3xl bg-white sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
+        
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 sm:px-6 sm:py-4 border-b border-gray-100 bg-white sticky top-0 z-10">
+          <div>
+            <h3 className="text-lg font-bold text-gray-900 leading-tight">
+              Edit Karyawan
+            </h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              ID: {employee.employeeId}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 rounded-full bg-gray-50 text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
 
-        {/* Modal content */}
-        <div className="relative inline-block transform overflow-hidden rounded-lg bg-white text-left align-bottom shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg sm:align-middle">
-          {/* Modal header */}
-          <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-            <div className="sm:flex sm:items-start">
-              <div className="mt-3 w-full text-center sm:mt-0 sm:text-left">
-                <div className="flex items-center justify-between">
+        {/* Scrollable Content */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-gray-50/50">
+          <form id="edit-employee-form" onSubmit={handleSubmit(handleFormSubmit)} className="space-y-6">
+            
+            {/* Section: Profile Image & Status */}
+            <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
+              <div className="flex flex-col sm:flex-row items-center gap-6">
+                <div className="relative group">
+                  <div className="h-24 w-24 rounded-full overflow-hidden bg-gray-100 ring-4 ring-white shadow-md">
+                    {previewUrl ? (
+                      <Image 
+                        src={previewUrl} 
+                        alt="Preview" 
+                        width={96} 
+                        height={96} 
+                        className="h-full w-full object-cover" 
+                      />
+                    ) : (
+                      <div className="h-full w-full flex items-center justify-center text-gray-300">
+                        <User className="w-10 h-10" />
+                      </div>
+                    )}
+                  </div>
+                  <label 
+                    htmlFor="profileImage" 
+                    className="absolute bottom-0 right-0 p-1.5 bg-indigo-600 rounded-full text-white cursor-pointer shadow-lg hover:bg-indigo-700 transition-colors"
+                  >
+                    <Upload className="w-4 h-4" />
+                  </label>
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0] || null;
+                      setProfileFile(f);
+                      setPreviewUrl(f ? URL.createObjectURL(f) : previewUrl);
+                    }}
+                    id="profileImage"
+                    className="hidden"
+                  />
+                </div>
+                <div className="flex-1 text-center sm:text-left space-y-3">
                   <div>
-                    <h3
-                      className="text-lg font-medium leading-6 text-gray-900"
-                      id="modal-title"
-                    >
-                      Edit Employee: {employee.user?.name || employee.name}
-                    </h3>
-                    <p className="mt-1 text-sm text-gray-500">
-                      Employee ID: {employee.employeeId}
+                    <h4 className="text-sm font-semibold text-gray-900">Foto Profil</h4>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Upload foto format JPG/PNG, maks 2MB.
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    className="rounded-md bg-white text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-                    onClick={onClose}
-                  >
-                    <span className="sr-only">Close</span>
-                    <svg
-                      className="h-6 w-6"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      strokeWidth="1.5"
-                      stroke="currentColor"
-                      aria-hidden="true"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M6 18L18 6M6 6l12 12"
-                      />
-                    </svg>
-                  </button>
-                </div>
-
-                <div className="mt-4">
-                  <form onSubmit={handleSubmit(handleFormSubmit)}>
-                    <div className="grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-2">
-                      <div className="sm:col-span-2">
-                        <label htmlFor="profileImage" className="block text-sm font-medium text-gray-700">Profile Image</label>
-                        <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center">
-                          <div className="h-12 w-12 overflow-hidden rounded-full bg-gray-100">
-                            {previewUrl ? (
-                              <Image src={previewUrl} alt="Preview" width={48} height={48} className="h-12 w-12 object-cover" />
-                            ) : (
-                              <div className="flex h-12 w-12 items-center justify-center text-xs text-gray-400">No Image</div>
-                            )}
-                          </div>
-                          <input
-                            type="file"
-                            accept="image/png,image/jpeg"
-                            onChange={(e) => {
-                              const f = e.target.files?.[0] || null;
-                              setProfileFile(f);
-                              setPreviewUrl(f ? URL.createObjectURL(f) : previewUrl);
-                            }}
-                            id="profileImage"
-                            aria-describedby="profileImageHelp"
-                            className="block w-full sm:flex-1 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm"
-                          />
-                          <div id="profileImageHelp" className="text-xs text-gray-500">JPG/PNG maks 2MB</div>
-                        </div>
-                      </div>
-                      <div>
-                        <label
-                          htmlFor="name"
-                          className="block text-sm font-medium text-gray-700"
-                        >
-                          Full Name <span className="text-red-500">*</span>
-                        </label>
-                        <div className="mt-1">
-                          <input
-                            type="text"
-                            id="name"
-                            {...register("name")}
-                            className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm"
-                            placeholder="John Doe"
-                          />
-                          {errors.name && (
-                            <p className="mt-2 text-sm text-red-600">
-                              {errors.name.message}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-
-                      <div>
-                        <label
-                          htmlFor="email"
-                          className="block text-sm font-medium text-gray-700"
-                        >
-                          Email <span className="text-red-500">*</span>
-                        </label>
-                        <div className="mt-1">
-                          <input
-                            type="email"
-                            id="email"
-                            {...register("email")}
-                            className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm"
-                            placeholder="johndoe@example.com"
-                          />
-                          {errors.email && (
-                            <p className="mt-2 text-sm text-red-600">
-                              {errors.email.message}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700">
-                          Role <span className="text-red-500">*</span>
-                        </label>
-                        <div className="mt-1">
-                          <select {...register("role")} className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm">
-                            {roles.map((r) => (
-                              <option key={r} value={r}>{r}</option>
-                            ))}
-                          </select>
-                          {errors.role && (
-                            <p className="mt-2 text-sm text-red-600">{errors.role.message as any}</p>
-                          )}
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700">
-                          Organisasi <span className="text-red-500">*</span>
-                        </label>
-                        <div className="mt-1">
-                          <select {...register("organization")} className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm">
-                            {organizations.map((o) => (
-                              <option key={o} value={o}>{o}</option>
-                            ))}
-                          </select>
-                          {errors.organization && (
-                            <p className="mt-2 text-sm text-red-600">{errors.organization.message as any}</p>
-                          )}
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700">
-                          Divisi <span className="text-red-500">*</span>
-                        </label>
-                        <div className="mt-1">
-                          <select {...register("division")} className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm">
-                            {divisions.map((d) => (
-                              <option key={d} value={d}>{d}</option>
-                            ))}
-                          </select>
-                          {errors.division && (
-                            <p className="mt-2 text-sm text-red-600">{errors.division.message as any}</p>
-                          )}
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700">
-                          Jadwal Kerja <span className="text-red-500">*</span>
-                        </label>
-                        <div className="mt-2 flex space-x-4">
-                          {workSchedules.map((ws) => (
-                            <label key={ws} className="inline-flex items-center space-x-2">
-                              <input type="radio" value={ws} {...register("workSchedule")} />
-                              <span>{ws === "SHIFT" ? "Shift" : "Non Shift"}</span>
-                            </label>
-                          ))}
-                        </div>
-                        {errors.workSchedule && (
-                          <p className="mt-2 text-sm text-red-600">{errors.workSchedule.message as any}</p>
-                        )}
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700">
-                          Gaji Bulanan (Shift)
-                        </label>
-                        <div className="mt-1">
-                          <input type="number" {...register("monthlySalary")} className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm" />
-                          {errors.monthlySalary && (
-                            <p className="mt-2 text-sm text-red-600">{errors.monthlySalary.message as any}</p>
-                          )}
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700">
-                          Rate Per Jam (Non Shift)
-                        </label>
-                        <div className="mt-1">
-                          <input type="number" {...register("hourlyRate")} className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm" />
-                          {errors.hourlyRate && (
-                            <p className="mt-2 text-sm text-red-600">{errors.hourlyRate.message as any}</p>
-                          )}
-                        </div>
-                      </div>
-
-                      <div>
-                        <label htmlFor="bpjsKesehatan" className="block text-sm font-medium text-gray-700">Potongan BPJS Kesehatan</label>
-                        <div className="mt-1">
-                          <input id="bpjsKesehatan" type="number" step="100" min="0" {...register("bpjsKesehatan")} className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm" placeholder="0" />
-                          {errors.bpjsKesehatan && (<p className="mt-2 text-sm text-red-600">{errors.bpjsKesehatan.message as any}</p>)}
-                        </div>
-                      </div>
-
-                      <div>
-                        <label htmlFor="bpjsKetenagakerjaan" className="block text-sm font-medium text-gray-700">Potongan BPJS Ketenagakerjaan</label>
-                        <div className="mt-1">
-                          <input id="bpjsKetenagakerjaan" type="number" step="100" min="0" {...register("bpjsKetenagakerjaan")} className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm" placeholder="0" />
-                          {errors.bpjsKetenagakerjaan && (<p className="mt-2 text-sm text-red-600">{errors.bpjsKetenagakerjaan.message as any}</p>)}
-                        </div>
-                      </div>
-
-                      <div className="sm:col-span-2 mt-2 bg-gray-50 p-4 rounded-md border border-gray-200">
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm font-medium text-gray-700">Total Potongan BPJS:</span>
-                          <span className="text-lg font-bold text-gray-900">
-                            {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(totalBpjs)}
-                          </span>
-                        </div>
-                        <p className="text-xs text-gray-500 mt-1">Potongan ini akan mengurangi Gross Salary setiap bulan secara otomatis.</p>
-                      </div>
-
-                      <div>
-                        <label
-                          htmlFor="contactNumber"
-                          className="block text-sm font-medium text-gray-700"
-                        >
-                          Nomor HP
-                        </label>
-                        <div className="mt-1">
-                          <input
-                            type="text"
-                            id="contactNumber"
-                            {...register("contactNumber")}
-                            className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm"
-                            placeholder="08123456789"
-                          />
-                          {errors.contactNumber && (
-                            <p className="mt-2 text-sm text-red-600">
-                              {errors.contactNumber.message}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="sm:col-span-2">
-                        <label
-                          htmlFor="address"
-                          className="block text-sm font-medium text-gray-700"
-                        >
-                          Alamat
-                        </label>
-                        <div className="mt-1">
-                          <textarea
-                            id="address"
-                            rows={3}
-                            {...register("address")}
-                            className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm"
-                            placeholder="123 Main St, Anytown, ST 12345"
-                          />
-                          {errors.address && (
-                            <p className="mt-2 text-sm text-red-600">
-                              {errors.address.message}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="sm:col-span-2">
-                        <div className="flex items-center">
-                          <input
-                            id="isActive"
-                            type="checkbox"
-                            {...register("isActive")}
-                            className="h-4 w-4 rounded border-gray-300 bg-white text-indigo-600 focus:ring-indigo-500"
-                          />
-                          <label
-                            htmlFor="isActive"
-                            className="ml-2 block text-sm text-gray-700"
-                          >
-                            Aktif
-                          </label>
-                        </div>
-                        <p className="mt-1 text-sm text-gray-500">
-                          Karyawan tidak aktif tidak dapat login ke sistem
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="mt-6 sm:mt-8 sm:flex sm:flex-row-reverse">
-                      <button
-                        type="submit"
-                        disabled={isSubmitting}
-                        className="inline-flex w-full justify-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-base font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:bg-indigo-300 disabled:cursor-not-allowed sm:ml-3 sm:w-auto sm:text-sm transition-colors duration-200"
-                      >
-                        {isSubmitting ? "Saving..." : "Save Changes"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={onClose}
-                        className="mt-3 inline-flex w-full justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-base font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 sm:mt-0 sm:w-auto sm:text-sm transition-colors duration-200"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </form>
+                  
+                  {/* Status Toggle */}
+                  <label className="inline-flex items-center cursor-pointer group">
+                    <input type="checkbox" {...register("isActive")} className="sr-only peer" />
+                    <div className="relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                    <span className="ml-3 text-sm font-medium text-gray-700 group-hover:text-gray-900">
+                      Status Akun Aktif
+                    </span>
+                  </label>
                 </div>
               </div>
             </div>
-          </div>
+
+            {/* Section: Personal Info */}
+            <div className="space-y-4">
+              <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider px-1">Informasi Pribadi</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-gray-700">Nama Lengkap <span className="text-red-500">*</span></label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                    <input 
+                      type="text" 
+                      {...register("name")} 
+                      className="block w-full rounded-lg border-gray-200 pl-9 focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 bg-white shadow-sm" 
+                      placeholder="Nama Lengkap" 
+                    />
+                  </div>
+                  {errors.name && <p className="text-xs text-red-500">{errors.name.message}</p>}
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-gray-700">Nomor HP</label>
+                  <div className="relative">
+                    <Phone className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                    <input 
+                      type="text" 
+                      {...register("contactNumber")} 
+                      className="block w-full rounded-lg border-gray-200 pl-9 focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 bg-white shadow-sm" 
+                      placeholder="0812..." 
+                    />
+                  </div>
+                  {errors.contactNumber && <p className="text-xs text-red-500">{errors.contactNumber.message}</p>}
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-gray-700">Email <span className="text-red-500">*</span></label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                    <input 
+                      type="email" 
+                      {...register("email")} 
+                      className="block w-full rounded-lg border-gray-200 pl-9 focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 bg-white shadow-sm" 
+                      placeholder="email@company.com" 
+                    />
+                  </div>
+                  {errors.email && <p className="text-xs text-red-500">{errors.email.message}</p>}
+                </div>
+
+                <div className="space-y-1 sm:col-span-2">
+                  <label className="text-xs font-medium text-gray-700">Alamat</label>
+                  <div className="relative">
+                    <MapPin className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                    <input 
+                      type="text" 
+                      {...register("address")} 
+                      className="block w-full rounded-lg border-gray-200 pl-9 focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 bg-white shadow-sm" 
+                      placeholder="Alamat Lengkap" 
+                    />
+                  </div>
+                  {errors.address && <p className="text-xs text-red-500">{errors.address.message}</p>}
+                </div>
+              </div>
+            </div>
+
+            {/* Section: Employment Details */}
+            <div className="space-y-4">
+              <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider px-1">Detail Pekerjaan</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-gray-700">Organisasi <span className="text-red-500">*</span></label>
+                  <div className="relative">
+                    <Building className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                    <select {...register("organization")} className="block w-full rounded-lg border-gray-200 pl-9 focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 bg-white shadow-sm appearance-none">
+                      {organizations.map((o) => (<option key={o} value={o}>{o}</option>))}
+                    </select>
+                    <ChevronDown className="absolute right-3 top-3 h-4 w-4 text-gray-400 pointer-events-none" />
+                  </div>
+                  {errors.organization && <p className="text-xs text-red-500">{errors.organization.message}</p>}
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-gray-700">Divisi <span className="text-red-500">*</span></label>
+                  <div className="relative">
+                    <Briefcase className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                    <select {...register("division")} className="block w-full rounded-lg border-gray-200 pl-9 focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 bg-white shadow-sm appearance-none">
+                      {divisions.map((d) => (<option key={d} value={d}>{d}</option>))}
+                    </select>
+                    <ChevronDown className="absolute right-3 top-3 h-4 w-4 text-gray-400 pointer-events-none" />
+                  </div>
+                  {errors.division && <p className="text-xs text-red-500">{errors.division.message}</p>}
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-gray-700">Role Jabatan <span className="text-red-500">*</span></label>
+                  <div className="relative">
+                    <Users className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                    <select {...register("role")} className="block w-full rounded-lg border-gray-200 pl-9 focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 bg-white shadow-sm appearance-none">
+                      {roles.map((r) => (<option key={r} value={r}>{r}</option>))}
+                    </select>
+                    <ChevronDown className="absolute right-3 top-3 h-4 w-4 text-gray-400 pointer-events-none" />
+                  </div>
+                  {errors.role && <p className="text-xs text-red-500">{errors.role.message}</p>}
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-gray-700">Status <span className="text-red-500">*</span></label>
+                  <div className="relative">
+                    <FileText className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                    <select {...register("employmentStatus")} className="block w-full rounded-lg border-gray-200 pl-9 focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 bg-white shadow-sm appearance-none">
+                      {employmentStatuses.map((s) => (<option key={s} value={s}>{s}</option>))}
+                    </select>
+                    <ChevronDown className="absolute right-3 top-3 h-4 w-4 text-gray-400 pointer-events-none" />
+                  </div>
+                  {errors.employmentStatus && <p className="text-xs text-red-500">{errors.employmentStatus.message}</p>}
+                </div>
+              </div>
+            </div>
+
+            {/* Section: Schedule & Salary */}
+            <div className="space-y-4">
+              <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider px-1">Jadwal & Gaji</h4>
+              
+              <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm space-y-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-medium text-gray-700 block">Tipe Jadwal <span className="text-red-500">*</span></label>
+                  <div className="grid grid-cols-2 gap-3">
+                    {workSchedules.map((w) => (
+                      <label key={w} className={`
+                        relative flex items-center justify-center gap-2 p-3 rounded-lg border cursor-pointer transition-all
+                        ${watch("workSchedule") === w 
+                          ? 'border-indigo-500 bg-indigo-50 text-indigo-700 ring-1 ring-indigo-500' 
+                          : 'border-gray-200 hover:border-gray-300 text-gray-600'}
+                      `}>
+                        <input type="radio" value={w} {...register("workSchedule")} className="sr-only" />
+                        <span className="text-sm font-medium">{w === "SHIFT" ? "Shift" : "Non-Shift"}</span>
+                      </label>
+                    ))}
+                  </div>
+                  {errors.workSchedule && <p className="text-xs text-red-500">{errors.workSchedule.message}</p>}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-gray-700">Gaji Bulanan (Shift)</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-2.5 text-xs font-semibold text-gray-400">Rp</span>
+                      <input 
+                        type="number" 
+                        step="0.01" 
+                        {...register("monthlySalary", { valueAsNumber: true })} 
+                        className="block w-full rounded-lg border-gray-200 pl-9 focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 bg-white shadow-sm"
+                        placeholder="0.00"
+                      />
+                    </div>
+                    {errors.monthlySalary && <p className="text-xs text-red-500">{errors.monthlySalary.message}</p>}
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-gray-700">Rate Per Jam (Non-Shift)</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-2.5 text-xs font-semibold text-gray-400">Rp</span>
+                      <input 
+                        type="number" 
+                        step="0.01" 
+                        {...register("hourlyRate", { valueAsNumber: true })} 
+                        className="block w-full rounded-lg border-gray-200 pl-9 focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 bg-white shadow-sm"
+                        placeholder="0.00"
+                      />
+                    </div>
+                    {errors.hourlyRate && <p className="text-xs text-red-500">{errors.hourlyRate.message}</p>}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Section: BPJS */}
+            <div className="space-y-4">
+              <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider px-1">Potongan BPJS</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-gray-700">BPJS Kesehatan</label>
+                  <div className="relative">
+                    <CreditCard className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                    <input 
+                      type="number" 
+                      step="100" 
+                      {...register("bpjsKesehatan")} 
+                      className="block w-full rounded-lg border-gray-200 pl-9 focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 bg-white shadow-sm"
+                      placeholder="0"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-gray-700">BPJS Ketenagakerjaan</label>
+                  <div className="relative">
+                    <CreditCard className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                    <input 
+                      type="number" 
+                      step="100" 
+                      {...register("bpjsKetenagakerjaan")} 
+                      className="block w-full rounded-lg border-gray-200 pl-9 focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 bg-white shadow-sm"
+                      placeholder="0"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-indigo-900">Total Potongan</p>
+                  <p className="text-xs text-indigo-600">Dikurangkan dari gaji gross</p>
+                </div>
+                <p className="text-xl font-bold text-indigo-700">
+                  {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(totalBpjs)}
+                </p>
+              </div>
+            </div>
+
+          </form>
+        </div>
+
+        {/* Footer */}
+        <div className="px-4 py-3 sm:px-6 sm:py-4 border-t border-gray-100 bg-gray-50 flex flex-col-reverse sm:flex-row sm:justify-end gap-3 sticky bottom-0 z-10">
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-full sm:w-auto inline-flex justify-center items-center px-4 py-2.5 border border-gray-300 shadow-sm text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"
+          >
+            Batal
+          </button>
+          <button
+            type="submit"
+            form="edit-employee-form"
+            disabled={isSubmitting}
+            className="w-full sm:w-auto inline-flex justify-center items-center px-4 py-2.5 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-indigo-300 disabled:cursor-not-allowed transition-colors"
+          >
+            {isSubmitting ? (
+              <>
+                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Menyimpan...
+              </>
+            ) : (
+              "Simpan Perubahan"
+            )}
+          </button>
         </div>
       </div>
     </div>

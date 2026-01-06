@@ -3,6 +3,24 @@
 import { useState, useEffect } from "react";
 import { useSession, getSession } from "next-auth/react";
 import { organizations, organizationNames } from "@/lib/registrationValidation";
+import Image from "next/image";
+import { 
+  User, 
+  Shield, 
+  Camera, 
+  Mail, 
+  Phone, 
+  MapPin, 
+  Briefcase, 
+  Calendar,
+  CreditCard,
+  Building,
+  CheckCircle2,
+  AlertCircle,
+  X,
+  Loader2,
+  Save
+} from "lucide-react";
 
 type UserProfile = {
   id: string;
@@ -290,6 +308,7 @@ export default function ProfileForm() {
         title: 'Sukses',
         description: 'Profil Anda berhasil diperbarui.',
         variant: 'default',
+        
       });
     } catch (error: any) {
       console.error('Error updating profile:', error);
@@ -367,36 +386,21 @@ export default function ProfileForm() {
     
     return (
       <div 
-        className={`fixed bottom-4 right-4 p-4 rounded-md shadow-lg ${
+        className={`fixed top-4 right-4 z-50 p-4 rounded-xl shadow-2xl transition-all duration-300 transform translate-y-0 ${
           toast.variant === 'destructive' ? 'bg-red-50 text-red-800 border border-red-200' : 'bg-green-50 text-green-800 border border-green-200'
         }`}
       >
-        <div className="flex items-center">
+        <div className="flex items-center gap-3">
           <div className="flex-shrink-0">
-            {toast.variant === 'destructive' ? (
-              <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-              </svg>
-            ) : (
-              <svg className="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-              </svg>
-            )}
+            {toast.variant === 'destructive' ? <AlertCircle className="h-5 w-5 text-red-500" /> : <CheckCircle2 className="h-5 w-5 text-green-500" />}
           </div>
-          <div className="ml-3">
-            <h3 className="text-sm font-medium">{toast.title}</h3>
-            <p className="mt-1 text-sm">{toast.description}</p>
+          <div className="flex-1">
+            <h3 className="text-sm font-semibold">{toast.title}</h3>
+            <p className="text-xs mt-0.5 opacity-90">{toast.description}</p>
           </div>
-          <div className="ml-auto pl-3">
-            <button
-              onClick={() => setToast(null)}
-              className="inline-flex rounded-md bg-transparent text-gray-400 hover:text-gray-500"
-            >
-              <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-              </svg>
-            </button>
-          </div>
+          <button onClick={() => setToast(null)} className="text-gray-400 hover:text-gray-600 transition-colors">
+            <X className="h-4 w-4" />
+          </button>
         </div>
       </div>
     );
@@ -404,330 +408,378 @@ export default function ProfileForm() {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-64">
-        <p>Memuat informasi profil...</p>
+      <div className="flex justify-center items-center h-[calc(100vh-100px)]">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
+          <p className="text-gray-500 text-sm font-medium">Memuat profil...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="container mx-auto py-6">
-      <h1 className="text-2xl font-bold mb-6">Profil Saya</h1>
-      
-      <div className="mb-4">
-        <div className="flex space-x-4 border-b">
+    <div className="w-full max-w-4xl mx-auto pb-20 md:pb-6">
+      {/* Header with Background */}
+      <div className="relative mb-16 md:mb-20">
+        <div className="h-32 md:h-48 w-full bg-gradient-to-r from-indigo-600 to-purple-600 rounded-b-3xl md:rounded-3xl shadow-lg"></div>
+        <div className="absolute -bottom-12 left-0 right-0 flex justify-center px-4">
+          <div className="relative group">
+            <div className="h-24 w-24 md:h-32 md:w-32 rounded-full border-4 border-white shadow-xl bg-white overflow-hidden relative">
+              {previewUrl ? (
+                <Image 
+                  src={previewUrl} 
+                  alt="Foto Profil" 
+                  fill
+                  className="object-cover"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center bg-gray-100 text-gray-400">
+                  <User className="h-10 w-10 md:h-12 md:w-12" />
+                </div>
+              )}
+              {/* Overlay for uploading on desktop */}
+              <label 
+                htmlFor="photo-upload-overlay" 
+                className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+              >
+                <Camera className="h-8 w-8 text-white" />
+              </label>
+              <input
+                id="photo-upload-overlay"
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleFileChange}
+              />
+            </div>
+            <label 
+              htmlFor="photo-upload-mobile" 
+              className="absolute bottom-0 right-0 p-2 bg-indigo-600 text-white rounded-full shadow-lg border-2 border-white cursor-pointer md:hidden active:scale-95 transition-transform"
+            >
+              <Camera className="h-4 w-4" />
+            </label>
+            <input
+              id="photo-upload-mobile"
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleFileChange}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="text-center mb-8 px-4">
+        <h1 className="text-2xl font-bold text-gray-900">{profile?.name}</h1>
+        <p className="text-gray-500 text-sm">{profile?.email}</p>
+        <div className="flex items-center justify-center gap-2 mt-2">
+          <span className="px-3 py-1 bg-indigo-50 text-indigo-700 text-xs font-semibold rounded-full border border-indigo-100 capitalize">
+            {profile?.role?.toLowerCase()}
+          </span>
+          {profile?.employee?.isActive && (
+            <span className="px-3 py-1 bg-green-50 text-green-700 text-xs font-semibold rounded-full border border-green-100">
+              Aktif
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="px-4 mb-6">
+        <div className="bg-gray-100 p-1 rounded-xl flex">
           <button
-            className={`py-2 px-4 font-medium ${activeTab === 'profile' ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-gray-500'}`}
+            className={`flex-1 py-2.5 text-sm font-medium rounded-lg transition-all duration-200 flex items-center justify-center gap-2 ${
+              activeTab === 'profile' 
+                ? 'bg-white text-gray-900 shadow-sm' 
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
             onClick={() => setActiveTab('profile')}
           >
-            Informasi Profil
+            <User className="h-4 w-4" />
+            Profil
           </button>
           <button
-            className={`py-2 px-4 font-medium ${activeTab === 'security' ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-gray-500'}`}
+            className={`flex-1 py-2.5 text-sm font-medium rounded-lg transition-all duration-200 flex items-center justify-center gap-2 ${
+              activeTab === 'security' 
+                ? 'bg-white text-gray-900 shadow-sm' 
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
             onClick={() => setActiveTab('security')}
           >
+            <Shield className="h-4 w-4" />
             Keamanan
           </button>
         </div>
       </div>
-      
+
       {activeTab === 'profile' && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* Profile Summary Card */}
-          <div className="bg-white rounded-lg shadow overflow-hidden">
-            <div className="px-4 py-5 sm:px-6">
-              <h3 className="text-lg font-medium leading-6 text-gray-900">Ringkasan Akun</h3>
-            </div>
-            <div className="px-4 py-5 sm:p-6">
-              {/* Profile Image */}
-              <div className="flex flex-col items-center mb-6">
-                <div className="w-32 h-32 rounded-full overflow-hidden bg-gray-100 mb-4">
-                  {previewUrl ? (
-                    <Image 
-                      src={previewUrl} 
-                      alt="Foto Profil" 
-                      width={128}
-                      height={128}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center bg-gray-200 text-gray-400">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                      </svg>
-                    </div>
-                  )}
-                </div>
-              </div>
-              
-              <div className="flex flex-col space-y-4">
-                <div>
-                  <h3 className="font-medium text-sm text-gray-500">Nama</h3>
-                  <p>{profile?.name}</p>
-                </div>
-                <div>
-                  <h3 className="font-medium text-sm text-gray-500">Email</h3>
-                  <p>{profile?.email}</p>
-                </div>
-                <div>
-                  <h3 className="font-medium text-sm text-gray-500">Peran</h3>
-                  <p className="capitalize">{profile?.role?.toLowerCase()}</p>
-                </div>
-                <div>
-                  <h3 className="font-medium text-sm text-gray-500">Organisasi</h3>
-                  <p>{profile?.employee?.organization && (organizations as readonly string[]).includes(profile.employee.organization) ? organizationNames[profile.employee.organization as keyof typeof organizationNames] : (profile?.employee?.organization ?? '-')}</p>
-                </div>
-                <div>
-                  <h3 className="font-medium text-sm text-gray-500">Anggota Sejak</h3>
-                  <p>{profile?.createdAt ? new Date(profile.createdAt).toLocaleDateString('id-ID') : 'N/A'}</p>
-                </div>
-              </div>
-            </div>
-          </div>
-          
-          {/* Profile Edit Form */}
-          <div className="bg-white rounded-lg shadow overflow-hidden md:col-span-2">
-            <div className="px-4 py-5 sm:px-6">
-              <h3 className="text-lg font-medium leading-6 text-gray-900">Edit Profil</h3>
-            </div>
-            <div className="px-4 py-5 sm:p-6">
-              <form onSubmit={handleProfileUpdate} className="space-y-4">
-                {/* Profile Image Upload */}
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium text-gray-700">Foto Profil</label>
-                  <div className="flex items-center space-x-4">
-                    <div className="w-16 h-16 rounded-full overflow-hidden bg-gray-100">
-                      {previewUrl ? (
-                        <Image 
-                          src={previewUrl} 
-                          alt="Preview Foto Profil" 
-                          width={64}
-                          height={64}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center bg-gray-200 text-gray-400">
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                          </svg>
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex flex-col">
-                      <label htmlFor="photo-upload" className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-sm font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-                        Ubah Foto
-                      </label>
-                      <input
-                        id="photo-upload"
-                        name="photo"
-                        type="file"
-                        accept="image/*"
-                        className="sr-only"
-                        onChange={handleFileChange}
-                      />
-                      <p className="mt-1 text-xs text-gray-500">JPG, PNG, GIF maksimal 5MB</p>
-                      {profileImage && (
-                        <button
-                          type="button"
-                          onClick={() => setProfileImage(null)}
-                          className="mt-1 text-xs text-red-600 hover:text-red-800"
-                        >
-                          Hapus
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label htmlFor="name" className="block text-sm font-medium text-gray-700">Nama Lengkap</label>
-                    <input
-                      id="name"
-                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label htmlFor="email" className="block text-sm font-medium text-gray-700">Alamat Email</label>
-                    <input
-                      id="email"
-                      type="email"
-                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      required
-                    />
-                  </div>
-                  
-                  {profile?.employee && (
-                    <>
-                      <div className="space-y-2">
-                        <label htmlFor="contactNumber" className="block text-sm font-medium text-gray-700">Nomor Telepon</label>
-                        <input
-                          id="contactNumber"
-                          className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                          value={contactNumber}
-                          onChange={(e) => setContactNumber(e.target.value)}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <label htmlFor="address" className="block text-sm font-medium text-gray-700">Alamat</label>
-                        <input
-                          id="address"
-                          className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                          value={address}
-                          onChange={(e) => setAddress(e.target.value)}
-                        />
-                      </div>
-                    </>
-                  )}
-                </div>
-                
-                <div className="flex justify-end">
-                  <button 
-                    type="submit" 
-                    className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-75"
-                    disabled={updating}
-                  >
-                    {updating ? 'Memperbarui...' : 'Perbarui Profil'}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-          
-          {/* Employee Information (if applicable) */}
+        <div className="px-4 space-y-6">
+          {/* Employee Info Card */}
           {profile?.employee && (
-            <div className="bg-white rounded-lg shadow overflow-hidden md:col-span-3">
-              <div className="px-4 py-5 sm:px-6">
-                <h3 className="text-lg font-medium leading-6 text-gray-900">Informasi Karyawan</h3>
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+              <div className="px-5 py-4 border-b border-gray-50 bg-gray-50/50 flex items-center justify-between">
+                <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                  <Briefcase className="h-4 w-4 text-indigo-600" />
+                  Informasi Pekerjaan
+                </h3>
               </div>
-              <div className="px-4 py-5 sm:p-6">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div>
-                    <h3 className="font-medium text-sm text-gray-500">ID Karyawan</h3>
-                    <p>{profile.employee.employeeId}</p>
+              <div className="p-5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-y-6 gap-x-8">
+                  <div className="flex items-start gap-4 p-3 rounded-xl hover:bg-gray-50 transition-colors">
+                    <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
+                      <CreditCard className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">ID Karyawan</p>
+                      <p className="text-gray-900 font-semibold mt-0.5">{profile.employee.employeeId}</p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="font-medium text-sm text-gray-500">Jabatan</h3>
-                    <p>{profile.employee.position}</p>
+
+                  <div className="flex items-start gap-4 p-3 rounded-xl hover:bg-gray-50 transition-colors">
+                    <div className="p-2 bg-purple-50 text-purple-600 rounded-lg">
+                      <Briefcase className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Jabatan & Divisi</p>
+                      <p className="text-gray-900 font-semibold mt-0.5">{profile.employee.position}</p>
+                      <p className="text-sm text-gray-500">{profile.employee.division}</p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="font-medium text-sm text-gray-500">Divisi</h3>
-                    <p>{profile.employee.division}</p>
+
+                  <div className="flex items-start gap-4 p-3 rounded-xl hover:bg-gray-50 transition-colors">
+                    <div className="p-2 bg-orange-50 text-orange-600 rounded-lg">
+                      <Building className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Organisasi</p>
+                      <p className="text-gray-900 font-semibold mt-0.5">
+                        {profile.employee.organization && (organizations as readonly string[]).includes(profile.employee.organization) 
+                          ? organizationNames[profile.employee.organization as keyof typeof organizationNames] 
+                          : (profile.employee.organization ?? '-')}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="font-medium text-sm text-gray-500">
-                      {profile.employee.workScheduleType === "NON_SHIFT" ? "Rate Per Jam (Non Shift)" : "Gaji Pokok"}
-                    </h3>
-                    <p>
-                      {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(
-                        profile.employee.workScheduleType === "NON_SHIFT" 
-                          ? (profile.employee.hourlyRate || 0) 
-                          : profile.employee.basicSalary
-                      )}
-                    </p>
+
+                  <div className="flex items-start gap-4 p-3 rounded-xl hover:bg-gray-50 transition-colors">
+                    <div className="p-2 bg-green-50 text-green-600 rounded-lg">
+                      <Calendar className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Bergabung Sejak</p>
+                      <p className="text-gray-900 font-semibold mt-0.5">{new Date(profile.employee.joiningDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="font-medium text-sm text-gray-500">BPJS Kesehatan</h3>
-                    <p>
-                      {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(
-                        profile.employee.bpjsKesehatan || 0
-                      )}
-                    </p>
-                  </div>
-                  <div>
-                    <h3 className="font-medium text-sm text-gray-500">BPJS Ketenagakerjaan</h3>
-                    <p>
-                      {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" }).format(
-                        profile.employee.bpjsKetenagakerjaan || 0
-                      )}
-                    </p>
-                  </div>
-                  <div>
-                    <h3 className="font-medium text-sm text-gray-500">Tanggal Bergabung</h3>
-                    <p>{new Date(profile.employee.joiningDate).toLocaleDateString('id-ID')}</p>
-                  </div>
-                  <div>
-                    <h3 className="font-medium text-sm text-gray-500">Status</h3>
-                    <p>
-                      <span className={`inline-block px-2 py-1 text-xs rounded ${
-                        profile.employee.isActive
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-red-100 text-red-800'
-                      }`}>
-                        {profile.employee.isActive ? 'Aktif' : 'Tidak Aktif'}
-                      </span>
-                    </p>
+
+                  <div className="md:col-span-2 border-t border-gray-100 pt-4 mt-2">
+                    <h4 className="text-sm font-semibold text-gray-900 mb-4">Informasi Gaji & Tunjangan</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
+                        <p className="text-xs text-gray-500 mb-1">
+                          {profile.employee.workScheduleType === "NON_SHIFT" ? "Rate Per Jam" : "Gaji Pokok"}
+                        </p>
+                        <p className="font-semibold text-gray-900">
+                          {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(
+                            profile.employee.workScheduleType === "NON_SHIFT" 
+                              ? (profile.employee.hourlyRate || 0) 
+                              : profile.employee.basicSalary
+                          )}
+                        </p>
+                      </div>
+                      <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
+                        <p className="text-xs text-gray-500 mb-1">BPJS Kesehatan</p>
+                        <p className="font-semibold text-gray-900">
+                          {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(
+                            profile.employee.bpjsKesehatan || 0
+                          )}
+                        </p>
+                      </div>
+                      <div className="bg-gray-50 p-3 rounded-xl border border-gray-100">
+                        <p className="text-xs text-gray-500 mb-1">BPJS Ketenagakerjaan</p>
+                        <p className="font-semibold text-gray-900">
+                          {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(
+                            profile.employee.bpjsKetenagakerjaan || 0
+                          )}
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
           )}
+
+          {/* Personal Info Card */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-50 bg-gray-50/50 flex items-center justify-between">
+              <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                <User className="h-4 w-4 text-indigo-600" />
+                Informasi Pribadi
+              </h3>
+            </div>
+            <div className="p-5">
+              <form onSubmit={handleProfileUpdate} className="space-y-5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">Nama Lengkap</label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <User className="h-4 w-4 text-gray-400" />
+                      </div>
+                      <input
+                        className="block w-full pl-10 pr-3 py-2.5 bg-gray-50 border-gray-200 rounded-xl text-sm focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        required
+                        placeholder="Nama Lengkap"
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">Email</label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <Mail className="h-4 w-4 text-gray-400" />
+                      </div>
+                      <input
+                        type="email"
+                        className="block w-full pl-10 pr-3 py-2.5 bg-gray-50 border-gray-200 rounded-xl text-sm focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        required
+                        placeholder="email@example.com"
+                      />
+                    </div>
+                  </div>
+
+                  {profile?.employee && (
+                    <>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">Nomor Telepon</label>
+                        <div className="relative">
+                          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <Phone className="h-4 w-4 text-gray-400" />
+                          </div>
+                          <input
+                            className="block w-full pl-10 pr-3 py-2.5 bg-gray-50 border-gray-200 rounded-xl text-sm focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                            value={contactNumber}
+                            onChange={(e) => setContactNumber(e.target.value)}
+                            placeholder="0812..."
+                          />
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-1.5 md:col-span-2">
+                        <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">Alamat</label>
+                        <div className="relative">
+                          <div className="absolute inset-y-0 left-0 pl-3 pt-3 pointer-events-none">
+                            <MapPin className="h-4 w-4 text-gray-400" />
+                          </div>
+                          <textarea
+                            className="block w-full pl-10 pr-3 py-2.5 bg-gray-50 border-gray-200 rounded-xl text-sm focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all min-h-[80px] resize-none"
+                            value={address}
+                            onChange={(e) => setAddress(e.target.value)}
+                            placeholder="Alamat Lengkap"
+                          />
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <div className="pt-2">
+                  <button 
+                    type="submit" 
+                    className="w-full md:w-auto md:px-8 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-medium text-sm shadow-lg shadow-indigo-600/20 transition-all active:scale-95 flex items-center justify-center gap-2"
+                    disabled={updating}
+                  >
+                    {updating ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Menyimpan...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="h-4 w-4" />
+                        Simpan Perubahan
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
         </div>
       )}
-      
+
       {activeTab === 'security' && (
-        <div className="bg-white rounded-lg shadow overflow-hidden">
-          <div className="px-4 py-5 sm:px-6">
-            <h3 className="text-lg font-medium leading-6 text-gray-900">Ubah Password</h3>
-          </div>
-          <div className="px-4 py-5 sm:p-6">
-            <form onSubmit={handlePasswordUpdate} className="space-y-4">
-              <div className="space-y-2">
-                <label htmlFor="currentPassword" className="block text-sm font-medium text-gray-700">Password Saat Ini</label>
-                <input
-                  id="currentPassword"
-                  type="password"
-                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                  value={currentPassword}
-                  onChange={(e) => setCurrentPassword(e.target.value)}
-                  required
-                />
-              </div>
-              
-              <div className="border-t my-4 border-gray-200"></div>
-              
-              <div className="space-y-2">
-                <label htmlFor="newPassword" className="block text-sm font-medium text-gray-700">Password Baru</label>
-                <input
-                  id="newPassword"
-                  type="password"
-                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  required
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700">Konfirmasi Password Baru</label>
-                <input
-                  id="confirmPassword"
-                  type="password"
-                  className="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  required
-                />
-                {passwordError && (
-                  <p className="text-sm text-red-500 mt-1">{passwordError}</p>
-                )}
-              </div>
-              
-              <div className="flex justify-end">
-                <button 
-                  type="submit" 
-                  className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-75"
-                  disabled={updating}
-                >
-                  {updating ? 'Memperbarui...' : 'Ubah Password'}
-                </button>
-              </div>
-            </form>
+        <div className="px-4">
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden max-w-2xl mx-auto">
+            <div className="px-5 py-4 border-b border-gray-50 bg-gray-50/50 flex items-center justify-between">
+              <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                <Shield className="h-4 w-4 text-indigo-600" />
+                Ubah Password
+              </h3>
+            </div>
+            <div className="p-5">
+              <form onSubmit={handlePasswordUpdate} className="space-y-5">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">Password Saat Ini</label>
+                  <input
+                    type="password"
+                    className="block w-full px-3 py-2.5 bg-gray-50 border-gray-200 rounded-xl text-sm focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    required
+                  />
+                </div>
+                
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">Password Baru</label>
+                  <input
+                    type="password"
+                    className="block w-full px-3 py-2.5 bg-gray-50 border-gray-200 rounded-xl text-sm focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    required
+                  />
+                </div>
+                
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-gray-500 uppercase tracking-wider">Konfirmasi Password Baru</label>
+                  <input
+                    type="password"
+                    className="block w-full px-3 py-2.5 bg-gray-50 border-gray-200 rounded-xl text-sm focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    required
+                  />
+                  {passwordError && (
+                    <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3" />
+                      {passwordError}
+                    </p>
+                  )}
+                </div>
+                
+                <div className="pt-2">
+                  <button 
+                    type="submit" 
+                    className="w-full px-8 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-medium text-sm shadow-lg shadow-indigo-600/20 transition-all active:scale-95 flex items-center justify-center gap-2"
+                    disabled={updating}
+                  >
+                    {updating ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Memperbarui...
+                      </>
+                    ) : (
+                      'Ubah Password'
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
         </div>
       )}
@@ -736,5 +788,4 @@ export default function ProfileForm() {
       <Toast />
     </div>
   );
-} 
-import Image from "next/image";
+}

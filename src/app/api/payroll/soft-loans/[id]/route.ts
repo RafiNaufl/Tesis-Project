@@ -34,14 +34,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       return NextResponse.json({ message: 'Unauthorized' }, { status: 403 });
     }
 
-    const { status } = await request.json();
+    const { status, rejectionReason } = await request.json();
 
     if (!['APPROVED', 'REJECTED'].includes(status)) {
       return NextResponse.json({ message: 'Invalid status' }, { status: 400 });
     }
 
     // Use the centralized function to update soft loan status
-    const updatedSoftLoan = await updateSoftLoanStatus(id, status);
+    const updatedSoftLoan = await updateSoftLoanStatus(id, status, user.id, rejectionReason);
 
     // Create notification for the employee
     const message = status === 'APPROVED' ? `Your soft loan request has been approved.` : `Your soft loan request has been rejected.`;

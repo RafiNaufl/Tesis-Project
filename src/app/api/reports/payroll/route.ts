@@ -23,6 +23,17 @@ type PayrollRecord = {
   employeeName: string;
   position: string;
   division: string;
+  positionAllowance?: number;
+  mealAllowance?: number;
+  transportAllowance?: number;
+  shiftAllowance?: number;
+  lateDeduction?: number;
+  absenceDeduction?: number;
+  bpjsKesehatanAmount?: number;
+  bpjsKetenagakerjaanAmount?: number;
+  advanceAmount?: number;
+  softLoanDeduction?: number;
+  otherDeductions?: number;
 };
 
 export async function GET(request: NextRequest) {
@@ -112,7 +123,18 @@ export async function GET(request: NextRequest) {
         p."daysAbsent",
         p."overtimeHours",
         p."overtimeAmount",
-        p.status,
+        p."lateDeduction",
+        p."bpjsKesehatanAmount",
+        p."bpjsKetenagakerjaanAmount",
+        (SELECT COALESCE(SUM(amount), 0) FROM allowances WHERE "employeeId" = p."employeeId" AND month = p.month AND year = p.year AND type = 'NON_SHIFT_MEAL_ALLOWANCE') as "mealAllowance",
+        (SELECT COALESCE(SUM(amount), 0) FROM allowances WHERE "employeeId" = p."employeeId" AND month = p.month AND year = p.year AND type = 'NON_SHIFT_TRANSPORT_ALLOWANCE') as "transportAllowance",
+        (SELECT COALESCE(SUM(amount), 0) FROM allowances WHERE "employeeId" = p."employeeId" AND month = p.month AND year = p.year AND type LIKE 'TUNJANGAN_JABATAN%') as "positionAllowance",
+        (SELECT COALESCE(SUM(amount), 0) FROM allowances WHERE "employeeId" = p."employeeId" AND month = p.month AND year = p.year AND type = 'SHIFT_FIXED_ALLOWANCE') as "shiftAllowance",
+        (SELECT COALESCE(SUM(amount), 0) FROM deductions WHERE "employeeId" = p."employeeId" AND month = p.month AND year = p.year AND type = 'KASBON') as "advanceAmount",
+        (SELECT COALESCE(SUM(amount), 0) FROM deductions WHERE "employeeId" = p."employeeId" AND month = p.month AND year = p.year AND type = 'PINJAMAN') as "softLoanDeduction",
+         (SELECT COALESCE(SUM(amount), 0) FROM deductions WHERE "employeeId" = p."employeeId" AND month = p.month AND year = p.year AND type = 'ABSENCE') as "absenceDeduction",
+         (SELECT COALESCE(SUM(amount), 0) FROM deductions WHERE "employeeId" = p."employeeId" AND month = p.month AND year = p.year AND type = 'OTHER') as "otherDeductions",
+         p.status,
         p."createdAt",
         p."paidAt",
         e."employeeId" AS "empId",
@@ -139,6 +161,22 @@ export async function GET(request: NextRequest) {
       totalBaseSalary: result.reduce((sum, record) => sum + Number(record.baseSalary), 0),
       totalAllowances: result.reduce((sum, record) => sum + Number(record.totalAllowances), 0),
       totalDeductions: result.reduce((sum, record) => sum + Number(record.totalDeductions), 0),
+      
+      // Detailed Allowances Totals
+      totalPositionAllowance: result.reduce((sum, record) => sum + Number(record.positionAllowance || 0), 0),
+      totalMealAllowance: result.reduce((sum, record) => sum + Number(record.mealAllowance || 0), 0),
+      totalTransportAllowance: result.reduce((sum, record) => sum + Number(record.transportAllowance || 0), 0),
+      totalShiftAllowance: result.reduce((sum, record) => sum + Number(record.shiftAllowance || 0), 0),
+
+      // Detailed Deductions Totals
+      totalLateDeduction: result.reduce((sum, record) => sum + Number(record.lateDeduction || 0), 0),
+      totalAbsenceDeduction: result.reduce((sum, record) => sum + Number(record.absenceDeduction || 0), 0),
+      totalBpjsKesehatan: result.reduce((sum, record) => sum + Number(record.bpjsKesehatanAmount || 0), 0),
+      totalBpjsKetenagakerjaan: result.reduce((sum, record) => sum + Number(record.bpjsKetenagakerjaanAmount || 0), 0),
+      totalAdvanceAmount: result.reduce((sum, record) => sum + Number(record.advanceAmount || 0), 0),
+      totalSoftLoanDeduction: result.reduce((sum, record) => sum + Number(record.softLoanDeduction || 0), 0),
+      totalOtherDeductions: result.reduce((sum, record) => sum + Number(record.otherDeductions || 0), 0),
+
       pendingPayrolls: result.filter(record => record.status === "PENDING").length,
       paidPayrolls: result.filter(record => record.status === "PAID").length,
       cancelledPayrolls: result.filter(record => record.status === "CANCELLED").length,

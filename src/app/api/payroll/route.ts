@@ -4,6 +4,8 @@ import { db } from "@/lib/db";
 import { authOptions } from "@/lib/auth";
 import { createPayrollPaidNotification } from "@/lib/notification";
 
+export const dynamic = 'force-dynamic';
+
 // GET: Fetch payrolls with filtering
 export async function GET(request: NextRequest) {
   try {
@@ -82,13 +84,22 @@ export async function GET(request: NextRequest) {
         p."overtimeAmount",
         p."bpjsKesehatanAmount",
         p."bpjsKetenagakerjaanAmount",
+        p."lateDeduction",
         p.status,
         p."createdAt",
         p."paidAt",
         e."employeeId" AS "empId",
         u.name AS "employeeName",
         e.position,
-        e.division
+        e.division,
+        (SELECT COALESCE(SUM(d."amount"), 0) FROM deductions d WHERE d."payrollId" = p.id AND d."type" = 'KASBON') AS "advanceAmount",
+        (SELECT COALESCE(SUM(d."amount"), 0) FROM deductions d WHERE d."payrollId" = p.id AND d."type" = 'PINJAMAN') AS "softLoanDeduction",
+        (SELECT COALESCE(SUM(d."amount"), 0) FROM deductions d WHERE d."payrollId" = p.id AND d."type" = 'ABSENCE') AS "absenceDeduction",
+        (SELECT COALESCE(SUM(d."amount"), 0) FROM deductions d WHERE d."payrollId" = p.id AND d."type" NOT IN ('ABSENCE', 'LATE', 'BPJS_KESEHATAN', 'BPJS_KETENAGAKERJAAN', 'KASBON', 'PINJAMAN')) AS "otherDeductions",
+        (SELECT COALESCE(SUM(a."amount"), 0) FROM allowances a WHERE a."employeeId" = p."employeeId" AND a."month" = p.month AND a."year" = p.year AND a."type" LIKE 'TUNJANGAN_JABATAN%') AS "positionAllowance",
+        (SELECT COALESCE(SUM(a."amount"), 0) FROM allowances a WHERE a."employeeId" = p."employeeId" AND a."month" = p.month AND a."year" = p.year AND a."type" = 'NON_SHIFT_MEAL_ALLOWANCE') AS "mealAllowance",
+        (SELECT COALESCE(SUM(a."amount"), 0) FROM allowances a WHERE a."employeeId" = p."employeeId" AND a."month" = p.month AND a."year" = p.year AND a."type" = 'NON_SHIFT_TRANSPORT_ALLOWANCE') AS "transportAllowance",
+        (SELECT COALESCE(SUM(a."amount"), 0) FROM allowances a WHERE a."employeeId" = p."employeeId" AND a."month" = p.month AND a."year" = p.year AND a."type" = 'SHIFT_FIXED_ALLOWANCE') AS "shiftAllowance"
       FROM 
         payrolls p
       JOIN 
@@ -100,9 +111,40 @@ export async function GET(request: NextRequest) {
         p.year DESC, p.month DESC
     `;
     
-    const payrolls = await db.$queryRawUnsafe(query, ...params);
+    const payrolls = await db.$queryRawUnsafe(query, ...params) as any[];
     
-    return NextResponse.json(payrolls);
+    // Convert BigInt to Number to avoid serialization error
+    const serializedPayrolls = payrolls.map((payroll) => {
+      const newPayroll: any = { ...payroll };
+      // Check specific fields that might be BigInt due to SUM
+      if (typeof newPayroll.advanceAmount === 'bigint') {
+        newPayroll.advanceAmount = Number(newPayroll.advanceAmount);
+      }
+      if (typeof newPayroll.softLoanDeduction === 'bigint') {
+        newPayroll.softLoanDeduction = Number(newPayroll.softLoanDeduction);
+      }
+      if (typeof newPayroll.absenceDeduction === 'bigint') {
+        newPayroll.absenceDeduction = Number(newPayroll.absenceDeduction);
+      }
+      if (typeof newPayroll.otherDeductions === 'bigint') {
+        newPayroll.otherDeductions = Number(newPayroll.otherDeductions);
+      }
+      if (typeof newPayroll.positionAllowance === 'bigint') {
+        newPayroll.positionAllowance = Number(newPayroll.positionAllowance);
+      }
+      if (typeof newPayroll.mealAllowance === 'bigint') {
+        newPayroll.mealAllowance = Number(newPayroll.mealAllowance);
+      }
+      if (typeof newPayroll.transportAllowance === 'bigint') {
+        newPayroll.transportAllowance = Number(newPayroll.transportAllowance);
+      }
+      if (typeof newPayroll.shiftAllowance === 'bigint') {
+        newPayroll.shiftAllowance = Number(newPayroll.shiftAllowance);
+      }
+      return newPayroll;
+    });
+    
+    return NextResponse.json(serializedPayrolls);
   } catch (error) {
     console.error("Error fetching payrolls:", error);
     return NextResponse.json(
@@ -249,12 +291,73 @@ export async function DELETE(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    // 1. Revert Soft Loan and Advance status before deleting deductions
+    const deductionsToDelete = await db.deduction.findMany({
+      where: {
+        payrollId: { in: ids }
+      }
+    });
+
+    for (const deduction of deductionsToDelete) {
+      // Revert Soft Loan
+      if (deduction.type === 'PINJAMAN') {
+        // Find the active or recently completed soft loan for this employee
+        const loan = await db.softLoan.findFirst({
+          where: {
+            employeeId: deduction.employeeId,
+          },
+          orderBy: { createdAt: 'desc' }
+        });
+
+        if (loan) {
+            const newRemaining = loan.remainingAmount + deduction.amount;
+            await db.softLoan.update({
+                where: { id: loan.id },
+                data: {
+                    remainingAmount: newRemaining,
+                    status: "ACTIVE", // Revert to active if it was completed
+                    completedAt: null
+                }
+            });
+        }
+      }
+
+      // Revert Advance (Kasbon)
+      if (deduction.type === 'KASBON') {
+        // Find the advance for this month/year
+        const advance = await db.advance.findFirst({
+            where: {
+                employeeId: deduction.employeeId,
+                deductionMonth: deduction.month,
+                deductionYear: deduction.year,
+                status: "APPROVED"
+            }
+        });
+
+        if (advance) {
+            await db.advance.update({
+                where: { id: advance.id },
+                data: { deductedAt: null }
+            });
+        }
+      }
+    }
     
+    // Delete associated deductions first
+    await db.deduction.deleteMany({
+      where: {
+        payrollId: {
+          in: ids,
+        },
+      },
+    });
+
     // Delete the payrolls
-    const result = await db.$executeRaw`
+    const result = await db.$executeRawUnsafe(`
       DELETE FROM payrolls
-      WHERE id IN (${ids.map(id => `'${id}'`).join(',')})
-    `;
+      WHERE id IN (${ids.map((id: string) => `'${id}'`).join(',')})
+    `);
     
     return NextResponse.json({ 
       success: true, 
@@ -268,6 +371,8 @@ export async function DELETE(request: NextRequest) {
     );
   }
 }
+
+import { generateMonthlyPayroll } from "@/lib/payroll";
 
 // POST /api/payroll - Generate payroll or update payroll status
 export async function POST(req: NextRequest) {
@@ -305,99 +410,24 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // Check if payroll for this employee and month/year already exists
-      const existingPayroll = await db.payroll.findFirst({
-        where: {
+      try {
+        const payroll = await generateMonthlyPayroll(
           employeeId,
-          month: parseInt(month),
-          year: parseInt(year),
-        },
-      });
+          parseInt(month),
+          parseInt(year)
+        );
 
-      if (existingPayroll) {
+        return NextResponse.json({
+          message: "Payroll generated successfully",
+          payroll,
+        });
+      } catch (error: any) {
+        console.error("Error generating payroll:", error);
         return NextResponse.json(
-          { error: "Payroll for this period already exists" },
+          { error: error.message || "Failed to generate payroll" },
           { status: 400 }
         );
       }
-
-      // Get employee details
-      const employee = await db.employee.findUnique({
-        where: { id: employeeId },
-      });
-
-      if (!employee) {
-        return NextResponse.json(
-          { error: "Employee not found" },
-          { status: 404 }
-        );
-      }
-
-      // Get attendance records for the month to calculate days present/absent
-      const monthNum = parseInt(month);
-      const yearNum = parseInt(year);
-      const startDate = new Date(yearNum, monthNum - 1, 1);
-      const endDate = new Date(yearNum, monthNum, 0); // Last day of the month
-      endDate.setHours(23, 59, 59, 999);
-
-      const attendanceRecords = await db.attendance.findMany({
-        where: {
-          employeeId,
-          date: {
-            gte: startDate,
-            lte: endDate,
-          },
-        },
-      });
-
-      // Calculate days present and absent
-      const daysPresent = attendanceRecords.filter(
-        (record) => record.status === "PRESENT"
-      ).length;
-      
-      // Calculate working days in the month (assuming Mon-Fri are working days)
-      const workingDaysInMonth = calculateWorkingDaysInMonth(monthNum, yearNum);
-      const daysAbsent = workingDaysInMonth - daysPresent;
-
-      // Calculate overtime (this would come from a more complex calculation in a real system)
-      const overtimeHours = 0; // Mock value
-      const overtimeRate = 1.5; // Time and a half
-      const hourlyRate = employee.basicSalary / (workingDaysInMonth * 8); // Assuming 8 hour days
-      const overtimeAmount = overtimeHours * hourlyRate * overtimeRate;
-
-      // Calculate allowances and deductions (mock values for demonstration)
-      const totalAllowances = employee.basicSalary * 0.1; // 10% of base salary
-      const totalDeductions = employee.basicSalary * 0.05; // 5% of base salary
-
-      // Calculate net salary
-      const netSalary =
-        employee.basicSalary +
-        totalAllowances +
-        overtimeAmount -
-        totalDeductions;
-
-      // Create the payroll record
-      const payroll = await db.payroll.create({
-        data: {
-          employeeId,
-          month: monthNum,
-          year: yearNum,
-          baseSalary: employee.basicSalary,
-          totalAllowances,
-          totalDeductions,
-          overtimeHours,
-          overtimeAmount,
-          daysPresent,
-          daysAbsent,
-          netSalary,
-          status: "PENDING",
-        },
-      });
-
-      return NextResponse.json({
-        message: "Payroll generated successfully",
-        payroll,
-      });
     }
 
     // Mark payroll as paid
@@ -435,24 +465,4 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     );
   }
-}
-
-// Helper function to calculate working days in a month (Mon-Fri)
-function calculateWorkingDaysInMonth(month: number, year: number) {
-  const startDate = new Date(year, month - 1, 1);
-  const endDate = new Date(year, month, 0);
-  
-  let workingDays = 0;
-  const currentDate = new Date(startDate);
-  
-  while (currentDate <= endDate) {
-    const dayOfWeek = currentDate.getDay();
-    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-      // Not weekend (0 = Sunday, 6 = Saturday)
-      workingDays++;
-    }
-    currentDate.setDate(currentDate.getDate() + 1);
-  }
-  
-  return workingDays;
 } 

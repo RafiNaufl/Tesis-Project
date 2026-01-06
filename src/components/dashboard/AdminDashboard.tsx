@@ -2,7 +2,21 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
-import DashboardNavigation from "./DashboardNavigation";
+import { 
+  Users, 
+  UserCheck, 
+  CreditCard, 
+  Wallet, 
+  ArrowUpRight, 
+  ArrowDownRight, 
+  Clock,
+  CheckCircle2,
+  XCircle,
+  AlertCircle,
+  FileText,
+  UserPlus,
+  CalendarDays
+} from "lucide-react";
 import { NOTIFICATION_UPDATE_EVENT } from "../notifications/NotificationDropdown";
 
 // Buat custom event baru khusus untuk aktivitas 
@@ -32,13 +46,11 @@ export default function AdminDashboard() {
   });
   const [recentActivities, setRecentActivities] = useState<ActivityItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [, setIsRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const lastFetchTimeRef = useRef<number>(0);
-  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const retryCountRef = useRef<number>(0);
   const MAX_RETRIES = 3;
-  const _POLLING_INTERVAL = 15000; // Turunkan ke 15 detik agar lebih responsif
 
   // Fungsi untuk memformat tanggal dengan aman
   const formatDateSafely = (dateInput: string | Date | null | undefined): string => {
@@ -61,6 +73,15 @@ export default function AdminDashboard() {
       console.error("Error formatting date:", error);
       return "-";
     }
+  };
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('id-ID', {
+      style: 'currency',
+      currency: 'IDR',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(amount);
   };
 
   // Memoize fetch function to avoid recreating it on every render
@@ -279,13 +300,7 @@ export default function AdminDashboard() {
     }
   }, []);
 
-  // Fungsi untuk memicu pembaruan aktivitas secara manual
-  const triggerActivityUpdate = useCallback(() => {
-    // Dispatch event khusus untuk aktivitas
-    window.dispatchEvent(new Event(ACTIVITY_UPDATE_EVENT));
-    // Juga segera perbarui data
-    fetchDashboardData(false);
-  }, [fetchDashboardData]);
+ 
 
   // Setup polling and event listeners
   useEffect(() => {
@@ -293,381 +308,250 @@ export default function AdminDashboard() {
     fetchDashboardData();
     lastFetchTimeRef.current = Date.now();
     
-    // Tidak perlu polling interval lagi, hanya refresh saat halaman di-load atau refresh manual
-    // pollingIntervalRef.current = setInterval(() => {
-    //   fetchDashboardData(false);
-    // }, POLLING_INTERVAL);
-    
-    // Set up global event listener for attendance actions (gunakan keduanya)
+    // Listen for custom activity update events
     const handleActivityUpdate = () => {
+      console.log("Activity update event received, refreshing data...");
       fetchDashboardData(false);
     };
-    
-    // Register the event listeners - gunakan beberapa event untuk meningkatkan kemungkinan update
-    window.addEventListener(NOTIFICATION_UPDATE_EVENT, handleActivityUpdate);
+
     window.addEventListener(ACTIVITY_UPDATE_EVENT, handleActivityUpdate);
     
-    // Juga dengarkan event khusus browser
-    const handleStorageEvent = (e: StorageEvent) => {
-      if (e.key === 'attendance-update' || e.key === 'notification-update') {
-        handleActivityUpdate();
-      }
-    };
-    window.addEventListener('storage', handleStorageEvent);
-    const interval = pollingIntervalRef.current;
+    // Also listen for notification updates as they might relate to activities
+    window.addEventListener(NOTIFICATION_UPDATE_EVENT, handleActivityUpdate);
     
-    // Clean up on unmount
     return () => {
-      if (interval) {
-        clearInterval(interval);
-      }
-      window.removeEventListener(NOTIFICATION_UPDATE_EVENT, handleActivityUpdate);
       window.removeEventListener(ACTIVITY_UPDATE_EVENT, handleActivityUpdate);
-      window.removeEventListener('storage', handleStorageEvent);
-      
-      // Hapus pembersihan event listener untuk aktivitas user
-      // activityEvents.forEach(event => {
-      //   window.removeEventListener(event, handleUserActivity);
-      // });
+      window.removeEventListener(NOTIFICATION_UPDATE_EVENT, handleActivityUpdate);
     };
   }, [fetchDashboardData]);
 
-  // Add a focus/visibility change event listener to refresh on tab focus
-  useEffect(() => {
-    // Hapus auto refresh saat tab menjadi aktif sesuai permintaan pengguna
-    // Perubahan ini dibuat agar data hanya di-refresh saat halaman di-refresh atau tombol refresh ditekan
-    // const handleVisibilityChange = () => {
-    //   if (document.visibilityState === 'visible') {
-    //     fetchDashboardData(false);
-    //   }
-    // };
-    // 
-    // document.addEventListener('visibilitychange', handleVisibilityChange);
-    // 
-    // return () => {
-    //   document.removeEventListener('visibilitychange', handleVisibilityChange);
-    // };
-  }, [fetchDashboardData]);
+  const cards = [
+    {
+      title: "Total Karyawan",
+      value: stats.totalEmployees,
+      icon: Users,
+      change: "+2.5%",
+      changeType: "positive",
+      color: "blue",
+      description: "Karyawan aktif"
+    },
+    {
+      title: "Hadir Hari Ini",
+      value: stats.presentToday,
+      icon: UserCheck,
+      change: `${stats.totalEmployees > 0 ? Math.round((stats.presentToday / stats.totalEmployees) * 100) : 0}%`,
+      changeType: "neutral",
+      color: "green",
+      description: "Kehadiran"
+    },
+    {
+      title: "Menunggu Payroll",
+      value: stats.pendingPayrolls,
+      icon: CreditCard,
+      change: stats.pendingPayrolls > 0 ? "Perlu Tindakan" : "Aman",
+      changeType: stats.pendingPayrolls > 0 ? "negative" : "positive",
+      color: "orange",
+      description: "Periode ini"
+    },
+    {
+      title: "Est. Pengeluaran",
+      value: formatCurrency(stats.totalSalaryExpense),
+      icon: Wallet,
+      change: "Bulan ini",
+      changeType: "neutral",
+      color: "purple",
+      description: "Total gaji bersih"
+    },
+  ];
 
   return (
-    <div className="space-y-6">
-      
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 sm:gap-0">
+    <div className="space-y-8 animate-in fade-in duration-500">
+      {/* Header Section */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Dashboard Admin</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            Ringkasan organisasi Anda
-          </p>
+          <h2 className="text-2xl font-bold text-gray-900 tracking-tight">Overview Dashboard</h2>
+          <p className="text-sm text-gray-500 mt-1">Ringkasan aktivitas dan performa perusahaan hari ini.</p>
         </div>
-        <button 
-          onClick={() => fetchDashboardData(false)}
-          className="inline-flex w-full sm:w-auto justify-center items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-          disabled={isRefreshing}
-        >
-          {isRefreshing ? (
-            <>
-              <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-              Memperbarui...
-            </>
-          ) : (
-            <>
-              <svg className="h-4 w-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              Segarkan Data
-            </>
+        <div className="flex items-center gap-2">
+          {errorMessage && (
+            <span className="text-xs text-red-500 bg-red-50 px-3 py-1.5 rounded-full border border-red-100 animate-pulse">
+              {errorMessage}
+            </span>
           )}
-        </button>
-      </div>
-
-      {/* Tampilkan pesan error jika ada */}
-      {errorMessage && (
-        <div className="rounded-md bg-red-50 p-4">
-          <div className="flex">
-            <div className="flex-shrink-0">
-              <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-              </svg>
-            </div>
-            <div className="ml-3">
-              <p className="text-sm text-red-700">{errorMessage}</p>
-              <div className="mt-2">
-                <button
-                  onClick={() => fetchDashboardData(false)}
-                  className="rounded bg-red-50 px-2 py-1 text-xs font-medium text-red-800 hover:bg-red-100"
-                >
-                  Coba Lagi
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-        {/* Total Employees */}
-        <div className="overflow-hidden rounded-lg bg-white shadow">
-          <div className="p-5">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <svg
-                  className="h-6 w-6 text-gray-400"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  strokeWidth="1.5"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z"
-                  />
-                </svg>
-              </div>
-              <div className="ml-5 w-0 flex-1">
-                <dl>
-                  <dt className="text-sm font-medium text-gray-500 truncate">
-                    Total Karyawan
-                  </dt>
-                  <dd>
-                    <div className="text-lg font-medium text-gray-900">
-                      {isLoading ? "Memuat..." : stats.totalEmployees}
-                    </div>
-                  </dd>
-                </dl>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Present Today */}
-        <div className="overflow-hidden rounded-lg bg-white shadow">
-          <div className="p-5">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <svg
-                  className="h-6 w-6 text-gray-400"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  strokeWidth="1.5"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                  />
-                </svg>
-              </div>
-              <div className="ml-5 w-0 flex-1">
-                <dl>
-                  <dt className="text-sm font-medium text-gray-500 truncate">
-                    Hadir Hari Ini
-                  </dt>
-                  <dd>
-                    <div className="text-lg font-medium text-gray-900">
-                      {isLoading ? (
-                        "Memuat..."
-                      ) : (
-                        <div className="flex items-center">
-                          <span>{stats.presentToday}</span>
-                          {isRefreshing && (
-                            <span className="ml-2 h-2 w-2 rounded-full bg-green-500 animate-pulse" title="Memperbarui data"></span>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </dd>
-                </dl>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Pending Payrolls */}
-        <div className="overflow-hidden rounded-lg bg-white shadow">
-          <div className="p-5">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <svg
-                  className="h-6 w-6 text-gray-400"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  strokeWidth="1.5"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5z"
-                  />
-                </svg>
-              </div>
-              <div className="ml-5 w-0 flex-1">
-                <dl>
-                  <dt className="text-sm font-medium text-gray-500 truncate">
-                    Penggajian Tertunda
-                  </dt>
-                  <dd>
-                    <div className="text-lg font-medium text-gray-900">
-                      {isLoading ? (
-                        "Memuat..."
-                      ) : (
-                        <div className="flex items-center">
-                          <span>{stats.pendingPayrolls}</span>
-                          {isRefreshing && (
-                            <span className="ml-2 h-2 w-2 rounded-full bg-yellow-500 animate-pulse" title="Memperbarui data"></span>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </dd>
-                </dl>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Total Salary Expense */}
-        <div className="overflow-hidden rounded-lg bg-white shadow">
-          <div className="p-5">
-            <div className="flex items-center">
-              <div className="flex-shrink-0">
-                <svg
-                  className="h-6 w-6 text-gray-400"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  strokeWidth="1.5"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                  />
-                </svg>
-              </div>
-              <div className="ml-5 w-0 flex-1">
-                <dl>
-                  <dt className="text-sm font-medium text-gray-500 truncate">
-                    Total Pengeluaran Gaji
-                  </dt>
-                  <dd>
-                    <div className="text-lg font-medium text-gray-900">
-                      {isLoading ? (
-                        "Memuat..."
-                      ) : (
-                        <div className="flex items-center">
-                          <span>
-                            {new Intl.NumberFormat("id-ID", {
-                              style: "currency",
-                              currency: "IDR",
-                              maximumFractionDigits: 0,
-                            }).format(stats.totalSalaryExpense)}
-                          </span>
-                          {isRefreshing && (
-                            <span className="ml-2 h-2 w-2 rounded-full bg-blue-500 animate-pulse" title="Memperbarui data"></span>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </dd>
-                </dl>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
 
-      {/* Quick Actions */}
-      <DashboardNavigation userRole="ADMIN" />
-      <div className="overflow-hidden bg-white shadow sm:rounded-lg">
-        <div className="px-4 py-5 sm:p-6">
-          <h3 className="text-lg font-medium leading-6 text-gray-900">
-            Tindakan Cepat
-          </h3>
-          <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <Link
-              href="/dashboard/employees"
-              className="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-            >
-              Kelola Karyawan
-            </Link>
-            <Link
-              href="/reports"
-              className="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-            >
-              Lihat Laporan
-            </Link>
-            <Link
-              href="/payroll"
-              className="inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-            >
-              Proses Penggajian
-            </Link>
+      {/* Stats Grid */}
+      <div className="grid grid-cols-2 gap-3 sm:gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        {cards.map((card) => (
+          <div
+            key={card.title}
+            className="relative overflow-hidden rounded-2xl bg-white p-4 sm:p-6 shadow-sm ring-1 ring-gray-100 transition-all duration-200 hover:shadow-md hover:ring-blue-100 group"
+          >
+            <div className={`absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity`}>
+              <card.icon className={`h-16 w-16 sm:h-24 sm:w-24 text-${card.color}-600 transform rotate-12 translate-x-4 -translate-y-4`} />
+            </div>
+            
+            <div className="relative">
+              <div className={`
+                inline-flex p-2 sm:p-3 rounded-xl mb-3 sm:mb-4
+                bg-${card.color}-50 text-${card.color}-600 ring-1 ring-${card.color}-100
+              `}>
+                <card.icon className="h-5 w-5 sm:h-6 sm:w-6" aria-hidden="true" />
+              </div>
+              
+              <p className="text-xs sm:text-sm font-medium text-gray-500 truncate">{card.title}</p>
+              <p className="mt-1 sm:mt-2 text-lg sm:text-2xl font-bold text-gray-900 tracking-tight">
+                {isLoading ? (
+                  <span className="inline-block w-16 sm:w-24 h-6 sm:h-8 bg-gray-100 rounded animate-pulse"></span>
+                ) : (
+                  card.value
+                )}
+              </p>
+              
+              <div className="mt-2 sm:mt-4 flex items-center text-xs">
+                {card.changeType === 'positive' && <ArrowUpRight className="h-3.5 w-3.5 text-green-500 mr-1" />}
+                {card.changeType === 'negative' && <ArrowDownRight className="h-3.5 w-3.5 text-red-500 mr-1" />}
+                <span className={`
+                  font-medium
+                  ${card.changeType === 'positive' ? 'text-green-600' : ''}
+                  ${card.changeType === 'negative' ? 'text-red-600' : ''}
+                  ${card.changeType === 'neutral' ? 'text-gray-600' : ''}
+                `}>
+                  {card.change}
+                </span>
+                <span className="ml-2 text-gray-400">{card.description}</span>
+              </div>
+            </div>
           </div>
-        </div>
+        ))}
       </div>
 
-      {/* Recent Activity */}
-      <div className="overflow-hidden bg-white shadow sm:rounded-md">
-        <div className="px-4 py-5 sm:px-6 flex justify-between items-center">
-          <h3 className="text-lg font-medium leading-6 text-gray-900">
-            Aktivitas Terbaru
-          </h3>
-          <div className="flex items-center space-x-2">
-            {isRefreshing && (
-              <span className="text-xs text-gray-500">Memperbarui...</span>
-            )}
-            <button 
-              onClick={triggerActivityUpdate}
-              className="inline-flex items-center rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-            >
-              <svg className="h-4 w-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              Perbarui
-            </button>
-          </div>
-        </div>
-        {isLoading ? (
-          <div className="px-4 py-5 sm:p-6 text-center">Memuat aktivitas terbaru...</div>
-        ) : (
-          <ul className="divide-y divide-gray-200">
-            {recentActivities.length > 0 ? (
-              recentActivities.map((activity) => (
-                <li key={activity.id || `activity-${activity.employeeName}-${activity.time}`}>
-                  <div className="px-4 py-4 sm:px-6">
-                    <div className="flex items-center justify-between">
-                      <p className="truncate text-sm font-medium text-indigo-600">
-                        {activity.employeeName} {activity.action}
-                      </p>
-                      <div className="ml-2 flex flex-shrink-0">
-                        <p className={`inline-flex rounded-full px-2 text-xs font-semibold leading-5 
-                          ${activity.status === "PRESENT" ? "bg-green-100 text-green-800" :
-                            activity.status === "ABSENT" ? "bg-red-100 text-red-800" :
-                            activity.status === "LATE" ? "bg-yellow-100 text-yellow-800" : 
-                            activity.status === "LEAVE" ? "bg-blue-100 text-blue-800" :
-                            "bg-gray-100 text-gray-800"}`}>
-                          {activity.time}
-                        </p>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Recent Activity Feed */}
+        <div className="lg:col-span-2 space-y-6">
+          <div className="bg-white rounded-2xl shadow-sm ring-1 ring-gray-100 overflow-hidden">
+            <div className="p-4 sm:p-6 border-b border-gray-50 flex items-center justify-between">
+              <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <Clock className="h-5 w-5 text-blue-500" />
+                Aktivitas Terbaru
+              </h3>
+              <Link href="/attendance" className="text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline">
+                Lihat Semua
+              </Link>
+            </div>
+            <div className="p-0">
+              {isLoading ? (
+                <div className="p-4 sm:p-6 space-y-4">
+                  {[...Array(5)].map((_, i) => (
+                    <div key={i} className="flex gap-4 animate-pulse">
+                      <div className="h-10 w-10 bg-gray-100 rounded-full flex-shrink-0"></div>
+                      <div className="flex-1 space-y-2">
+                        <div className="h-4 bg-gray-100 rounded w-3/4"></div>
+                        <div className="h-3 bg-gray-100 rounded w-1/2"></div>
                       </div>
                     </div>
-                  </div>
-                </li>
-              ))
-            ) : (
-              <li>
-                <div className="px-4 py-4 sm:px-6 text-center">
-                  Tidak ada aktivitas terbaru
+                  ))}
                 </div>
-              </li>
-            )}
-          </ul>
-        )}
+              ) : recentActivities.length > 0 ? (
+                <ul className="divide-y divide-gray-50">
+                  {recentActivities.map((activity) => (
+                    <li key={activity.id} className="p-4 hover:bg-gray-50 transition-colors group">
+                      <div className="flex items-start gap-4">
+                        <div className={`
+                          mt-1 flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center ring-2 ring-white shadow-sm
+                          ${activity.status === 'LATE' ? 'bg-orange-100 text-orange-600' : 
+                            activity.status === 'ABSENT' ? 'bg-red-100 text-red-600' : 
+                            'bg-blue-100 text-blue-600'}
+                        `}>
+                          {activity.status === 'LATE' ? <AlertCircle className="h-5 w-5" /> :
+                           activity.status === 'ABSENT' ? <XCircle className="h-5 w-5" /> :
+                           <CheckCircle2 className="h-5 w-5" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900 group-hover:text-blue-600 transition-colors">
+                            {activity.employeeName}
+                          </p>
+                          <p className="text-sm text-gray-500 truncate">
+                            {activity.action}
+                          </p>
+                        </div>
+                        <div className="text-xs font-medium text-gray-400 bg-gray-50 px-2.5 py-1 rounded-full whitespace-nowrap">
+                          {activity.time}
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="p-12 text-center">
+                  <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-50 mb-4">
+                    <Clock className="h-8 w-8 text-gray-300" />
+                  </div>
+                  <p className="text-gray-500 font-medium">Belum ada aktivitas hari ini</p>
+                  <p className="text-sm text-gray-400 mt-1">Aktivitas absensi karyawan akan muncul di sini</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Quick Actions & Side Widgets */}
+        <div className="space-y-6">
+          {/* Quick Actions */}
+          <div className="bg-white rounded-2xl shadow-sm ring-1 ring-gray-100 p-4 sm:p-6">
+            <h3 className="text-lg font-bold text-gray-900 mb-4">Aksi Cepat</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <Link 
+                href="/dashboard/employees/new" 
+                className="flex flex-col items-center justify-center p-3 sm:p-4 rounded-xl border border-gray-100 bg-gray-50 hover:bg-blue-50 hover:border-blue-100 hover:text-blue-600 transition-all group active:scale-95"
+              >
+                <UserPlus className="h-5 w-5 sm:h-6 sm:w-6 text-gray-400 group-hover:text-blue-500 mb-2 transition-colors" />
+                <span className="text-[10px] sm:text-xs font-medium text-center">Tambah Karyawan</span>
+              </Link>
+              <Link 
+                href="/payroll/generate" 
+                className="flex flex-col items-center justify-center p-3 sm:p-4 rounded-xl border border-gray-100 bg-gray-50 hover:bg-green-50 hover:border-green-100 hover:text-green-600 transition-all group active:scale-95"
+              >
+                <CreditCard className="h-5 w-5 sm:h-6 sm:w-6 text-gray-400 group-hover:text-green-500 mb-2 transition-colors" />
+                <span className="text-[10px] sm:text-xs font-medium text-center">Buat Payroll</span>
+              </Link>
+              <Link 
+                href="/reports" 
+                className="flex flex-col items-center justify-center p-3 sm:p-4 rounded-xl border border-gray-100 bg-gray-50 hover:bg-purple-50 hover:border-purple-100 hover:text-purple-600 transition-all group active:scale-95"
+              >
+                <FileText className="h-5 w-5 sm:h-6 sm:w-6 text-gray-400 group-hover:text-purple-500 mb-2 transition-colors" />
+                <span className="text-[10px] sm:text-xs font-medium text-center">Laporan Bulanan</span>
+              </Link>
+              <Link 
+                href="/leave" 
+                className="flex flex-col items-center justify-center p-3 sm:p-4 rounded-xl border border-gray-100 bg-gray-50 hover:bg-orange-50 hover:border-orange-100 hover:text-orange-600 transition-all group active:scale-95"
+              >
+                <CalendarDays className="h-5 w-5 sm:h-6 sm:w-6 text-gray-400 group-hover:text-orange-500 mb-2 transition-colors" />
+                <span className="text-[10px] sm:text-xs font-medium text-center">Kelola Cuti</span>
+              </Link>
+            </div>
+          </div>
+
+          {/* Mini Calendar or Summary */}
+          <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl shadow-lg p-4 sm:p-6 text-white relative overflow-hidden">
+             {/* Decorative circles */}
+             <div className="absolute top-0 right-0 -mr-6 -mt-6 w-24 h-24 rounded-full bg-white/10 blur-xl pointer-events-none"></div>
+             <div className="absolute bottom-0 left-0 -ml-6 -mb-6 w-20 h-20 rounded-full bg-black/10 blur-xl pointer-events-none"></div>
+             
+             <h3 className="text-lg font-bold mb-1 relative z-10">Info Penting</h3>
+             <p className="text-blue-100 text-sm mb-4 relative z-10">
+               Pastikan untuk memeriksa persetujuan lembur yang tertunda sebelum akhir bulan.
+             </p>
+             
+             <Link 
+               href="/approvals/overtime"
+               className="inline-flex items-center justify-center px-4 py-2 bg-white text-blue-600 rounded-lg text-sm font-semibold hover:bg-blue-50 transition-colors w-full relative z-10"
+             >
+               Cek Persetujuan
+             </Link>
+          </div>
+        </div>
       </div>
     </div>
   );

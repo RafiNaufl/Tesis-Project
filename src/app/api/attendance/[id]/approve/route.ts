@@ -79,59 +79,62 @@ export async function POST(
       }
     }
 
-    const updatedAttendance = await approveOvertime(attendanceId, session.user.id);
+    const { attendance: updatedAttendance, wasUpdated } = await approveOvertime(attendanceId, session.user.id);
 
-    await prisma.approvalLog.create({
-      data: {
-        attendanceId,
-        action: "APPROVE",
-        actorUserId: session.user.id,
-        note: note || null,
-      },
-    });
+    // Only create logs and notifications if not already approved to prevent duplicates
+    if (wasUpdated) {
+      await prisma.approvalLog.create({
+        data: {
+          attendanceId,
+          action: "APPROVE",
+          actorUserId: session.user.id,
+          note: note || null,
+        },
+      });
 
-    // Audit log
-    await prisma.attendanceAuditLog.create({
-      data: {
-        attendanceId,
-        userId: session.user.id,
-        action: "OVERTIME_APPROVED",
-        oldValue: { isOvertimeApproved: attendance.isOvertimeApproved },
-        newValue: { isOvertimeApproved: true },
-      },
-    });
-    
-    // Kirim notifikasi ke karyawan
-    if (attendance.employee?.user) {
-      let message = "";
+      // Audit log
+      await prisma.attendanceAuditLog.create({
+        data: {
+          attendanceId,
+          userId: session.user.id,
+          action: "OVERTIME_APPROVED",
+          oldValue: { isOvertimeApproved: false },
+          newValue: { isOvertimeApproved: true },
+        },
+      });
       
-      if (attendance.isSundayWork) {
-        message = "Permintaan bekerja pada hari Minggu telah disetujui.";
-      } else {
-        message = "Permintaan lembur telah disetujui.";
+      // Kirim notifikasi ke karyawan
+      if (attendance.employee?.user) {
+        let message = "";
+        
+        if (attendance.isSundayWork) {
+          message = "Permintaan bekerja pada hari Minggu telah disetujui.";
+        } else {
+          message = "Permintaan lembur telah disetujui.";
+        }
+        
+        await createNotification(
+          attendance.employee.user.id,
+          "Persetujuan Diterima",
+          message,
+          "success"
+        );
       }
-      
-      await createNotification(
-        attendance.employee.user.id,
-        "Persetujuan Diterima",
-        message,
-        "success"
+
+      // Notifikasi ke semua pihak terkait (ADMIN, MANAGER, FOREMAN, ASSISTANT_FOREMAN)
+      const approverUsers = await prisma.user.findMany({
+        where: { role: { in: ["ADMIN", "MANAGER", "FOREMAN", "ASSISTANT_FOREMAN"] } },
+        select: { id: true, name: true, role: true },
+      });
+      const actor = approverUsers.find(u => u.id === session.user.id);
+      const employeeName = attendance.employee?.user?.name || "Karyawan";
+      const broadcastMsg = `Status persetujuan lembur untuk ${employeeName} diubah menjadi Disetujui oleh ${actor?.name || "-"} (${actor?.role || "-"}).`;
+      await Promise.all(
+        approverUsers
+          .filter(u => u.id !== session.user.id)
+          .map(u => createNotification(u.id, "Pembaruan Persetujuan Lembur", broadcastMsg, "info"))
       );
     }
-
-    // Notifikasi ke semua pihak terkait (ADMIN, MANAGER, FOREMAN, ASSISTANT_FOREMAN)
-    const approverUsers = await prisma.user.findMany({
-      where: { role: { in: ["ADMIN", "MANAGER", "FOREMAN", "ASSISTANT_FOREMAN"] } },
-      select: { id: true, name: true, role: true },
-    });
-    const actor = approverUsers.find(u => u.id === session.user.id);
-    const employeeName = attendance.employee?.user?.name || "Karyawan";
-    const broadcastMsg = `Status persetujuan lembur untuk ${employeeName} diubah menjadi Disetujui oleh ${actor?.name || "-"} (${actor?.role || "-"}).`;
-    await Promise.all(
-      approverUsers
-        .filter(u => u.id !== session.user.id)
-        .map(u => createNotification(u.id, "Pembaruan Persetujuan Lembur", broadcastMsg, "info"))
-    );
     
     return NextResponse.json(updatedAttendance);
   } catch (error: any) {

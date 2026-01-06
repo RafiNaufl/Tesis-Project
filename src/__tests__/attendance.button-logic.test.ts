@@ -1,6 +1,6 @@
-import { getAttendanceActionState } from '@/components/attendance/AttendanceManagement';
+import { getAttendanceActionState, AttendanceRecord } from '@/components/attendance/AttendanceManagement';
 
-const makeRecord = (overrides: Partial<any> = {}) => ({
+const makeRecord = (overrides: Partial<AttendanceRecord> = {}): AttendanceRecord => ({
   id: 'id',
   date: new Date(),
   checkIn: null,
@@ -17,7 +17,7 @@ const makeRecord = (overrides: Partial<any> = {}) => ({
   isSundayWorkApproved: false,
   approvedAt: null,
   ...overrides,
-});
+} as AttendanceRecord);
 
 describe('Attendance action state logic', () => {
   test('shows check-in when no record', () => {

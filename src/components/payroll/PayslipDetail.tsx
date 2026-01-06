@@ -43,6 +43,10 @@ interface PayrollDetail {
     checkOut: string | null;
     notes: string | null;
   }[];
+  allowances?: {
+    type: string;
+    amount: number;
+  }[];
 }
 
 interface DeductionBreakdown {
@@ -311,10 +315,27 @@ export default function PayslipDetail({ payrollId, onClose }: PayslipDetailProps
                   <span className="text-gray-700">Gaji Pokok</span>
                   <span className="font-medium text-gray-900">{formatCurrency(payroll.baseSalary)}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-700">Total Tunjangan</span>
-                  <span className="font-medium text-gray-900">{formatCurrency(payroll.totalAllowances)}</span>
-                </div>
+                {payroll.allowances && payroll.allowances.length > 0 ? (
+                  payroll.allowances.map((allowance, index) => (
+                    <div key={index} className="flex justify-between">
+                      <span className="text-gray-700">
+                        {allowance.type === "NON_SHIFT_MEAL_ALLOWANCE" ? "Tunjangan Makan" :
+                         allowance.type === "NON_SHIFT_TRANSPORT_ALLOWANCE" ? "Tunjangan Transport" :
+                         allowance.type === "SHIFT_FIXED_ALLOWANCE" ? "Tunjangan Shift" :
+                         allowance.type.startsWith("TUNJANGAN_JABATAN") ? "Tunjangan Jabatan" :
+                         "Tunjangan Lainnya"}
+                      </span>
+                      <span className="font-medium text-gray-900">{formatCurrency(allowance.amount)}</span>
+                    </div>
+                  ))
+                ) : (
+                  payroll.totalAllowances > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-700">Total Tunjangan</span>
+                      <span className="font-medium text-gray-900">{formatCurrency(payroll.totalAllowances)}</span>
+                    </div>
+                  )
+                )}
                 <div className="flex justify-between">
                   <span className="text-gray-700">Lembur</span>
                   <span className="font-medium text-gray-900">{formatCurrency(payroll.overtimeAmount)}</span>

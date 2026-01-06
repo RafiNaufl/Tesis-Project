@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { createPayslipGeneratedNotification } from "@/lib/notification";
-import { ensureAttendanceRecords } from "@/lib/attendance";
+import { generateMonthlyPayroll } from "@/lib/payroll";
 
 // POST: Generate payroll for employees (admin only)
 export async function POST(request: NextRequest) {
@@ -81,128 +80,14 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Define date range for the specified month and year
-    const startDate = new Date(payrollYear, payrollMonth - 1, 1);
-    const endDate = new Date(payrollYear, payrollMonth, 0);
-    
     // Generate payroll for each employee
     const results = [];
     const errors = [];
     
     for (const employee of employees) {
       try {
-        // Check if payroll already exists for this employee, month, and year
-        const existingPayroll = await db.payroll.findUnique({
-          where: {
-            employeeId_month_year: {
-              employeeId: employee.id,
-              month: payrollMonth,
-              year: payrollYear,
-            },
-          },
-        });
-        
-        if (existingPayroll) {
-          errors.push({
-            employeeId: employee.employeeId,
-            name: employee.user.name,
-            error: "Payroll already exists for this month and year",
-          });
-          continue;
-        }
-
-        // Pastikan record absensi lengkap (isi kekosongan dengan ABSENT)
-        await ensureAttendanceRecords(employee.id, startDate, endDate);
-        
-        // Get attendance records for the employee in the specified month
-        const attendanceRecords = await db.attendance.findMany({
-          where: {
-            employeeId: employee.id,
-            date: {
-              gte: startDate,
-              lte: endDate,
-            },
-          },
-        });
-        
-        // Count days present/absent
-        const daysPresent = attendanceRecords.filter(record => 
-          record.status === "PRESENT" || record.status === "LATE" || record.status === "HALFDAY"
-        ).length;
-        
-        // Hitung hari tidak hadir berdasarkan record ABSENT yang sudah digenerate
-        const daysAbsent = attendanceRecords.filter(record => 
-          record.status === "ABSENT"
-        ).length;
-        
-        // Calculate overtime hours
-        const overtimeHours = attendanceRecords.reduce((total, record) => {
-          if (record.checkIn && record.checkOut) {
-            const checkInTime = new Date(record.checkIn).getTime();
-            const checkOutTime = new Date(record.checkOut).getTime();
-            const hoursWorked = (checkOutTime - checkInTime) / (1000 * 60 * 60);
-            
-            // Consider any time over 8 hours as overtime
-            return total + Math.max(0, hoursWorked - 8);
-          }
-          return total;
-        }, 0);
-        
-        // Calculate overtime amount (assuming overtime rate is 1.5x hourly rate)
-        const hourlyRate = employee.basicSalary / (22 * 8); // Assuming 22 working days per month, 8 hours per day
-        const overtimeAmount = overtimeHours * hourlyRate * 1.5;
-        
-        // Get allowances for the employee in the specified month and year
-        const allowances = await db.allowance.findMany({
-          where: {
-            employeeId: employee.id,
-            month: payrollMonth,
-            year: payrollYear,
-          },
-        });
-        
-        const totalAllowances = allowances.reduce((total, allowance) => total + Number(allowance.amount), 0);
-        
-        // Get deductions for the employee in the specified month and year
-        const deductions = await db.deduction.findMany({
-          where: {
-            employeeId: employee.id,
-            month: payrollMonth,
-            year: payrollYear,
-          },
-        });
-        
-        const totalDeductions = deductions.reduce((total, deduction) => total + Number(deduction.amount), 0);
-        
-        // Calculate net salary
-        const baseSalary = employee.basicSalary;
-        const netSalary = baseSalary + totalAllowances + overtimeAmount - totalDeductions;
-        
-        // Create payroll record
-        const payroll = await db.payroll.create({
-          data: {
-            employeeId: employee.id,
-            month: payrollMonth,
-            year: payrollYear,
-            baseSalary,
-            totalAllowances,
-            totalDeductions,
-            netSalary,
-            daysPresent,
-            daysAbsent,
-            overtimeHours,
-            overtimeAmount,
-            status: "PENDING",
-          },
-        });
-        
-        // Kirim notifikasi ke karyawan bahwa slip gaji baru telah dibuat menggunakan layanan notifikasi
-        try {
-          await createPayslipGeneratedNotification(employee.id, payrollMonth, payrollYear);
-        } catch (notifError) {
-          console.error(`Error creating notification for employee ${employee.employeeId}:`, notifError);
-          // Tidak menghentikan proses jika notifikasi gagal
-        }
+        // Use centralized payroll logic from lib/payroll
+        const payroll = await generateMonthlyPayroll(employee.id, payrollMonth, payrollYear);
         
         results.push({
           employeeId: employee.employeeId,
@@ -210,13 +95,22 @@ export async function POST(request: NextRequest) {
           payrollId: payroll.id,
           netSalary: payroll.netSalary,
         });
-      } catch (error) {
-        console.error(`Error generating payroll for employee ${employee.employeeId}:`, error);
-        errors.push({
-          employeeId: employee.employeeId,
-          name: employee.user.name,
-          error: "Internal error during payroll generation",
-        });
+      } catch (error: any) {
+        // If error is "Slip gaji bulan ini sudah dibuat", it's a specific case
+        if (error.message && error.message.includes("sudah dibuat")) {
+           errors.push({
+            employeeId: employee.employeeId,
+            name: employee.user.name,
+            error: "Payroll already exists for this month and year",
+          });
+        } else {
+          console.error(`Error generating payroll for employee ${employee.employeeId}:`, error);
+          errors.push({
+            employeeId: employee.employeeId,
+            name: employee.user.name,
+            error: error.message || "Internal error during payroll generation",
+          });
+        }
       }
     }
     

@@ -301,15 +301,10 @@ export const updateAdvanceStatus = async (
   }
 ) => {
   try {
-    const { status, rejectionReason, deductionMonth, deductionYear } = data;
+  const { status, rejectionReason } = data;
     
     if (!status || !['APPROVED', 'REJECTED'].includes(status)) {
       throw new Error("Invalid status. Must be APPROVED or REJECTED");
-    }
-    
-    // Validate deduction date if status is APPROVED
-    if (status === 'APPROVED' && (!deductionMonth || !deductionYear)) {
-      throw new Error("Deduction month and year are required for approval");
     }
     
     // Check if advance exists
