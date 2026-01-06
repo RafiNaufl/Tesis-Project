@@ -24,52 +24,67 @@ export const authOptions: NextAuthOptions = {
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
-        if (!credentials?.identifier || !credentials?.password) {
+        console.log("Authorize called with:", { ...credentials, password: "***" });
+        
+        const identifier = credentials?.identifier || (credentials as any)?.email;
+        const password = credentials?.password;
+
+        if (!identifier || !password) {
+          console.log("Missing identifier or password");
           return null;
         }
 
-        const identifier = credentials.identifier.trim();
-        const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier);
+        const trimmedIdentifier = identifier.trim();
+        const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedIdentifier);
 
         let user = null as any;
 
-        if (isEmail) {
-          user = await prisma.user.findFirst({
-            where: { email: { equals: identifier, mode: "insensitive" } },
-            include: { employee: true },
-          });
-        } else {
-          const employee = await prisma.employee.findFirst({
-            where: { contactNumber: identifier },
-            select: { userId: true },
-          });
-          if (employee?.userId) {
-            user = await prisma.user.findUnique({ 
-              where: { id: employee.userId },
+        try {
+          if (isEmail) {
+            user = await prisma.user.findFirst({
+              where: { email: { equals: trimmedIdentifier, mode: "insensitive" } },
               include: { employee: true },
             });
+          } else {
+            const employee = await prisma.employee.findFirst({
+              where: { contactNumber: trimmedIdentifier },
+              select: { userId: true },
+            });
+            if (employee?.userId) {
+              user = await prisma.user.findUnique({ 
+                where: { id: employee.userId },
+                include: { employee: true },
+              });
+            }
           }
-        }
 
-        if (!user) {
+          if (!user) {
+            console.log("User not found for identifier:", trimmedIdentifier);
+            return null;
+          }
+
+          const isPasswordValid = await compare(password, user.hashedPassword);
+          if (!isPasswordValid) {
+            console.log("Invalid password for user:", user.email);
+            return null;
+          }
+
+          console.log("User authorized successfully:", user.email);
+
+          return {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            role: user.role,
+            image: user.profileImageUrl || null,
+            position: user.employee?.position || null,
+            division: user.employee?.division || null,
+            organization: user.employee?.organization || null,
+          };
+        } catch (error) {
+          console.error("Authorization error:", error);
           return null;
         }
-
-        const isPasswordValid = await compare(credentials.password, user.hashedPassword);
-        if (!isPasswordValid) {
-          return null;
-        }
-
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          role: user.role,
-          image: user.profileImageUrl || null,
-          position: user.employee?.position || null,
-          division: user.employee?.division || null,
-          organization: user.employee?.organization || null,
-        };
       },
     }),
   ],
