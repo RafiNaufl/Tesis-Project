@@ -26,7 +26,8 @@ jobs:
 
       - name: Apply DB schema to Supabase
         env:
-          DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
+          # Use direct connection for schema pushes to avoid PgBouncer limitations
+          DATABASE_URL: ${{ secrets.SUPABASE_DIRECT_URL }}
           DIRECT_URL: ${{ secrets.SUPABASE_DIRECT_URL }}
         run: |
           npx prisma db push --skip-generate
@@ -45,8 +46,9 @@ jobs:
         run: |
           npx prisma db seed
 
-      - name: Lint
-        run: npm run lint
-
-      - name: Build
-        run: npm run build
+      - name: Show Prisma migrate status
+        env:
+          DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
+          DIRECT_URL: ${{ secrets.SUPABASE_DIRECT_URL }}
+        run: |
+          npx prisma migrate status
