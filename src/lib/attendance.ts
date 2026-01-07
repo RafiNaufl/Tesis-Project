@@ -8,6 +8,7 @@ import {
   getAttendanceStatus as getAttendanceStatusRule,
   isWorkday,
   isSunday,
+  toWIB,
 } from "./attendanceRules";
 import { calculateOvertimeDuration } from "./overtimeCalculator";
 
@@ -42,7 +43,7 @@ export const ensureAttendanceRecords = async (
   let currentDate = new Date(startDate);
   // Clone endDate to avoid mutation issues if passed by reference (though unlikely here)
   const finalDate = new Date(endDate);
-  const now = new Date();
+  const now = toWIB(new Date());
   
   while (currentDate <= finalDate) {
     // Skip if future date
@@ -93,7 +94,7 @@ export const checkIn = async (
   longitude?: number
 ) => {
   const now = new Date();
-  const date = startOfDay(now);
+  const date = startOfDay(toWIB(now));
 
   // Cek apakah sudah ada absen hari ini
   const existingAttendance = await prisma.attendance.findUnique({
@@ -258,7 +259,7 @@ export const startOvertime = async (
   reason?: string
 ) => {
   const now = new Date();
-  const date = startOfDay(now);
+  const date = startOfDay(toWIB(now));
 
   const attendance = await prisma.attendance.findUnique({
     where: {

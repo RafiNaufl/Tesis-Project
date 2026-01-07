@@ -4,7 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
  
 import { checkIn, checkOut, getMonthlyAttendanceReport, startOvertime, endOvertime } from "@/lib/attendance";
-import { getWorkdayType, WorkdayType, getWorkEndTime, isOvertimeCheckOut, isOvertimeCheckIn } from "@/lib/attendanceRules";
+import { getWorkdayType, WorkdayType, getWorkEndTime, isOvertimeCheckOut, isOvertimeCheckIn, toWIB } from "@/lib/attendanceRules";
 import { calculateOvertimeDuration } from "@/lib/overtimeCalculator";
 import { Status } from "@/types/enums";
 import { 
@@ -591,7 +591,7 @@ export async function POST(req: NextRequest) {
       // Validasi berdasarkan aturan kehadiran dan jam kerja
       if (action === "check-in") {
         // Cek apakah ini pengajuan ulang setelah ditolak
-        const today = new Date();
+        const today = new Date(toWIB(new Date()));
         today.setHours(0, 0, 0, 0);
         const existingAttendance = await prisma.attendance.findFirst({
           where: {
@@ -671,9 +671,9 @@ export async function POST(req: NextRequest) {
         return response;
       } else if (action === "check-out") {
         // Cek apakah karyawan melakukan check-in terlebih dahulu
-        const todayStart = new Date(now);
+        const todayStart = new Date(toWIB(now));
         todayStart.setHours(0, 0, 0, 0);
-        const todayEnd = new Date(now);
+        const todayEnd = new Date(toWIB(now));
         todayEnd.setHours(23, 59, 59, 999);
         
         const todayAttendance = await prisma.attendance.findFirst({
@@ -847,9 +847,9 @@ export async function POST(req: NextRequest) {
           );
         }
       } else if (action === "overtime-start") {
-        const todayStart = new Date(now);
+        const todayStart = new Date(toWIB(now));
         todayStart.setHours(0, 0, 0, 0);
-        const todayEnd = new Date(now);
+        const todayEnd = new Date(toWIB(now));
         todayEnd.setHours(23, 59, 59, 999);
 
         const todayAttendance = await prisma.attendance.findFirst({
@@ -1002,7 +1002,7 @@ export async function POST(req: NextRequest) {
         // Jika error tentang double check-in, dapatkan data kehadiran hari ini
         if (error.message === "Anda sudah melakukan check-in hari ini" || 
             error.message === "Anda sudah melakukan check-out hari ini") {
-          const today = new Date();
+          const today = new Date(toWIB(new Date()));
           today.setHours(0, 0, 0, 0);
           const todayEnd = new Date(today);
           todayEnd.setHours(23, 59, 59, 999);

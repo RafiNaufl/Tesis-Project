@@ -38,7 +38,7 @@ export const WORK_HOURS = {
 
 export const LATE_PENALTY = 30000; // Denda keterlambatan Rp 30.000
 
-function toWIB(date: Date): Date {
+export function toWIB(date: Date): Date {
   const utcTs = date.getTime() + date.getTimezoneOffset() * 60000;
   const wibTs = utcTs + 7 * 60 * 60000;
   return new Date(wibTs);
