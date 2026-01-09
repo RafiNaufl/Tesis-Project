@@ -764,9 +764,30 @@ export default function SoftLoanManagement({ embedded = false }: { embedded?: bo
                         <StatusBadge status={loan.status} />
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <button className="text-gray-400 hover:text-indigo-600 transition-colors p-2 hover:bg-indigo-50 rounded-lg">
-                          <MoreHorizontal className="w-5 h-5" />
-                        </button>
+                        {isAdmin && loan.status === 'PENDING' ? (
+                          <div className="flex items-center justify-end gap-2">
+                            <button 
+                              onClick={() => initiateApproval(loan.id, 'APPROVED')}
+                              disabled={_processingId === loan.id}
+                              className={`p-2 rounded-lg text-emerald-600 hover:bg-emerald-50 transition-colors ${_processingId === loan.id ? 'opacity-50 cursor-not-allowed' : ''}`}
+                              title="Setujui"
+                            >
+                              {_processingId === loan.id ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
+                            </button>
+                            <button 
+                              onClick={() => initiateApproval(loan.id, 'REJECTED')}
+                              disabled={_processingId === loan.id}
+                              className={`p-2 rounded-lg text-rose-600 hover:bg-rose-50 transition-colors ${_processingId === loan.id ? 'opacity-50 cursor-not-allowed' : ''}`}
+                              title="Tolak"
+                            >
+                              {_processingId === loan.id ? <Loader2 className="w-5 h-5 animate-spin" /> : <XCircle className="w-5 h-5" />}
+                            </button>
+                          </div>
+                        ) : (
+                          <button className="text-gray-400 hover:text-indigo-600 transition-colors p-2 hover:bg-indigo-50 rounded-lg">
+                            <MoreHorizontal className="w-5 h-5" />
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))

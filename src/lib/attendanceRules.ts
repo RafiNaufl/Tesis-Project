@@ -211,15 +211,19 @@ export function isOvertimeCheckIn(checkInTime: Date, date: Date): boolean {
   // Jika hari Minggu, selalu dihitung sebagai lembur
   if (workdayType === WorkdayType.SUNDAY) return true;
   
-  // Parse waktu selesai kerja untuk tanggal tersebut
+  // Konversi ke WIB untuk perhitungan yang akurat
+  const dateWIB = toWIB(date);
+  const checkInTimeWIB = toWIB(checkInTime);
+  
+  // Parse waktu selesai kerja untuk tanggal tersebut (dalam WIB)
   const workEndTime = parse(
-    `${format(date, "yyyy-MM-dd")} ${getWorkEndTime(workdayType)}`, 
+    `${format(dateWIB, "yyyy-MM-dd")} ${getWorkEndTime(workdayType)}`, 
     "yyyy-MM-dd HH:mm", 
     new Date()
   );
   
   // Check-in setelah jam kerja selesai dianggap lembur
-  return isAfter(checkInTime, workEndTime);
+  return isAfter(checkInTimeWIB, workEndTime);
 }
 
 /**
@@ -234,15 +238,19 @@ export function isOvertimeCheckOut(checkOutTime: Date, date: Date): boolean {
   // Jika hari Minggu, selalu dihitung sebagai lembur
   if (workdayType === WorkdayType.SUNDAY) return true;
   
-  // Parse waktu selesai kerja untuk tanggal tersebut
+  // Konversi ke WIB untuk perhitungan yang akurat
+  const dateWIB = toWIB(date);
+  const checkOutTimeWIB = toWIB(checkOutTime);
+  
+  // Parse waktu selesai kerja untuk tanggal tersebut (dalam WIB)
   const workEndTime = parse(
-    `${format(date, "yyyy-MM-dd")} ${getWorkEndTime(workdayType)}`, 
+    `${format(dateWIB, "yyyy-MM-dd")} ${getWorkEndTime(workdayType)}`, 
     "yyyy-MM-dd HH:mm", 
     new Date()
   );
   
   // Check-out setelah jam kerja selesai dianggap lembur
-  return isAfter(checkOutTime, workEndTime);
+  return isAfter(checkOutTimeWIB, workEndTime);
 }
 
 /**

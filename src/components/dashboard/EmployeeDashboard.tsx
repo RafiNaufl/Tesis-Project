@@ -275,7 +275,8 @@ export default function EmployeeDashboard() {
 
       // Check for late status on load/update
       // Jika terlambat dan belum mengajukan alasan, buka modal
-      if ((todayRecord.status === "LATE" || todayRecord.status === "ABSENT") && !todayRecord.lateSubmittedAt) {
+      // Pastikan belum checkout (jika sudah checkout, tidak perlu munculkan modal lagi)
+      if ((todayRecord.status === "LATE" || todayRecord.status === "ABSENT") && !todayRecord.lateSubmittedAt && !todayRecord.checkOut) {
         setIsLateModalOpen(true);
       }
     } else {

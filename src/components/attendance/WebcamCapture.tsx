@@ -21,16 +21,19 @@ const WebcamCapture: React.FC<WebcamCaptureProps> = ({ onCapture, onCancel }) =>
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [isNative, setIsNative] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [cameraRetryCount, setCameraRetryCount] = useState<number>(0);
 
   useEffect(() => {
     setIsNative(Capacitor.isNativePlatform());
+    // Ensure front camera is set as default
+    setFacingMode('user');
     setIsLoading(false);
   }, []);
 
   const videoConstraints = {
     width: 320,
     height: 320,
-    facingMode: facingMode,
+    facingMode: { exact: facingMode },
   };
 
   const captureNative = useCallback(async () => {
@@ -89,6 +92,21 @@ const WebcamCapture: React.FC<WebcamCaptureProps> = ({ onCapture, onCancel }) =>
     }
   }, [isNative, isCaptureEnabled, isLoading, captureNative]);
 
+  // Force reinitialize webcam when facingMode changes for web
+  useEffect(() => {
+    if (!isNative && webcamRef.current && isCaptureEnabled) {
+      // Small delay to ensure constraints are applied
+      const timer = setTimeout(() => {
+        if (webcamRef.current) {
+          // This will trigger re-render with new constraints
+          setIsCaptureEnabled(false);
+          setTimeout(() => setIsCaptureEnabled(true), 100);
+        }
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [facingMode, isNative, isCaptureEnabled]);
+
   const retake = () => {
     setCapturedImage(null);
     setIsCaptureEnabled(true);
@@ -116,6 +134,19 @@ const WebcamCapture: React.FC<WebcamCaptureProps> = ({ onCapture, onCancel }) =>
 
   const handlePermissionDenied = () => {
     setError('Akses kamera ditolak. Silakan berikan izin kamera untuk menggunakan fitur ini.');
+  };
+
+  const handleCameraError = (error: string) => {
+    setError(error);
+    // If camera error occurs and we're trying to use front camera, try switching
+    if (facingMode === 'user' && cameraRetryCount < 2) {
+      setTimeout(() => {
+        setCameraRetryCount(prev => prev + 1);
+        // Force switch to front camera again
+        setFacingMode('environment');
+        setTimeout(() => setFacingMode('user'), 500);
+      }, 1000);
+    }
   };
 
   return (
@@ -148,11 +179,20 @@ const WebcamCapture: React.FC<WebcamCaptureProps> = ({ onCapture, onCancel }) =>
             <>
               {!isNative ? (
                 <Webcam
+                  key={facingMode}
                   audio={false}
                   ref={webcamRef}
                   screenshotFormat="image/jpeg"
                   videoConstraints={videoConstraints}
-                  onUserMediaError={handlePermissionDenied}
+                  onUserMediaError={(error) => {
+                    const errorMessage = typeof error === 'string' ? error : (error as DOMException)?.name || 'Unknown error';
+                    if (errorMessage === 'NotAllowedError') {
+                      handlePermissionDenied();
+                    } else {
+                      handleCameraError('Gagal mengakses kamera. Pastikan kamera tidak digunakan aplikasi lain.');
+                    }
+                  }}
+                  onUserMedia={() => setCameraRetryCount(0)}
                   className="rounded-lg mb-4"
                   mirrored={facingMode === 'user'}
                 />

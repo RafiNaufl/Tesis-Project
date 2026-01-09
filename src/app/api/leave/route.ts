@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { db } from "@/lib/db";
 import { differenceInDays } from "date-fns";
+import { createAdminNotifications } from "@/lib/notification";
 
 // GET /api/leave - Mendapatkan daftar cuti
 export async function GET(_req: NextRequest) {
@@ -130,14 +131,11 @@ export async function POST(req: NextRequest) {
     });
     
     // Create notification for admin
-    await db.notification.create({
-      data: {
-        userId: user.id,
-        title: "Permohonan Cuti Baru",
-        message: `${user.name} mengajukan cuti ${duration} hari (${new Date(startDate).toLocaleDateString()} - ${new Date(endDate).toLocaleDateString()})`,
-        type: "info",
-      },
-    });
+    await createAdminNotifications(
+      "Permohonan Cuti Baru",
+      `${user.name} mengajukan cuti ${duration} hari (${new Date(startDate).toLocaleDateString('id-ID')} - ${new Date(endDate).toLocaleDateString('id-ID')})`,
+      "info"
+    );
     
     return NextResponse.json(leaveRequest);
   } catch (error) {

@@ -1,4 +1,6 @@
 import { db } from "./db";
+import { createAdminNotifications } from "./notification";
+import { formatCurrency } from "./utils";
 
 /**
  * Interface untuk informasi pinjaman lunak
@@ -198,7 +200,7 @@ export const createSoftLoan = async (
     const status = isAdmin ? "ACTIVE" : "PENDING";
     
     // Create the soft loan
-    return await db.softLoan.create({
+    const softLoan = await db.softLoan.create({
       data: {
         employeeId,
         totalAmount,
@@ -211,6 +213,28 @@ export const createSoftLoan = async (
         status,
       },
     });
+
+    // Kirim notifikasi ke admin jika bukan admin yang membuat
+    if (!isAdmin) {
+      try {
+        const employee = await db.employee.findUnique({
+          where: { id: employeeId },
+          include: { user: true }
+        });
+
+        if (employee && employee.user) {
+          await createAdminNotifications(
+            "Pengajuan Pinjaman Lunak Baru",
+            `${employee.user.name} mengajukan pinjaman sebesar ${formatCurrency(totalAmount)} untuk ${durationMonths} bulan. Alasan: ${reason}`,
+            "info"
+          );
+        }
+      } catch (notifError) {
+        console.error("Gagal mengirim notifikasi pinjaman lunak:", notifError);
+      }
+    }
+
+    return softLoan;
   } catch (error) {
     console.error("Error creating soft loan:", error);
     throw error;

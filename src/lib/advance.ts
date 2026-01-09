@@ -1,4 +1,6 @@
 import { db } from "./db";
+import { createAdminNotifications } from "./notification";
+import { formatCurrency } from "./utils";
 
 /**
  * Mengambil informasi kasbon (advance) karyawan
@@ -224,7 +226,7 @@ export const createAdvance = async (
       throw new Error("Year must be between 2000 and 2100");
     }
 
-    return await db.advance.create({
+    const advance = await db.advance.create({
       data: {
         employeeId,
         amount,
@@ -237,6 +239,29 @@ export const createAdvance = async (
         deductionYear: year,
       },
     });
+
+    // Kirim notifikasi ke admin jika bukan admin yang membuat
+    if (!isAdmin) {
+      try {
+        const employee = await db.employee.findUnique({
+          where: { id: employeeId },
+          include: { user: true }
+        });
+
+        if (employee && employee.user) {
+          await createAdminNotifications(
+            "Pengajuan Kasbon Baru",
+            `${employee.user.name} mengajukan kasbon sebesar ${formatCurrency(amount)}. Alasan: ${reason || '-'}`,
+            "info"
+          );
+        }
+      } catch (notifError) {
+        console.error("Gagal mengirim notifikasi kasbon:", notifError);
+        // Jangan throw error agar proses pembuatan kasbon tetap dianggap sukses
+      }
+    }
+
+    return advance;
   } catch (error) {
     console.error("Error creating advance:", error);
     throw error;

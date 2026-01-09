@@ -577,6 +577,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
       const { action, photoUrl, latitude, longitude, locationNote, reason, consentConfirmed } = body;
     const now = new Date();
+    const nowWIB = toWIB(now);
     const workdayType = getWorkdayType(now);
     
     try {
@@ -621,7 +622,7 @@ export async function POST(req: NextRequest) {
             isPengajuanUlang ? 
               "Pengajuan ulang: Bekerja pada hari Minggu (memerlukan persetujuan admin)" : 
               "Bekerja pada hari Minggu (memerlukan persetujuan admin)",
-            now
+            nowWIB
           );
         }
         
@@ -634,7 +635,7 @@ export async function POST(req: NextRequest) {
             isPengajuanUlang ? 
               "Pengajuan ulang: Check-in pada jam lembur (memerlukan persetujuan admin)" : 
               "Check-in pada jam lembur (memerlukan persetujuan admin)",
-            now
+            nowWIB
           );
         }
 

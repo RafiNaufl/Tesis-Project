@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { LeaveStatus } from "@/types/enums";
+import { toWIB } from "./attendanceRules";
 
 /**
  * Membuat permohonan cuti baru
@@ -126,12 +127,16 @@ export const approveLeaveRequest = async (leaveId: string, adminId: string) => {
   });
 
   // Update catatan kehadiran untuk periode cuti
-  const startDate = new Date(leave.startDate);
-  const endDate = new Date(leave.endDate);
+  const startWIB = toWIB(new Date(leave.startDate));
+  const endWIB = toWIB(new Date(leave.endDate));
   const days = [];
   
-  for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
-    days.push(new Date(d));
+  // Gunakan tanggal WIB untuk loop
+  for (let d = new Date(startWIB); d <= endWIB; d.setDate(d.getDate() + 1)) {
+    // Buat tanggal baru dengan jam 00:00:00 UTC berdasarkan komponen tanggal WIB
+    // Ini memastikan tanggal yang disimpan di DB adalah tanggal yang benar (misal 12 Jan 00:00 UTC)
+    const cleanDate = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+    days.push(cleanDate);
   }
 
   // Perbarui atau buat catatan kehadiran untuk setiap hari cuti
@@ -140,8 +145,8 @@ export const approveLeaveRequest = async (leaveId: string, adminId: string) => {
       where: {
         employeeId: leave.employeeId,
         date: {
-          gte: new Date(day.setHours(0, 0, 0, 0)),
-          lt: new Date(day.setHours(23, 59, 59, 999)),
+          gte: day, // Karena day sudah 00:00:00 UTC, ini tepat
+          lt: new Date(day.getTime() + 24 * 60 * 60 * 1000), // Sampai sebelum besoknya
         },
       },
     });
