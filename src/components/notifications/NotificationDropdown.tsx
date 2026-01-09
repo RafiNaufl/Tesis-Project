@@ -40,7 +40,7 @@ export const getNotificationTarget = (
     return '/payroll';
   }
   if (t.includes('kasbon') || t.includes('advance') || t.includes('pinjaman lunak') || t.includes('soft loan')) {
-    return t.includes('soft loan') ? '/soft-loan' : '/advance';
+    return (t.includes('soft loan') || t.includes('pinjaman lunak')) ? '/soft-loan' : '/advance';
   }
   return '/notifications';
 };
