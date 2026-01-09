@@ -148,11 +148,10 @@ export async function PATCH(
       
       // Update or create attendance records
       for (const date of dateArray) {
-        const formattedDate = new Date(
-          date.getFullYear(),
-          date.getMonth(),
-          date.getDate()
-        );
+        // Use Noon UTC for attendance date to ensure consistency across timezones
+        // (Same logic as in Leave creation)
+        const formattedDate = new Date(date);
+        formattedDate.setUTCHours(12, 0, 0, 0);
         
         await db.attendance.upsert({
           where: {
@@ -182,8 +181,8 @@ export async function PATCH(
         title: status === "APPROVED" ? "Permohonan Cuti Disetujui" : "Permohonan Cuti Ditolak",
         message:
           status === "APPROVED"
-            ? `Permohonan cuti Anda dari ${leave.startDate.toLocaleDateString()} hingga ${leave.endDate.toLocaleDateString()} telah disetujui.`
-            : `Permohonan cuti Anda dari ${leave.startDate.toLocaleDateString()} hingga ${leave.endDate.toLocaleDateString()} telah ditolak.`,
+            ? `Permohonan cuti Anda dari ${leave.startDate.toLocaleDateString('id-ID')} hingga ${leave.endDate.toLocaleDateString('id-ID')} telah disetujui.`
+            : `Permohonan cuti Anda dari ${leave.startDate.toLocaleDateString('id-ID')} hingga ${leave.endDate.toLocaleDateString('id-ID')} telah ditolak.`,
         type: status === "APPROVED" ? "success" : "error",
         refType: "LEAVE",
         refId: id,

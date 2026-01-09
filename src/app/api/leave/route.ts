@@ -118,13 +118,22 @@ export async function POST(req: NextRequest) {
     
     // Calculate leave duration
     const duration = differenceInDays(new Date(endDate), new Date(startDate)) + 1;
+
+    // Create dates at noon UTC to avoid timezone shifting issues
+    // When dates are stored as midnight UTC, converting to local time in western timezones (e.g. UTC-5)
+    // shifts them to the previous day. Noon UTC is safe for all business timezones.
+    const startDateTime = new Date(startDate);
+    startDateTime.setUTCHours(12, 0, 0, 0);
+    
+    const endDateTime = new Date(endDate);
+    endDateTime.setUTCHours(12, 0, 0, 0);
     
     // Create leave request
     const leaveRequest = await db.leave.create({
       data: {
         employeeId: user.employee.id,
-        startDate: new Date(startDate),
-        endDate: new Date(endDate),
+        startDate: startDateTime,
+        endDate: endDateTime,
         type,
         reason,
       },
@@ -134,7 +143,8 @@ export async function POST(req: NextRequest) {
     await createAdminNotifications(
       "Permohonan Cuti Baru",
       `${user.name} mengajukan cuti ${duration} hari (${new Date(startDate).toLocaleDateString('id-ID')} - ${new Date(endDate).toLocaleDateString('id-ID')})`,
-      "info"
+      "info",
+      { refType: "LEAVE", refId: leaveRequest.id }
     );
     
     return NextResponse.json(leaveRequest);

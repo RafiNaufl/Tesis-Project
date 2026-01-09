@@ -119,12 +119,19 @@ export default function LeaveRequestForm({ onLeaveSubmitted }: LeaveRequestFormP
   const onSubmit = async (data: LeaveFormValues) => {
     setIsSubmitting(true);
     try {
+      // Format dates to YYYY-MM-DD to avoid timezone issues
+      const formattedData = {
+        ...data,
+        startDate: format(data.startDate, "yyyy-MM-dd"),
+        endDate: format(data.endDate, "yyyy-MM-dd"),
+      };
+
       const response = await fetch("/api/leave", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(data),
+        body: JSON.stringify(formattedData),
       });
 
       if (!response.ok) {

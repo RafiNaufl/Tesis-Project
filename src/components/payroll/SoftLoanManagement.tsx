@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useSession } from "next-auth/react";
+import { useSearchParams } from "next/navigation";
 import { formatCurrency } from "@/lib/utils";
 import { 
   Plus, 
@@ -172,6 +173,9 @@ const SkeletonCard = () => (
 
 export default function SoftLoanManagement({ embedded = false }: { embedded?: boolean }) {
   const { data: session } = useSession();
+  const searchParams = useSearchParams();
+  const highlightId = searchParams.get("loanId");
+  
   const [softLoans, setSoftLoans] = useState<SoftLoan[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
@@ -180,6 +184,18 @@ export default function SoftLoanManagement({ embedded = false }: { embedded?: bo
   const [showFilters, setShowFilters] = useState(false);
   const [_processingId, setProcessingId] = useState<string | null>(null);
   
+  useEffect(() => {
+    if (!loading && highlightId) {
+      const element = document.getElementById(`loan-${highlightId}`);
+      if (element) {
+        element.scrollIntoView({ behavior: "smooth", block: "center" });
+        // Optional: Add a temporary highlight effect
+        element.classList.add("bg-blue-50");
+        setTimeout(() => element.classList.remove("bg-blue-50"), 3000);
+      }
+    }
+  }, [loading, highlightId]);
+
   // Approval Logic State
 
   const [rejectionModal, setRejectionModal] = useState<{
@@ -621,7 +637,7 @@ export default function SoftLoanManagement({ embedded = false }: { embedded?: bo
               <EmptyState />
             ) : (
               paginatedLoans.map((loan) => (
-                <div key={loan.id} className="p-5 active:bg-gray-50 transition-colors relative group">
+                <div key={loan.id} id={`loan-${loan.id}`} className="p-5 active:bg-gray-50 transition-colors relative group">
                   <div className="flex justify-between items-start mb-3">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center text-indigo-700 font-bold text-sm">
@@ -720,7 +736,7 @@ export default function SoftLoanManagement({ embedded = false }: { embedded?: bo
                   </tr>
                 ) : (
                   paginatedLoans.map((loan) => (
-                    <tr key={loan.id} className="hover:bg-gray-50/80 transition-colors group">
+                    <tr key={loan.id} id={`loan-${loan.id}`} className="hover:bg-gray-50/80 transition-colors group">
                       {isAdmin && (
                         <td className="px-6 py-4">
                           <input

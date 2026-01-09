@@ -174,7 +174,8 @@ export const createEmployeeErrorNotification = async (employeeId: string, title:
 export const createAdminNotifications = async (
   title: string,
   message: string,
-  type: NotificationType | NotificationTypeString
+  type: NotificationType | NotificationTypeString,
+  opts?: { refType?: string; refId?: string }
 ) => {
   try {
     // Dapatkan semua pengguna dengan peran ADMIN
@@ -190,7 +191,7 @@ export const createAdminNotifications = async (
 
     // Buat notifikasi untuk setiap admin
     const notificationPromises = admins.map(admin => 
-      createNotification(admin.id, title, message, type)
+      createNotification(admin.id, title, message, type, opts)
     );
 
     return Promise.all(notificationPromises);

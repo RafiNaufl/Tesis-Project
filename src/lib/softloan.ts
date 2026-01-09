@@ -226,7 +226,8 @@ export const createSoftLoan = async (
           await createAdminNotifications(
             "Pengajuan Pinjaman Lunak Baru",
             `${employee.user.name} mengajukan pinjaman sebesar ${formatCurrency(totalAmount)} untuk ${durationMonths} bulan. Alasan: ${reason}`,
-            "info"
+            "info",
+            { refType: "SOFT_LOAN", refId: softLoan.id }
           );
         }
       } catch (notifError) {
