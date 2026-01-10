@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.ctu.ems.tesis',
+  appId: 'com.ctu.ems',
   appName: 'CTU EMS',
   webDir: 'public',
   server: {
