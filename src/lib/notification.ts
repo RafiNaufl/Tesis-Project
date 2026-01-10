@@ -61,6 +61,13 @@ export const createNotification = async (
       },
     });
 
+    // Fire and forget push notification (don't block the main flow)
+    sendPushNotification(userId, title, message, {
+      type: normalizedType,
+      refType: opts?.refType || '',
+      refId: opts?.refId || ''
+    }).catch(err => console.error('Background push error:', err));
+
     return notification;
   } catch (error) {
     console.error("Error creating notification:", error);
