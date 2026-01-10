@@ -35,18 +35,12 @@ export default function PushNotificationManager() {
           const newStatus = await PushNotifications.requestPermissions();
           if (newStatus.receive === 'granted') {
             await PushNotifications.register();
-          } else {
-             toast.error('Notification permission denied');
           }
         } else if (permStatus.receive === 'granted') {
           await PushNotifications.register();
-        } else {
-           // If denied, we can't do anything, maybe show a toast?
-           console.log('Notification permission previously denied');
         }
       } catch (e) {
         console.error('Error registering push:', e);
-        toast.error('Failed to initialize notifications');
       }
     };
 
@@ -54,9 +48,11 @@ export default function PushNotificationManager() {
 
     const registrationListener = PushNotifications.addListener('registration', async (token) => {
       console.log('Push registration success, token: ' + token.value);
+      // Debug toast (optional, can be removed later)
+      toast.success('Device registered for notifications'); 
       
       try {
-        const response = await fetch('/api/notifications/register-token', {
+        await fetch('/api/notifications/register-token', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -66,23 +62,13 @@ export default function PushNotificationManager() {
             platform: Capacitor.getPlatform(),
           }),
         });
-        
-        if (response.ok) {
-           toast.success('Device registered for notifications');
-        } else {
-           const errData = await response.json();
-           console.error('Server registration failed:', errData);
-           toast.error('Server registration failed: ' + (errData.error || 'Unknown'));
-        }
-      } catch (e: any) {
+      } catch (e) {
         console.error('Failed to send token to server', e);
-        toast.error('Network error registering token: ' + e.message);
       }
     });
 
     const registrationErrorListener = PushNotifications.addListener('registrationError', (error: any) => {
       console.error('Error on registration: ' + JSON.stringify(error));
-      toast.error('Push registration error: ' + (error.message || JSON.stringify(error)));
     });
 
     // Handle incoming notifications (optional)
