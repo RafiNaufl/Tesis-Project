@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { PushNotifications } from '@capacitor/push-notifications';
 import { Capacitor } from '@capacitor/core';
 import { useSession } from 'next-auth/react';
+import { toast } from 'react-hot-toast';
 
 export default function PushNotificationManager() {
   const { data: session } = useSession();
@@ -16,6 +17,18 @@ export default function PushNotificationManager() {
 
     const registerPush = async () => {
       try {
+        // Create channel specifically for Android
+        if (Capacitor.getPlatform() === 'android') {
+          await PushNotifications.createChannel({
+            id: 'default',
+            name: 'Default Channel',
+            description: 'General Notifications',
+            importance: 5, // High importance
+            visibility: 1, // Public
+            vibration: true,
+          });
+        }
+
         const permStatus = await PushNotifications.checkPermissions();
 
         if (permStatus.receive === 'prompt') {
@@ -35,6 +48,9 @@ export default function PushNotificationManager() {
 
     const registrationListener = PushNotifications.addListener('registration', async (token) => {
       console.log('Push registration success, token: ' + token.value);
+      // Debug toast (optional, can be removed later)
+      toast.success('Device registered for notifications'); 
+      
       try {
         await fetch('/api/notifications/register-token', {
           method: 'POST',
@@ -58,6 +74,13 @@ export default function PushNotificationManager() {
     // Handle incoming notifications (optional)
     const notificationReceivedListener = PushNotifications.addListener('pushNotificationReceived', (notification) => {
        console.log('Push received: ', notification);
+       
+       // Show toast for foreground notification
+       toast(notification.title || 'New Notification', {
+         icon: '🔔',
+         duration: 4000,
+       });
+
        // Dispatch event to update notification list
        window.dispatchEvent(new Event('notification-update'));
     });
