@@ -98,7 +98,12 @@ export default function PermissionGuard() {
       }
 
       // 3. Notifications
-      const push = await PushNotifications.checkPermissions();
+      let push = await PushNotifications.checkPermissions();
+      if (push.receive === "prompt") {
+        // Try to request permission immediately
+        push = await PushNotifications.requestPermissions();
+      }
+      
       if (push.receive !== "granted") {
         missing.push("notifications");
       }

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "937260775928",
+    "project_id": "ems-project-2acd7",
+    "storage_bucket": "ems-project-2acd7.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:937260775928:android:47d6391bafe14f47e8fe0d",
+        "android_client_info": {
+          "package_name": "com.ctu.ems"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDCIupmwBOSk8MTLr9WMYpu_l-_50kANL0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
