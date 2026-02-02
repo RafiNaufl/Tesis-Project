@@ -44,7 +44,7 @@ const RULES = {
   SATURDAY: {
     start: "08:00",
     end: "14:00",
-    normalDuration: 6.0,
+    normalDuration: 5.0,
   },
   // Minggu dianggap full lembur, start asumsi 08:00 jika tidak ada input lain, 
   // tapi idealnya sistem menerima checkInTime. 

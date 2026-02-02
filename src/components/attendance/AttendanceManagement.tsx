@@ -1695,15 +1695,38 @@ export default function AttendanceManagement() {
                           </td>
                           <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500 hidden md:table-cell">
                             {(() => {
-                               const regularMinutes = record.checkIn && record.checkOut
+                               const dayType = getWorkdayType(new Date(record.date));
+                               let totalDurationMinutes = record.checkIn && record.checkOut
                                  ? Math.floor((new Date(record.checkOut).getTime() - new Date(record.checkIn).getTime()) / 60000)
                                  : 0;
-                               // Use overtimePayable (hours) converted to minutes if available, otherwise 0
-                               const overtimePayableMinutes = (record.overtimePayable || 0) * 60;
                                
-                               // If no overtime payable but overtime exists (maybe 0 payable due to rules), we might just show regular.
-                               // But user asked for "Total Jam Payable".
-                               // If overtimePayable is undefined, we assume 0.
+                               // Deduct break time (12:00 - 13:00) for Weekdays and Saturdays
+                                if ((dayType === WorkdayType.WEEKDAY || dayType === WorkdayType.SATURDAY) && record.checkIn && record.checkOut) {
+                                    const breakStart = new Date(record.checkIn);
+                                    breakStart.setHours(12, 0, 0, 0);
+                                    const breakEnd = new Date(record.checkIn);
+                                    breakEnd.setHours(13, 0, 0, 0);
+                                   
+                                   const start = record.checkIn.getTime();
+                                   const end = record.checkOut.getTime();
+                                   const bStart = breakStart.getTime();
+                                   const bEnd = breakEnd.getTime();
+                                   
+                                   const overlapStart = Math.max(start, bStart);
+                                   const overlapEnd = Math.min(end, bEnd);
+                                   
+                                   if (overlapEnd > overlapStart) {
+                                       const overlapMinutes = Math.floor((overlapEnd - overlapStart) / 60000);
+                                       totalDurationMinutes -= overlapMinutes;
+                                   }
+                               }
+
+                               // Calculate Regular Minutes (Total Duration - Actual Overtime)
+                               const overtimeActualMinutes = (record.overtime || 0) * 60;
+                               const regularMinutes = Math.max(0, totalDurationMinutes - overtimeActualMinutes);
+                               
+                               // Calculate Payable Overtime Minutes
+                               const overtimePayableMinutes = (record.overtimePayable || 0) * 60;
                                
                                const totalMinutes = regularMinutes + overtimePayableMinutes;
                                
@@ -2370,9 +2393,36 @@ export default function AttendanceManagement() {
                    <div className="text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-wider">Total Jam (Payable)</div>
                    <div className="mt-0.5 sm:mt-1 text-sm font-semibold text-gray-900">
                      {(() => {
-                        const regularMinutes = detailRecord.checkIn && detailRecord.checkOut
+                        const dayType = getWorkdayType(new Date(detailRecord.date));
+                        let totalDurationMinutes = detailRecord.checkIn && detailRecord.checkOut
                           ? Math.floor((new Date(detailRecord.checkOut).getTime() - new Date(detailRecord.checkIn).getTime()) / 60000)
                           : 0;
+                        
+                        // Deduct break time (12:00 - 13:00) for Weekdays and Saturdays
+                        if ((dayType === WorkdayType.WEEKDAY || dayType === WorkdayType.SATURDAY) && detailRecord.checkIn && detailRecord.checkOut) {
+                            const breakStart = new Date(detailRecord.checkIn);
+                            breakStart.setHours(12, 0, 0, 0);
+                            const breakEnd = new Date(detailRecord.checkIn);
+                            breakEnd.setHours(13, 0, 0, 0);
+                            
+                            const start = detailRecord.checkIn.getTime();
+                            const end = detailRecord.checkOut.getTime();
+                            const bStart = breakStart.getTime();
+                            const bEnd = breakEnd.getTime();
+                            
+                            const overlapStart = Math.max(start, bStart);
+                            const overlapEnd = Math.min(end, bEnd);
+                            
+                            if (overlapEnd > overlapStart) {
+                                const overlapMinutes = Math.floor((overlapEnd - overlapStart) / 60000);
+                                totalDurationMinutes -= overlapMinutes;
+                            }
+                        }
+
+                        // Calculate Regular Minutes (Total Duration - Actual Overtime)
+                        const overtimeActualMinutes = (detailRecord.overtime || 0) * 60;
+                        const regularMinutes = Math.max(0, totalDurationMinutes - overtimeActualMinutes);
+
                         const overtimePayableMinutes = (detailRecord.overtimePayable || 0) * 60;
                         const totalMinutes = regularMinutes + overtimePayableMinutes;
                         return totalMinutes > 0 ? formatMinutesToHours(totalMinutes) : '-';

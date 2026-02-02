@@ -1,5 +1,6 @@
 import { prisma } from "./prisma";
 import { Status } from "@/types/enums";
+import { getWorkdayType, WorkdayType } from "./attendanceRules";
 
 // ==========================================
 // KONFIGURASI & KONSTANTA
@@ -232,21 +233,18 @@ const calculateNonShiftSalary = (
       mealAllowances += NON_SHIFT_MEAL_ALLOWANCE;
       transportAllowances += NON_SHIFT_TRANSPORT_ALLOWANCE;
 
-      // Hitung Jam Kerja Efektif (CheckOut - CheckIn)
-      if (att.checkIn && att.checkOut) {
-        const start = new Date(att.checkIn).getTime();
-        const end = new Date(att.checkOut).getTime();
-        const durationHours = (end - start) / (1000 * 60 * 60);
-        
-        // Cap jam kerja normal (misal max 8 jam per hari dianggap regular, sisanya overtime)
-        // Namun di sini kita ambil real jam kerja, overtime dihitung terpisah di modul overtime
-        // Kita batasi max jam normal = NON_SHIFT_WORK_HOURS
-        totalWorkHours += Math.min(durationHours, NON_SHIFT_WORK_HOURS);
-      } else {
-        // Jika lupa checkout, mungkin dihitung setengah hari atau minimal jam
-        // Kita asumsi 4 jam jika lupa checkout
-        totalWorkHours += 4;
+      // Hitung Jam Kerja Efektif Berdasarkan Tipe Hari
+      const dayType = getWorkdayType(new Date(att.date));
+      let dailyHours = 0;
+      
+      if (dayType === WorkdayType.WEEKDAY) {
+        dailyHours = 7.5; // Senin-Jumat: 7.5 jam
+      } else if (dayType === WorkdayType.SATURDAY) {
+        dailyHours = 5.0; // Sabtu: 5 jam (08:00 - 14:00 dikurangi istirahat)
       }
+      // Minggu tidak dihitung sebagai jam kerja reguler (hanya lembur)
+      
+      totalWorkHours += dailyHours;
 
       // Hitung Keterlambatan
       if (att.status === Status.LATE) {
@@ -263,23 +261,18 @@ const calculateNonShiftSalary = (
       // Karyawan Non-Shift (Daily) biasanya "No Work No Pay", jadi tidak ada deduction eksplisit dari Gaji Pokok
       // karena Gaji Pokok mereka 0 (dibangun dari jam kerja).
     } else if (att.status === Status.LEAVE) {
-      // Cuti dibayar atau tidak tergantung kebijakan. Asumsi dibayar 8 jam.
-      totalWorkHours += NON_SHIFT_WORK_HOURS; 
+      // Cuti dibayar sesuai jam kerja standar hari tersebut
+      const dayType = getWorkdayType(new Date(att.date));
+      if (dayType === WorkdayType.WEEKDAY) {
+        totalWorkHours += 7.5;
+      } else if (dayType === WorkdayType.SATURDAY) {
+        totalWorkHours += 5.0;
+      }
     }
   }
 
-  // Hitung Gaji Pokok Berdasarkan Hari Kerja (Bukan Jam)
-  // Formula: Days Present (termasuk Leave) * 8 jam * Hourly Rate
-  // Note: LEAVE biasanya dibayar penuh (8 jam) jika paid leave.
-  // Kita asumsikan LEAVE dihitung sebagai kehadiran untuk Gaji Pokok.
-  let payableDays = 0;
-  for (const att of attendances) {
-    if (att.status === Status.PRESENT || att.status === Status.LATE || att.status === Status.LEAVE) {
-      payableDays++;
-    }
-  }
-  
-  const baseSalary = payableDays * NON_SHIFT_WORK_HOURS * hourlyRate;
+  // Hitung Gaji Pokok Berdasarkan Total Jam Kerja (Bukan Jumlah Hari x 8)
+  const baseSalary = totalWorkHours * hourlyRate;
 
   // Catat allowance ke list
   if (mealAllowances > 0) {
