@@ -82,6 +82,12 @@ export function calculateAutomaticOvertime(
   // Tentukan batas waktu normal pulang
   const [endHour, endMinute] = rule.end.split(':').map(Number);
   const normalEndTime = new Date(checkOutTime);
+  
+  // Handle cross-midnight for Weekday (checkout < 08:00 implies shift started yesterday)
+  if (checkOutTime.getHours() < 8) {
+    normalEndTime.setDate(normalEndTime.getDate() - 1);
+  }
+  
   normalEndTime.setHours(endHour, endMinute, 0, 0);
 
   // Jika checkout dini hari (lewat tengah malam), berarti normalEndTime harusnya kemarin
@@ -125,10 +131,23 @@ export function calculateAutomaticOvertime(
   
   // Logic Minggu & Sabtu (Weekend Rule: <= 4 jam dihitung 2x)
   else if (workdayType === WorkdayType.SUNDAY || workdayType === WorkdayType.SATURDAY) {
-    const startTime = new Date(checkOutTime);
-    // Asumsi start jam 08:00 jika tidak ada data checkIn (karena fungsi ini hanya terima checkOutTime)
-    // Idealnya sistem mengirim durasi real, tapi kita ikut pattern yang ada.
+    let startTime = new Date(checkOutTime);
+    // Asumsi start jam 08:00
     startTime.setHours(8, 0, 0, 0); 
+
+    // Handle cross-midnight (e.g. checkout 01:00 means start was yesterday 08:00)
+    // If checkout is before 08:00, assume it's next day relative to start
+    if (checkOutTime.getHours() < 8) {
+         startTime.setDate(startTime.getDate() - 1);
+    }
+    // Also handle exact 24:00 case if represented as 00:00 next day? 
+    // Usually 00:00 is handled by < 8 rule.
+    // But if checkout is validly 08:00 same day (0 duration)? 
+    // The prompt implies 08:00-07:00 is valid (23h).
+    // If checkout is 08:00, diff is 0.
+    
+    // Check if result is negative, if so, maybe date shift is needed?
+    // But <8 heuristic is safer for "overtime" context where usually checkout > start.
 
     // Hitung durasi kerja dalam jam
     const workMinutes = differenceInMinutes(checkOutTime, startTime);
@@ -143,9 +162,8 @@ export function calculateAutomaticOvertime(
     if (workdayType === WorkdayType.SATURDAY) {
         if (isNonShift) {
              // Non-Shift Saturday Logic
-             const checkInDate = new Date(checkOutTime);
-             checkInDate.setHours(8, 0, 0, 0);
-             const rawDiffMs = checkOutTime.getTime() - checkInDate.getTime();
+             // We use startTime derived above
+             const rawDiffMs = checkOutTime.getTime() - startTime.getTime();
              const rawHours = rawDiffMs / (1000 * 60 * 60);
 
              if (rawHours <= 5) {
