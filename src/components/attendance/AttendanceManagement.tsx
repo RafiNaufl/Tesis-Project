@@ -1695,14 +1695,20 @@ export default function AttendanceManagement() {
                           </td>
                           <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500 hidden md:table-cell">
                             {(() => {
-                              const regularMinutes = record.checkIn && record.checkOut
-                                ? Math.floor((new Date(record.checkOut).getTime() - new Date(record.checkIn).getTime()) / 60000)
-                                : 0;
-                              const overtimeMinutes = record.overtime || 0;
-                              const totalMinutes = regularMinutes + overtimeMinutes;
-                              
-                              return totalMinutes > 0 ? formatMinutesToHours(totalMinutes) : "-";
-                            })()}
+                               const regularMinutes = record.checkIn && record.checkOut
+                                 ? Math.floor((new Date(record.checkOut).getTime() - new Date(record.checkIn).getTime()) / 60000)
+                                 : 0;
+                               // Use overtimePayable (hours) converted to minutes if available, otherwise 0
+                               const overtimePayableMinutes = (record.overtimePayable || 0) * 60;
+                               
+                               // If no overtime payable but overtime exists (maybe 0 payable due to rules), we might just show regular.
+                               // But user asked for "Total Jam Payable".
+                               // If overtimePayable is undefined, we assume 0.
+                               
+                               const totalMinutes = regularMinutes + overtimePayableMinutes;
+                               
+                               return totalMinutes > 0 ? formatMinutesToHours(totalMinutes) : "-";
+                             })()}
                           </td>
                           <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500 hidden md:table-cell">
                             {(() => {
@@ -2336,13 +2342,13 @@ export default function AttendanceManagement() {
                   <div className="mt-0.5 sm:mt-1 text-sm font-semibold text-gray-900">{formatTime(detailRecord.checkIn)} — {formatTime(detailRecord.checkOut)}</div>
                 </div>
                 <div>
-                  <div className="text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-wider">Durasi</div>
+                  <div className="text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-wider">Durasi (Aktual)</div>
                   <div className="mt-0.5 sm:mt-1 text-sm font-semibold text-gray-900">{(() => {
                     const ci = detailRecord.checkIn ? new Date(detailRecord.checkIn).getTime() : null;
                     const co = detailRecord.checkOut ? new Date(detailRecord.checkOut).getTime() : null;
                     if (!ci || !co || co < ci) return '-';
                     const mins = Math.round((co - ci) / 60000);
-                    return `${Math.floor(mins/60)}h ${mins%60}m`;
+                    return formatMinutesToHours(mins);
                   })()}</div>
                 </div>
                 <div>
@@ -2358,6 +2364,19 @@ export default function AttendanceManagement() {
                          )}
                        </span>
                      ) : '-'}
+                   </div>
+                </div>
+                <div>
+                   <div className="text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-wider">Total Jam (Payable)</div>
+                   <div className="mt-0.5 sm:mt-1 text-sm font-semibold text-gray-900">
+                     {(() => {
+                        const regularMinutes = detailRecord.checkIn && detailRecord.checkOut
+                          ? Math.floor((new Date(detailRecord.checkOut).getTime() - new Date(detailRecord.checkIn).getTime()) / 60000)
+                          : 0;
+                        const overtimePayableMinutes = (detailRecord.overtimePayable || 0) * 60;
+                        const totalMinutes = regularMinutes + overtimePayableMinutes;
+                        return totalMinutes > 0 ? formatMinutesToHours(totalMinutes) : '-';
+                     })()}
                    </div>
                 </div>
               </div>
