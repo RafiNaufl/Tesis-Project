@@ -239,7 +239,14 @@ export default function EmployeeDashboardMobile() {
       if (captureAction === 'check-in') {
         await processCheckIn(photoUrl, latitude, longitude);
       } else if (captureAction === 'check-out') {
-        await processCheckOut(photoUrl, latitude, longitude);
+        const reason = (window as any).overtimeReason;
+        const consentConfirmed = (window as any).overtimeConsentConfirmed === true;
+        
+        // Cleanup window properties
+        if (reason) delete (window as any).overtimeReason;
+        if ((window as any).overtimeConsentConfirmed) delete (window as any).overtimeConsentConfirmed;
+
+        await processCheckOut(photoUrl, latitude, longitude, reason, consentConfirmed);
       } else if (captureAction === 'overtime-start') {
         const reason = (window as any).overtimeReason || '';
         const consentConfirmed = (window as any).overtimeConsentConfirmed === true;
@@ -370,7 +377,7 @@ export default function EmployeeDashboardMobile() {
     setShowAttendanceCapture(true);
   };
 
-  const processCheckOut = async (photoUrl?: string, latitude?: number, longitude?: number) => {
+  const processCheckOut = async (photoUrl?: string, latitude?: number, longitude?: number, reason?: string, consentConfirmed?: boolean) => {
     setActionLoading(true);
     setError(null);
     
@@ -387,7 +394,10 @@ export default function EmployeeDashboardMobile() {
           action: 'check-out',
           photoUrl,
           latitude,
-          longitude
+          longitude,
+          overtimeReason: reason,
+          consentConfirmed: consentConfirmed,
+          confirmOvertime: !!reason
         }),
       });
       

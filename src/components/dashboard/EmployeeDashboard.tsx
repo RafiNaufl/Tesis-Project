@@ -327,7 +327,14 @@ export default function EmployeeDashboard() {
       if (captureAction === 'check-in') {
         await processCheckIn(uploadedPhotoUrl, latitude, longitude);
       } else if (captureAction === 'check-out') {
-        await processCheckOut(uploadedPhotoUrl, latitude, longitude);
+        const reason = (window as any).overtimeReason;
+        const consentConfirmed = (window as any).overtimeConsentConfirmed === true;
+        
+        // Cleanup window properties
+        if (reason) delete (window as any).overtimeReason;
+        if ((window as any).overtimeConsentConfirmed) delete (window as any).overtimeConsentConfirmed;
+
+        await processCheckOut(uploadedPhotoUrl, latitude, longitude, reason, consentConfirmed);
       } else if (captureAction === 'overtime-start') {
         const reason = (window as any).overtimeReason || '';
         const consentConfirmed = (window as any).overtimeConsentConfirmed === true;
@@ -519,7 +526,7 @@ export default function EmployeeDashboard() {
   };
   
   // Fungsi untuk memproses check-out setelah foto dan lokasi ditangkap
-  const processCheckOut = async (photoUrl: string, latitude: number, longitude: number) => {
+  const processCheckOut = async (photoUrl: string, latitude: number, longitude: number, reason?: string, consentConfirmed?: boolean) => {
     setActionLoading(true);
     setError(null);
     
@@ -536,7 +543,10 @@ export default function EmployeeDashboard() {
           action: 'check-out',
           photoUrl,
           latitude,
-          longitude
+          longitude,
+          overtimeReason: reason,
+          consentConfirmed: consentConfirmed,
+          confirmOvertime: !!reason
         }),
       });
       
