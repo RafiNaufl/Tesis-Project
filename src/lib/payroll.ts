@@ -356,6 +356,11 @@ const calculateOvertime = async (employeeId: string, month: number, year: number
     // ==========================================
     if (employee.workScheduleType === 'NON_SHIFT') {
       
+      // Aturan Baru: Potong istirahat 0.5 jam (30 menit) jika lembur > 2 jam
+      if (durationHours > 2) {
+        durationHours -= 0.5;
+      }
+
       if (isSunday || isHoliday) {
         // 4. Minggu / Libur Resmi
         // - Jam 1-8: 2x

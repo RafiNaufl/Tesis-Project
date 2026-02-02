@@ -1696,8 +1696,23 @@ export default function AttendanceManagement() {
                           <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500 hidden md:table-cell">
                             {(() => {
                                const dayType = getWorkdayType(new Date(record.date));
+                               let startTime = record.checkIn ? new Date(record.checkIn).getTime() : 0;
+                               
+                               // Apply Late Tolerance Logic (08:00 - 08:30 considered as 08:00)
+                               if (record.checkIn && (dayType === WorkdayType.WEEKDAY || dayType === WorkdayType.SATURDAY)) {
+                                   const checkInDate = new Date(record.checkIn);
+                                   const toleranceLimit = new Date(record.checkIn);
+                                   toleranceLimit.setHours(8, 30, 0, 0);
+                                   const officialStart = new Date(record.checkIn);
+                                   officialStart.setHours(8, 0, 0, 0);
+                                   
+                                   if (checkInDate > officialStart && checkInDate <= toleranceLimit) {
+                                       startTime = officialStart.getTime();
+                                   }
+                               }
+
                                let totalDurationMinutes = record.checkIn && record.checkOut
-                                 ? Math.floor((new Date(record.checkOut).getTime() - new Date(record.checkIn).getTime()) / 60000)
+                                 ? Math.floor((new Date(record.checkOut).getTime() - startTime) / 60000)
                                  : 0;
                                
                                // Deduct break time (12:00 - 13:00) for Weekdays and Saturdays
@@ -1707,7 +1722,7 @@ export default function AttendanceManagement() {
                                     const breakEnd = new Date(record.checkIn);
                                     breakEnd.setHours(13, 0, 0, 0);
                                    
-                                   const start = record.checkIn.getTime();
+                                   const start = startTime;
                                    const end = record.checkOut.getTime();
                                    const bStart = breakStart.getTime();
                                    const bEnd = breakEnd.getTime();
@@ -1722,7 +1737,7 @@ export default function AttendanceManagement() {
                                }
 
                                // Calculate Regular Minutes (Total Duration - Actual Overtime)
-                               const overtimeActualMinutes = (record.overtime || 0) * 60;
+                               const overtimeActualMinutes = record.overtime || 0;
                                const regularMinutes = Math.max(0, totalDurationMinutes - overtimeActualMinutes);
                                
                                // Calculate Payable Overtime Minutes
@@ -2394,8 +2409,23 @@ export default function AttendanceManagement() {
                    <div className="mt-0.5 sm:mt-1 text-sm font-semibold text-gray-900">
                      {(() => {
                         const dayType = getWorkdayType(new Date(detailRecord.date));
+                        let startTime = detailRecord.checkIn ? new Date(detailRecord.checkIn).getTime() : 0;
+                        
+                        // Apply Late Tolerance Logic (08:00 - 08:30 considered as 08:00)
+                        if (detailRecord.checkIn && (dayType === WorkdayType.WEEKDAY || dayType === WorkdayType.SATURDAY)) {
+                            const checkInDate = new Date(detailRecord.checkIn);
+                            const toleranceLimit = new Date(detailRecord.checkIn);
+                            toleranceLimit.setHours(8, 30, 0, 0);
+                            const officialStart = new Date(detailRecord.checkIn);
+                            officialStart.setHours(8, 0, 0, 0);
+                            
+                            if (checkInDate > officialStart && checkInDate <= toleranceLimit) {
+                                startTime = officialStart.getTime();
+                            }
+                        }
+
                         let totalDurationMinutes = detailRecord.checkIn && detailRecord.checkOut
-                          ? Math.floor((new Date(detailRecord.checkOut).getTime() - new Date(detailRecord.checkIn).getTime()) / 60000)
+                          ? Math.floor((new Date(detailRecord.checkOut).getTime() - startTime) / 60000)
                           : 0;
                         
                         // Deduct break time (12:00 - 13:00) for Weekdays and Saturdays
@@ -2405,7 +2435,7 @@ export default function AttendanceManagement() {
                             const breakEnd = new Date(detailRecord.checkIn);
                             breakEnd.setHours(13, 0, 0, 0);
                             
-                            const start = detailRecord.checkIn.getTime();
+                            const start = startTime;
                             const end = detailRecord.checkOut.getTime();
                             const bStart = breakStart.getTime();
                             const bEnd = breakEnd.getTime();
@@ -2420,7 +2450,7 @@ export default function AttendanceManagement() {
                         }
 
                         // Calculate Regular Minutes (Total Duration - Actual Overtime)
-                        const overtimeActualMinutes = (detailRecord.overtime || 0) * 60;
+                        const overtimeActualMinutes = detailRecord.overtime || 0;
                         const regularMinutes = Math.max(0, totalDurationMinutes - overtimeActualMinutes);
 
                         const overtimePayableMinutes = (detailRecord.overtimePayable || 0) * 60;

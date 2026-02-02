@@ -95,7 +95,14 @@ export function calculateAutomaticOvertime(
 
     if (checkOutTime > normalEndTime) {
       const diffMinutes = differenceInMinutes(checkOutTime, normalEndTime);
-      const diffHours = diffMinutes / 60;
+      let diffHours = diffMinutes / 60;
+
+      // Aturan Baru: Potong istirahat 0.5 jam (30 menit) jika lembur > 2 jam
+      if (diffHours > 2) {
+        diffHours -= 0.5;
+        breakdown.push(`Potongan Istirahat Lembur: 0.5 jam (Durasi Lembur > 2 jam)`);
+      }
+      
       overtimeDurationReal = diffHours;
 
       // 1 Jam pertama x 1.5
@@ -195,14 +202,27 @@ export function calculateAutomaticOvertime(
 export function calculatePayableOvertime(minutes: number, workdayType: WorkdayType): number {
   if (minutes <= 0) return 0;
   
-  const hours = minutes / 60;
+  let hours = minutes / 60;
+  
+  // Aturan Baru: Potong istirahat 1 jam jika lembur >= 4 jam
+  if (hours >= 4) {
+    hours -= 1;
+  }
+
   let payable = 0;
 
   if (workdayType === WorkdayType.SUNDAY) {
     // Hari libur: x2 (Simplifikasi sesuai logic Sunday di calculateAutomaticOvertime)
     payable = hours * 2;
+  } else if (workdayType === WorkdayType.SATURDAY) {
+    // Saturday Logic:
+    // First 5 hours x 2.0
+    // Remaining x 1.0
+    const first5 = Math.min(hours, 5);
+    const remaining = Math.max(0, hours - 5);
+    payable = (first5 * 2.0) + (remaining * 1.0);
   } else {
-    // Weekday & Saturday (Overtime di hari kerja):
+    // Weekday (Overtime di hari kerja):
     // 1 jam pertama x 1.5
     // Jam berikutnya x 2
     const firstHour = Math.min(hours, 1);
