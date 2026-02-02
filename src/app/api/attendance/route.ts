@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
- 
+import { format } from "date-fns";
+
 import { checkIn, checkOut, getMonthlyAttendanceReport, startOvertime, endOvertime } from "@/lib/attendance";
 import { getWorkdayType, WorkdayType, getWorkEndTime, isOvertimeCheckOut, isOvertimeCheckIn, toWIB } from "@/lib/attendanceRules";
 import { calculateOvertimeDuration } from "@/lib/overtimeCalculator";
@@ -733,12 +734,25 @@ export async function POST(req: NextRequest) {
           if (outside && !todayAttendance.overtimeStart && confirmOvertime && consentConfirmedFlag) {
             const workdayType = getWorkdayType(now);
             let overtimeStart: Date;
+            
+            // Fix: Use todayAttendance.date (WIB) as base to ensure correct date even if crossing midnight
+            const baseDateWIB = toWIB(todayAttendance.date);
+            const dateStr = format(baseDateWIB, 'yyyy-MM-dd');
+
             if (workdayType === WorkdayType.SUNDAY) {
-              overtimeStart = todayAttendance.checkIn ? new Date(todayAttendance.checkIn) : new Date(`${now.toLocaleDateString('en-CA')}T08:00:00`);
+              overtimeStart = todayAttendance.checkIn ? new Date(todayAttendance.checkIn) : new Date(`${dateStr}T08:00:00+07:00`);
             } else {
               const endStr = getWorkEndTime(workdayType);
-              overtimeStart = new Date(`${now.toLocaleDateString('en-CA')}T${endStr}:00`);
+              // Construct correctly in WIB (+07:00) to ensure accurate UTC conversion
+              overtimeStart = new Date(`${dateStr}T${endStr}:00+07:00`);
             }
+            
+            // Safety check: ensure start is not after now (which would cause negative duration)
+            if (overtimeStart > now) {
+                console.warn(`[Overtime] Calculated start ${overtimeStart.toISOString()} is after now ${now.toISOString()}. Adjusting to now.`);
+                overtimeStart = now;
+            }
+
             const overtimeMinutes = calculateOvertimeDuration(overtimeStart, now);
 
             const updated = await prisma.attendance.update({

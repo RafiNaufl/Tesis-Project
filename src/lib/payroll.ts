@@ -19,8 +19,8 @@ const NON_SHIFT_MEAL_ALLOWANCE = 20000; // Tunjangan makan per kehadiran (Non-Sh
 const NON_SHIFT_TRANSPORT_ALLOWANCE = 20000; // Tunjangan transport per kehadiran (Non-Shift Logic Baru)
 
 // Position Allowance Config
-const ASSISTANT_FOREMAN_ALLOWANCE = 500000;
-const FOREMAN_ALLOWANCE = 600000;
+const ASSISTANT_FOREMAN_ALLOWANCE = 240000;
+const FOREMAN_ALLOWANCE = 240000;
 
 // Time Config
 const NON_SHIFT_WORK_HOURS = 8; // Jam kerja standar non-shift
@@ -60,6 +60,31 @@ const getPublicHolidays = async (month: number, year: number) => {
 };
 
 // ==========================================
+// TYPES
+// ==========================================
+
+interface PayrollComponent {
+  type: string;
+  amount: number;
+  reason?: string;
+}
+
+interface CalculationMeta {
+  daysPresent: number;
+  daysAbsent: number;
+  daysLate: number;
+  overtimeHours: number;
+  overtimeAmount: number;
+}
+
+interface SalaryCalculationResult {
+  baseSalary: number;
+  allowances: PayrollComponent[];
+  deductions: PayrollComponent[];
+  meta: CalculationMeta;
+}
+
+// ==========================================
 // LOGIKA PERHITUNGAN GAJI
 // ==========================================
 
@@ -70,53 +95,46 @@ const getPublicHolidays = async (month: number, year: number) => {
  * - Lembur = (Jam Lembur * Rate Lembur)
  * - Potongan = (Terlambat * Denda) + (Alpha * Potongan Harian) + BPJS
  */
-const calculateShiftSalary = async (
+const calculateShiftSalary = (
   employee: any,
   attendances: any[],
-  month: number,
-  year: number,
-  overtimeData: { hours: number; amount: number },
-  tx: any = prisma
-) => {
+  overtimeData: { hours: number; amount: number }
+): SalaryCalculationResult => {
   const baseSalary = employee.basicSalary; // Gaji Tetap
   const dailyRate = getEmployeeDailyRate(employee);
   
   let daysPresent = 0;
   let daysAbsent = 0;
   let daysLate = 0;
-  let lateDeductionAmount = 0;
-  let absenceDeductionAmount = 0;
   
+  const allowances: PayrollComponent[] = [];
+  const deductions: PayrollComponent[] = [];
+
   // 1. Tunjangan Tetap (Fixed Allowance) - Sekarang 0 untuk Shift
-  let totalAllowances = SHIFT_FIXED_ALLOWANCE;
+  if (SHIFT_FIXED_ALLOWANCE > 0) {
+    allowances.push({
+      type: "SHIFT_FIXED_ALLOWANCE",
+      amount: SHIFT_FIXED_ALLOWANCE
+    });
+  }
 
   // 2. Tunjangan Jabatan (Foreman / Asst Foreman)
   const position = employee.position?.toLowerCase() || "";
   const role = employee.user?.role || "";
   
   let positionAllowance = 0;
-  let positionAllowanceType = "";
 
   if (position.includes("assistant foreman") || role === "ASSISTANT_FOREMAN") {
       positionAllowance = ASSISTANT_FOREMAN_ALLOWANCE;
-      positionAllowanceType = "TUNJANGAN_JABATAN_ASST_FOREMAN";
+      allowances.push({
+        type: "TUNJANGAN_JABATAN_ASST_FOREMAN",
+        amount: positionAllowance
+      });
   } else if (position.includes("foreman") || role === "FOREMAN") {
       positionAllowance = FOREMAN_ALLOWANCE;
-      positionAllowanceType = "TUNJANGAN_JABATAN_FOREMAN";
-  }
-
-  if (positionAllowance > 0) {
-      totalAllowances += positionAllowance;
-      
-      // Catat allowance jabatan ke database
-      await tx.allowance.create({
-        data: {
-          employeeId: employee.id,
-          month,
-          year,
-          type: positionAllowanceType,
-          amount: positionAllowance,
-        }
+      allowances.push({
+        type: "TUNJANGAN_JABATAN_FOREMAN",
+        amount: positionAllowance
       });
   }
 
@@ -128,41 +146,35 @@ const calculateShiftSalary = async (
         daysLate++;
         // Cek threshold keterlambatan (misal > 08:30)
         // Di sini kita simplifikasi jika status LATE maka kena denda
-        lateDeductionAmount += SHIFT_LATE_PENALTY;
-        
-        await recordDeduction(employee.id, month, year, SHIFT_LATE_PENALTY, "LATE", `Keterlambatan Shift ${new Date(att.date).toLocaleDateString()}`, tx);
+        deductions.push({
+          type: "LATE",
+          amount: SHIFT_LATE_PENALTY,
+          reason: `Keterlambatan Shift ${new Date(att.date).toLocaleDateString()}`
+        });
       }
     } else if (att.status === Status.ABSENT) {
       daysAbsent++;
       // Potong Gaji Harian untuk Alpha
       const deduction = dailyRate * (ABSENCE_PENALTY_PERCENT / 100);
-      absenceDeductionAmount += deduction;
-      
-      await recordDeduction(employee.id, month, year, deduction, "ABSENCE", `Ketidakhadiran Shift ${new Date(att.date).toLocaleDateString()}`, tx);
+      deductions.push({
+        type: "ABSENCE",
+        amount: deduction,
+        reason: `Ketidakhadiran Shift ${new Date(att.date).toLocaleDateString()}`
+      });
     }
   }
 
-  // Catat allowance tetap (jika ada)
-  if (SHIFT_FIXED_ALLOWANCE > 0) {
-    await tx.allowance.create({
-      data: {
-        employeeId: employee.id,
-        month,
-        year,
-        type: "SHIFT_FIXED_ALLOWANCE",
-        amount: SHIFT_FIXED_ALLOWANCE,
-      }
-    });
-  }
-
   return {
-    baseSalary, // Ini tetap
-    daysPresent,
-    daysAbsent,
-    daysLate,
-    lateDeductionAmount,
-    absenceDeductionAmount,
-    totalAllowances,
+    baseSalary,
+    allowances,
+    deductions,
+    meta: {
+      daysPresent,
+      daysAbsent,
+      daysLate,
+      overtimeHours: overtimeData.hours,
+      overtimeAmount: overtimeData.amount
+    }
   };
 };
 
@@ -173,20 +185,20 @@ const calculateShiftSalary = async (
  * - Lembur = (Jam Lembur * Rate Lembur)
  * - Potongan = (Terlambat * Denda) + BPJS
  */
-const calculateNonShiftSalary = async (
+const calculateNonShiftSalary = (
   employee: any,
   attendances: any[],
-  month: number,
-  year: number,
-  overtimeData: { hours: number; amount: number },
-  tx: any = prisma
-) => {
+  overtimeData: { hours: number; amount: number }
+): SalaryCalculationResult => {
   const hourlyRate = getEmployeeHourlyRate(employee);
   let totalWorkHours = 0;
   let daysPresent = 0;
   let daysAbsent = 0;
   let daysLate = 0;
-  let lateDeductionAmount = 0;
+  
+  const allowances: PayrollComponent[] = [];
+  const deductions: PayrollComponent[] = [];
+  
   let mealAllowances = 0;
   let transportAllowances = 0;
 
@@ -195,26 +207,18 @@ const calculateNonShiftSalary = async (
   const role = employee.user?.role || "";
   
   let positionAllowance = 0;
-  let positionAllowanceType = "";
 
   if (position.includes("assistant foreman") || role === "ASSISTANT_FOREMAN") {
       positionAllowance = ASSISTANT_FOREMAN_ALLOWANCE;
-      positionAllowanceType = "TUNJANGAN_JABATAN_ASST_FOREMAN";
+      allowances.push({
+        type: "TUNJANGAN_JABATAN_ASST_FOREMAN",
+        amount: positionAllowance
+      });
   } else if (position.includes("foreman") || role === "FOREMAN") {
       positionAllowance = FOREMAN_ALLOWANCE;
-      positionAllowanceType = "TUNJANGAN_JABATAN_FOREMAN";
-  }
-
-  if (positionAllowance > 0) {
-      // Catat allowance jabatan ke database
-      await tx.allowance.create({
-        data: {
-          employeeId: employee.id,
-          month,
-          year,
-          type: positionAllowanceType,
-          amount: positionAllowance,
-        }
+      allowances.push({
+        type: "TUNJANGAN_JABATAN_FOREMAN",
+        amount: positionAllowance
       });
   }
 
@@ -247,10 +251,11 @@ const calculateNonShiftSalary = async (
       // Hitung Keterlambatan
       if (att.status === Status.LATE) {
         daysLate++;
-        lateDeductionAmount += NON_SHIFT_LATE_PENALTY;
-        
-        // Catat deduction detail
-        await recordDeduction(employee.id, month, year, NON_SHIFT_LATE_PENALTY, "LATE", `Keterlambatan Non-Shift ${new Date(att.date).toLocaleDateString()}`, tx);
+        deductions.push({
+          type: "LATE",
+          amount: NON_SHIFT_LATE_PENALTY,
+          reason: `Keterlambatan Non-Shift ${new Date(att.date).toLocaleDateString()}`
+        });
       }
 
     } else if (att.status === Status.ABSENT) {
@@ -263,43 +268,45 @@ const calculateNonShiftSalary = async (
     }
   }
 
-  // Hitung Gaji Pokok Berdasarkan Jam Kerja
-  const baseSalary = totalWorkHours * hourlyRate;
+  // Hitung Gaji Pokok Berdasarkan Hari Kerja (Bukan Jam)
+  // Formula: Days Present (termasuk Leave) * 8 jam * Hourly Rate
+  // Note: LEAVE biasanya dibayar penuh (8 jam) jika paid leave.
+  // Kita asumsikan LEAVE dihitung sebagai kehadiran untuk Gaji Pokok.
+  let payableDays = 0;
+  for (const att of attendances) {
+    if (att.status === Status.PRESENT || att.status === Status.LATE || att.status === Status.LEAVE) {
+      payableDays++;
+    }
+  }
+  
+  const baseSalary = payableDays * NON_SHIFT_WORK_HOURS * hourlyRate;
 
-  // Catat allowance ke database
+  // Catat allowance ke list
   if (mealAllowances > 0) {
-    await tx.allowance.create({
-      data: {
-        employeeId: employee.id,
-        month,
-        year,
-        type: "NON_SHIFT_MEAL_ALLOWANCE",
-        amount: mealAllowances,
-      }
+    allowances.push({
+      type: "NON_SHIFT_MEAL_ALLOWANCE",
+      amount: mealAllowances
     });
   }
 
   if (transportAllowances > 0) {
-    await tx.allowance.create({
-      data: {
-        employeeId: employee.id,
-        month,
-        year,
-        type: "NON_SHIFT_TRANSPORT_ALLOWANCE",
-        amount: transportAllowances,
-      }
+    allowances.push({
+      type: "NON_SHIFT_TRANSPORT_ALLOWANCE",
+      amount: transportAllowances
     });
   }
 
-  const totalAllowances = mealAllowances + transportAllowances + positionAllowance;
-
   return {
-    baseSalary, // Ini dinamis sesuai jam kerja
-    daysPresent,
-    daysAbsent,
-    daysLate,
-    lateDeductionAmount,
-    totalAllowances,
+    baseSalary,
+    allowances,
+    deductions,
+    meta: {
+      daysPresent,
+      daysAbsent,
+      daysLate,
+      overtimeHours: overtimeData.hours,
+      overtimeAmount: overtimeData.amount
+    }
   };
 };
 
@@ -307,27 +314,7 @@ const calculateNonShiftSalary = async (
 // FUNGSI PENDUKUNG LAIN
 // ==========================================
 
-const recordDeduction = async (
-  employeeId: string, 
-  month: number, 
-  year: number, 
-  amount: number, 
-  type: string, 
-  reason: string,
-  tx: any = prisma
-) => {
-  const deduction = await tx.deduction.create({
-    data: {
-      employeeId,
-      month,
-      year,
-      amount,
-      type,
-      reason,
-    }
-  });
-  return deduction;
-};
+
 
 const calculateOvertime = async (employeeId: string, month: number, year: number, tx: any = prisma) => {
   const startDate = new Date(year, month - 1, 1);
@@ -459,98 +446,108 @@ const calculateOvertime = async (employeeId: string, month: number, year: number
   return { hours: totalHours, amount: totalAmount };
 };
 
-const calculateBpjs = async (employeeId: string, month: number, year: number, tx: any = prisma) => {
-  const employee = await tx.employee.findUnique({ where: { id: employeeId } });
-  if (!employee) return { kesehatan: 0, ketenagakerjaan: 0 };
-
+const calculateBpjs = (employee: any): { deductions: PayrollComponent[] } => {
+  const deductions: PayrollComponent[] = [];
   const kesehatan = employee.bpjsKesehatan || 0;
   const ketenagakerjaan = employee.bpjsKetenagakerjaan || 0;
 
   if (kesehatan > 0) {
-    await recordDeduction(employeeId, month, year, kesehatan, "BPJS_KESEHATAN", "Potongan BPJS Kesehatan", tx);
-  }
-  if (ketenagakerjaan > 0) {
-    await recordDeduction(employeeId, month, year, ketenagakerjaan, "BPJS_KETENAGAKERJAAN", "Potongan BPJS Ketenagakerjaan", tx);
-  }
-
-  return { kesehatan, ketenagakerjaan };
-};
-
-const calculateAdvanceDeduction = async (employeeId: string, month: number, year: number, tx: any = prisma) => {
-  const advances = await tx.advance.findMany({
-    where: {
-      employeeId,
-      status: "APPROVED",
-      deductionMonth: month,
-      deductionYear: year,
-      deductedAt: null,
-    },
-  });
-
-  let totalAmount = 0;
-  for (const adv of advances) {
-    totalAmount += adv.amount;
-    await recordDeduction(employeeId, month, year, adv.amount, "KASBON", `Pelunasan Kasbon`, tx);
-    
-    await tx.advance.update({
-      where: { id: adv.id },
-      data: { deductedAt: new Date() }
+    deductions.push({
+      type: "BPJS_KESEHATAN",
+      amount: kesehatan,
+      reason: "Potongan BPJS Kesehatan"
     });
   }
-  return totalAmount;
+  if (ketenagakerjaan > 0) {
+    deductions.push({
+      type: "BPJS_KETENAGAKERJAAN",
+      amount: ketenagakerjaan,
+      reason: "Potongan BPJS Ketenagakerjaan"
+    });
+  }
+
+  return { deductions };
 };
 
-const calculateSoftLoanDeduction = async (employeeId: string, month: number, year: number, tx: any = prisma) => {
-  const loans = await tx.softLoan.findMany({
-    where: {
-      employeeId,
-      status: { in: ["APPROVED", "ACTIVE"] },
-      remainingAmount: { gt: 0 },
-    },
-  });
+interface AdvanceDeductionResult {
+  totalAmount: number;
+  deductions: PayrollComponent[];
+  advancesToUpdate: string[];
+}
 
+const calculateAdvanceDeduction = (advances: any[]): AdvanceDeductionResult => {
   let totalAmount = 0;
+  const deductions: PayrollComponent[] = [];
+  const advancesToUpdate: string[] = [];
+
+  for (const adv of advances) {
+    totalAmount += adv.amount;
+    deductions.push({
+      type: "KASBON",
+      amount: adv.amount,
+      reason: "Pelunasan Kasbon"
+    });
+    advancesToUpdate.push(adv.id);
+  }
+  
+  return { totalAmount, deductions, advancesToUpdate };
+};
+
+interface LoanDeductionResult {
+  totalAmount: number;
+  deductions: PayrollComponent[];
+  loansToUpdate: { id: string; remainingAmount: number; status: string; completedAt: Date | null }[];
+}
+
+const calculateSoftLoanDeduction = (
+  loans: any[], 
+  existingDeductions: PayrollComponent[], 
+  month: number, 
+  year: number
+): LoanDeductionResult => {
+  // Jika sudah ada history potongan (dari run sebelumnya yang committed), 
+  // kita assume loan balance SUDAH terupdate.
+  // Kita kembalikan data existing tanpa mentrigger update baru.
+  if (existingDeductions.length > 0) {
+    const totalAmount = existingDeductions.reduce((sum, d) => sum + d.amount, 0);
+    return {
+      totalAmount,
+      deductions: existingDeductions,
+      loansToUpdate: [] 
+    };
+  }
+
+  // Jika belum ada, hitung normal dan trigger update loan
+  let totalAmount = 0;
+  const deductions: PayrollComponent[] = [];
+  const loansToUpdate: any[] = [];
+
   for (const loan of loans) {
     const startLoanDate = new Date(loan.startYear, loan.startMonth - 1, 1);
     const payrollDate = new Date(year, month - 1, 1);
     
     if (payrollDate >= startLoanDate) {
-      // Cek apakah sudah ada deduction untuk pinjaman ini di bulan ini (Mencegah double deduction)
-      const existingDeduction = await tx.deduction.findFirst({
-        where: {
-          employeeId,
-          month,
-          year,
-          type: "PINJAMAN"
-        }
-      });
-
-      // Jika sudah ada deduction, skip pembuatan baru, tapi tetap hitung totalAmount agar masuk ke payroll
-      if (existingDeduction) {
-        totalAmount += existingDeduction.amount;
-        // Jangan update remaining amount lagi!
-        continue;
-      }
-
       const deductionAmount = Math.min(loan.monthlyAmount, loan.remainingAmount);
       
       if (deductionAmount > 0) {
         totalAmount += deductionAmount;
-        await recordDeduction(employeeId, month, year, deductionAmount, "PINJAMAN", `Cicilan Pinjaman`, tx);
+        deductions.push({
+          type: "PINJAMAN",
+          amount: deductionAmount,
+          reason: "Cicilan Pinjaman"
+        });
         
         const newRemaining = loan.remainingAmount - deductionAmount;
-        await tx.softLoan.update({
-          where: { id: loan.id },
-          data: { 
-            remainingAmount: newRemaining,
-            status: newRemaining <= 0 ? "COMPLETED" : "ACTIVE",
-            completedAt: newRemaining <= 0 ? new Date() : null
-          }
+        loansToUpdate.push({
+          id: loan.id,
+          remainingAmount: newRemaining,
+          status: newRemaining <= 0 ? "COMPLETED" : "ACTIVE",
+          completedAt: newRemaining <= 0 ? new Date() : null
         });
       }
     }
   }
-  return totalAmount;
+  return { totalAmount, deductions, loansToUpdate };
 };
 
 // ==========================================
@@ -566,43 +563,45 @@ export const generateMonthlyPayroll = async (employeeId: string, month: number, 
 
   if (!employee) throw new Error("Karyawan tidak ditemukan");
 
-  // 2. Cek Payroll Existing (Fail Fast)
-  const existing = await prisma.payroll.findFirst({
-    where: { employeeId, month, year },
+  // PRE-FETCH IDEMPOTENCY DATA (Outside Transaction for committed state check)
+  // Kita perlu tahu apakah bulan ini SUDAH pernah dipotong pinjamannya di run sebelumnya.
+  // Karena transaction akan menghapus deduction, kita harus cek dulu.
+  const existingLoanDeductionsRaw = await prisma.deduction.findMany({
+    where: {
+      employeeId,
+      month,
+      year,
+      type: "PINJAMAN"
+    }
   });
-  if (existing) throw new Error("Slip gaji bulan ini sudah dibuat");
+  
+  const existingLoanDeductions: PayrollComponent[] = existingLoanDeductionsRaw.map(d => ({
+    type: d.type,
+    amount: d.amount,
+    reason: d.reason || "Cicilan Pinjaman"
+  }));
 
   // 3. Start Atomic Transaction
   const payroll = await prisma.$transaction(async (tx) => {
-    // 3.1 CLEANUP: Hapus deduction dan allowance sementara/orphan dari run sebelumnya untuk bulan ini
+    // 3.1 CLEANUP TOTAL: Hapus data payroll lama jika ada (Retry Mechanism)
+    // Kita hapus semua data terkait bulan ini agar kalkulasi ulang bersih.
+    
+    // Hapus Deduction (Semua tipe untuk bulan ini)
     await tx.deduction.deleteMany({
-      where: {
-        employeeId,
-        month,
-        year,
-        payrollId: null
-      }
+      where: { employeeId, month, year }
     });
 
+    // Hapus Allowance (Semua tipe untuk bulan ini)
     await tx.allowance.deleteMany({
-      where: {
-        employeeId,
-        month,
-        year,
-        type: {
-          in: [
-            "SHIFT_FIXED_ALLOWANCE", 
-            "NON_SHIFT_DAILY_ALLOWANCE", 
-            "NON_SHIFT_MEAL_ALLOWANCE", 
-            "NON_SHIFT_TRANSPORT_ALLOWANCE",
-            "TUNJANGAN_JABATAN_FOREMAN",
-            "TUNJANGAN_JABATAN_ASST_FOREMAN"
-          ]
-        }
-      }
+      where: { employeeId, month, year }
+    });
+    
+    // Hapus Payroll Header
+    await tx.payroll.deleteMany({
+      where: { employeeId, month, year }
     });
 
-    // 3.2 Ambil Data Absensi
+    // 3.2 Ambil Data Absensi & Komponen Lain
     const startDate = new Date(year, month - 1, 1);
     const endDate = new Date(year, month, 0);
     
@@ -613,66 +612,67 @@ export const generateMonthlyPayroll = async (employeeId: string, month: number, 
       },
     });
 
-    // 3.3 Hitung Overtime, BPJS, Kasbon, Pinjaman (Paralel)
-    // Semua fungsi helper sekarang menerima tx untuk menjamin atomicity
-    const [overtimeData, bpjsData, advanceDeduction, loanDeduction] = await Promise.all([
-      calculateOvertime(employeeId, month, year, tx),
-      calculateBpjs(employeeId, month, year, tx),
-      calculateAdvanceDeduction(employeeId, month, year, tx),
-      calculateSoftLoanDeduction(employeeId, month, year, tx)
-    ]);
-    
-    const totalBpjs = bpjsData.kesehatan + bpjsData.ketenagakerjaan;
-    const otherDeductions = advanceDeduction + loanDeduction;
+    const advances = await tx.advance.findMany({
+      where: {
+        employeeId,
+        status: "APPROVED",
+        deductionMonth: month,
+        deductionYear: year,
+      },
+    });
 
-    // 3.4 Branching Logic Berdasarkan Tipe Karyawan
-    let calculationResult;
+    const loans = await tx.softLoan.findMany({
+      where: {
+        employeeId,
+        status: { in: ["APPROVED", "ACTIVE"] },
+        remainingAmount: { gt: 0 },
+      },
+      orderBy: { id: 'asc' }
+    });
+
+    // 3.3 Hitung Komponen-Komponen (PURE CALCULATIONS / READ-ONLY PHASE)
+    const overtimeData = await calculateOvertime(employeeId, month, year, tx);
+    const bpjsResult = calculateBpjs(employee);
+    const advanceResult = calculateAdvanceDeduction(advances);
+    const loanResult = calculateSoftLoanDeduction(loans, existingLoanDeductions, month, year);
+    
+    let salaryResult: SalaryCalculationResult;
     let payrollTypeLog = "";
 
     if (employee.workScheduleType === 'SHIFT') {
       payrollTypeLog = "SHIFT (Monthly Fixed)";
-      calculationResult = await calculateShiftSalary(employee, attendances, month, year, overtimeData, tx);
+      salaryResult = calculateShiftSalary(employee, attendances, overtimeData);
     } else {
       payrollTypeLog = "NON_SHIFT (Hourly Based)";
-      calculationResult = await calculateNonShiftSalary(employee, attendances, month, year, overtimeData, tx);
+      salaryResult = calculateNonShiftSalary(employee, attendances, overtimeData);
     }
 
-    // Destructure hasil kalkulasi
-    const result: any = calculationResult;
-    const {
-      baseSalary,
-      daysPresent,
-      daysAbsent,
-      daysLate,
-      lateDeductionAmount,
-      totalAllowances,
-      absenceDeductionAmount = 0 
-    } = result;
+    // 3.4 AGGREGATE DATA
+    const allAllowances = [...salaryResult.allowances];
+    const allDeductions = [
+      ...salaryResult.deductions,
+      ...bpjsResult.deductions,
+      ...advanceResult.deductions,
+      ...loanResult.deductions
+    ];
 
-    // 3.5 Hitung Final Net Salary
-    const totalDeductions = lateDeductionAmount + absenceDeductionAmount + totalBpjs + otherDeductions;
+    const totalAllowances = allAllowances.reduce((sum, item) => sum + item.amount, 0);
+    const totalDeductions = allDeductions.reduce((sum, item) => sum + item.amount, 0);
+    
+    const { baseSalary, meta } = salaryResult;
     const netSalary = baseSalary + totalAllowances + overtimeData.amount - totalDeductions;
 
-    // 3.6 VALIDASI & VERIFIKASI
+    // 3.5 VALIDASI & VERIFIKASI
     if (netSalary < 0) {
       console.warn(`[WARNING] Negative Net Salary for employee ${employeeId}: ${netSalary}`);
     }
 
-    const components = [
-      baseSalary, totalAllowances, overtimeData.amount, 
-      lateDeductionAmount, absenceDeductionAmount, totalBpjs, otherDeductions
-    ];
+    if (isNaN(netSalary)) {
+      throw new Error("Validation Error: Calculation resulted in NaN");
+    }
+
+    // 3.6 WRITE TO DATABASE (SIDE EFFECTS PHASE)
     
-    if (components.some(c => isNaN(c) || c === null || c === undefined)) {
-      throw new Error("Validation Error: Calculation resulted in NaN or null values");
-    }
-
-    const calculatedNet = baseSalary + totalAllowances + overtimeData.amount - (lateDeductionAmount + absenceDeductionAmount + totalBpjs + otherDeductions);
-    if (Math.abs(calculatedNet - netSalary) > 1) {
-      throw new Error(`Calculation Mismatch: ${calculatedNet} vs ${netSalary}`);
-    }
-
-    // 3.7 Simpan ke Database
     // a. Buat Payroll Record
     const newPayroll = await tx.payroll.create({
       data: {
@@ -683,34 +683,71 @@ export const generateMonthlyPayroll = async (employeeId: string, month: number, 
         totalAllowances,
         totalDeductions,
         netSalary,
-        daysPresent,
-        daysAbsent,
-        daysLate,
-        overtimeHours: overtimeData.hours,
-        overtimeAmount: overtimeData.amount,
-        lateDeduction: lateDeductionAmount,
-        advanceDeduction: advanceDeduction,
-        softLoanDeduction: loanDeduction,
-        bpjsKesehatanAmount: bpjsData.kesehatan,
-        bpjsKetenagakerjaanAmount: bpjsData.ketenagakerjaan,
+        daysPresent: meta.daysPresent,
+        daysAbsent: meta.daysAbsent,
+        daysLate: meta.daysLate,
+        overtimeHours: meta.overtimeHours,
+        overtimeAmount: meta.overtimeAmount,
+        lateDeduction: salaryResult.deductions.filter(d => d.type === 'LATE').reduce((s, d) => s + d.amount, 0),
+        advanceDeduction: advanceResult.totalAmount,
+        softLoanDeduction: loanResult.totalAmount,
+        bpjsKesehatanAmount: bpjsResult.deductions.find(d => d.type === 'BPJS_KESEHATAN')?.amount || 0,
+        bpjsKetenagakerjaanAmount: bpjsResult.deductions.find(d => d.type === 'BPJS_KETENAGAKERJAAN')?.amount || 0,
         status: "PENDING",
       }
     });
 
-    // b. Link semua deduction bulan ini ke payroll yang baru dibuat
-    await tx.deduction.updateMany({
-      where: {
-        employeeId,
-        month,
-        year,
-        payrollId: null
-      },
-      data: {
-        payrollId: newPayroll.id
-      }
-    });
+    // b. Simpan Allowances
+    if (allAllowances.length > 0) {
+      await tx.allowance.createMany({
+        data: allAllowances.map(a => ({
+          employeeId,
+          month,
+          year,
+          type: a.type,
+          amount: a.amount,
+        }))
+      });
+    }
 
-    // c. Audit Log
+    // c. Simpan Deductions (Linked to Payroll)
+    if (allDeductions.length > 0) {
+      await tx.deduction.createMany({
+        data: allDeductions.map(d => ({
+          employeeId,
+          month,
+          year,
+          amount: d.amount,
+          type: d.type,
+          reason: d.reason || "",
+          payrollId: newPayroll.id
+        }))
+      });
+    }
+
+    // d. Update Advances (Mark as deducted)
+    for (const advId of advanceResult.advancesToUpdate) {
+      await tx.advance.update({
+        where: { id: advId },
+        data: { deductedAt: new Date() }
+      });
+    }
+
+    // e. Update Soft Loans
+    for (const loanUpdate of loanResult.loansToUpdate) {
+      await tx.softLoan.update({
+        where: { id: loanUpdate.id },
+        data: { 
+          remainingAmount: loanUpdate.remainingAmount,
+          status: loanUpdate.status,
+          completedAt: loanUpdate.completedAt
+        }
+      });
+    }
+
+    // f. Audit Log
+    const breakdownJson = JSON.parse(JSON.stringify(salaryResult));
+    
     await tx.payrollAuditLog.create({
       data: {
         payrollId: newPayroll.id,
@@ -719,12 +756,12 @@ export const generateMonthlyPayroll = async (employeeId: string, month: number, 
         newValue: {
           type: payrollTypeLog,
           netSalary,
-          breakdown: calculationResult
+          breakdown: breakdownJson
         }
       }
     });
 
-    // d. Notifikasi
+    // g. Notifikasi
     await tx.notification.create({
       data: {
         userId: employee.userId,
@@ -734,105 +771,66 @@ export const generateMonthlyPayroll = async (employeeId: string, month: number, 
       }
     });
 
-    // e. Retrieve complete enriched record for immediate UI update
-    const enrichedPayrollQuery = `
-      SELECT 
-        p.id, 
-        p."employeeId", 
-        p.month, 
-        p.year, 
-        p."baseSalary", 
-        p."totalAllowances",
-        p."totalDeductions",
-        p."netSalary",
-        p."daysPresent",
-        p."daysAbsent",
-        p."overtimeHours",
-        p."overtimeAmount",
-        p."bpjsKesehatanAmount",
-        p."bpjsKetenagakerjaanAmount",
-        p."lateDeduction",
-        p.status,
-        p."createdAt",
-        p."paidAt",
-        e."employeeId" AS "empId",
-        u.name AS "employeeName",
-        e.position,
-        e.division,
-        (SELECT COALESCE(SUM(d."amount"), 0) FROM deductions d WHERE d."payrollId" = p.id AND d."type" = 'KASBON') AS "advanceAmount",
-        (SELECT COALESCE(SUM(d."amount"), 0) FROM deductions d WHERE d."payrollId" = p.id AND d."type" = 'PINJAMAN') AS "softLoanDeduction",
-        (SELECT COALESCE(SUM(d."amount"), 0) FROM deductions d WHERE d."payrollId" = p.id AND d."type" = 'ABSENCE') AS "absenceDeduction",
-        (SELECT COALESCE(SUM(d."amount"), 0) FROM deductions d WHERE d."payrollId" = p.id AND d."type" NOT IN ('ABSENCE', 'LATE', 'BPJS_KESEHATAN', 'BPJS_KETENAGAKERJAAN', 'KASBON', 'PINJAMAN')) AS "otherDeductions",
-        (SELECT COALESCE(SUM(a."amount"), 0) FROM allowances a WHERE a."employeeId" = p."employeeId" AND a."month" = p.month AND a."year" = p.year AND a."type" LIKE 'TUNJANGAN_JABATAN%') AS "positionAllowance",
-        (SELECT COALESCE(SUM(a."amount"), 0) FROM allowances a WHERE a."employeeId" = p."employeeId" AND a."month" = p.month AND a."year" = p.year AND a."type" = 'NON_SHIFT_MEAL_ALLOWANCE') AS "mealAllowance",
-        (SELECT COALESCE(SUM(a."amount"), 0) FROM allowances a WHERE a."employeeId" = p."employeeId" AND a."month" = p.month AND a."year" = p.year AND a."type" = 'NON_SHIFT_TRANSPORT_ALLOWANCE') AS "transportAllowance",
-        (SELECT COALESCE(SUM(a."amount"), 0) FROM allowances a WHERE a."employeeId" = p."employeeId" AND a."month" = p.month AND a."year" = p.year AND a."type" = 'SHIFT_FIXED_ALLOWANCE') AS "shiftAllowance"
-      FROM 
-        payrolls p
-      JOIN 
-        employees e ON p."employeeId" = e.id
-      JOIN 
-        users u ON e."userId" = u.id
-      WHERE p.id = $1
-    `;
-    
-    const enrichedPayrolls = await tx.$queryRawUnsafe(enrichedPayrollQuery, newPayroll.id) as any[];
-    const serialized = enrichedPayrolls[0];
-
-    // Safety Patch: Ensure calculated values are returned even if query returns 0/null (race condition safety)
-    // Also handle BigInt serialization
-    if (serialized) {
-      // 1. Advance / Kasbon
-      if (typeof serialized.advanceAmount === 'bigint') {
-        serialized.advanceAmount = Number(serialized.advanceAmount);
-      }
-      if (!serialized.advanceAmount && advanceDeduction > 0) {
-        serialized.advanceAmount = advanceDeduction;
-      }
-
-      // 2. Soft Loan / Pinjaman
-      if (typeof serialized.softLoanDeduction === 'bigint') {
-        serialized.softLoanDeduction = Number(serialized.softLoanDeduction);
-      }
-      if (!serialized.softLoanDeduction && loanDeduction > 0) {
-        serialized.softLoanDeduction = loanDeduction;
-      }
-
-      // 3. Absence
-      if (typeof serialized.absenceDeduction === 'bigint') {
-        serialized.absenceDeduction = Number(serialized.absenceDeduction);
-      }
-      if (!serialized.absenceDeduction && absenceDeductionAmount > 0) {
-        serialized.absenceDeduction = absenceDeductionAmount;
-      }
-
-      // 4. Other Deductions
-      if (typeof serialized.otherDeductions === 'bigint') {
-        serialized.otherDeductions = Number(serialized.otherDeductions);
-      }
-
-      // 5. BPJS
-      if (!serialized.bpjsKesehatanAmount && bpjsData.kesehatan > 0) {
-        serialized.bpjsKesehatanAmount = bpjsData.kesehatan;
-      }
-      if (!serialized.bpjsKetenagakerjaanAmount && bpjsData.ketenagakerjaan > 0) {
-        serialized.bpjsKetenagakerjaanAmount = bpjsData.ketenagakerjaan;
-      }
-
-      // 6. Allowances (BigInt conversion)
-      if (typeof serialized.positionAllowance === 'bigint') serialized.positionAllowance = Number(serialized.positionAllowance);
-      if (typeof serialized.mealAllowance === 'bigint') serialized.mealAllowance = Number(serialized.mealAllowance);
-      if (typeof serialized.transportAllowance === 'bigint') serialized.transportAllowance = Number(serialized.transportAllowance);
-      if (typeof serialized.shiftAllowance === 'bigint') serialized.shiftAllowance = Number(serialized.shiftAllowance);
-    }
-
-    return serialized;
-  }, {
-    maxWait: 10000,
-    timeout: 20000
+    return newPayroll;
   });
 
-  return payroll;
+  // 4. Retrieve complete enriched record for immediate UI update
+  const enrichedPayrollQuery = `
+    SELECT 
+      p.id, 
+      p."employeeId", 
+      p.month, 
+      p.year, 
+      p."baseSalary", 
+      p."totalAllowances",
+      p."totalDeductions",
+      p."netSalary",
+      p."daysPresent",
+      p."daysAbsent",
+      p."overtimeHours",
+      p."overtimeAmount",
+      p."bpjsKesehatanAmount",
+      p."bpjsKetenagakerjaanAmount",
+      p."lateDeduction",
+      p.status,
+      p."createdAt",
+      p."paidAt",
+      e."employeeId" AS "empId",
+      u.name AS "employeeName",
+      e.position,
+      e.division,
+      (SELECT COALESCE(SUM(d."amount"), 0) FROM deductions d WHERE d."payrollId" = p.id AND d."type" = 'KASBON') AS "advanceAmount",
+      (SELECT COALESCE(SUM(d."amount"), 0) FROM deductions d WHERE d."payrollId" = p.id AND d."type" = 'PINJAMAN') AS "softLoanDeduction",
+      (SELECT COALESCE(SUM(d."amount"), 0) FROM deductions d WHERE d."payrollId" = p.id AND d."type" = 'ABSENCE') AS "absenceDeduction",
+      (SELECT COALESCE(SUM(d."amount"), 0) FROM deductions d WHERE d."payrollId" = p.id AND d."type" NOT IN ('ABSENCE', 'LATE', 'BPJS_KESEHATAN', 'BPJS_KETENAGAKERJAAN', 'KASBON', 'PINJAMAN')) AS "otherDeductions",
+      (SELECT COALESCE(SUM(a."amount"), 0) FROM allowances a WHERE a."employeeId" = p."employeeId" AND a."month" = p.month AND a."year" = p.year AND a."type" LIKE 'TUNJANGAN_JABATAN%') AS "positionAllowance",
+      (SELECT COALESCE(SUM(a."amount"), 0) FROM allowances a WHERE a."employeeId" = p."employeeId" AND a."month" = p.month AND a."year" = p.year AND a."type" = 'NON_SHIFT_MEAL_ALLOWANCE') AS "mealAllowance",
+      (SELECT COALESCE(SUM(a."amount"), 0) FROM allowances a WHERE a."employeeId" = p."employeeId" AND a."month" = p.month AND a."year" = p.year AND a."type" = 'NON_SHIFT_TRANSPORT_ALLOWANCE') AS "transportAllowance",
+      (SELECT COALESCE(SUM(a."amount"), 0) FROM allowances a WHERE a."employeeId" = p."employeeId" AND a."month" = p.month AND a."year" = p.year AND a."type" = 'SHIFT_FIXED_ALLOWANCE') AS "shiftAllowance"
+    FROM 
+      payrolls p
+    JOIN 
+      employees e ON p."employeeId" = e.id
+    JOIN 
+      users u ON e."userId" = u.id
+    WHERE p.id = $1
+  `;
+  
+  const enrichedPayrolls = await prisma.$queryRawUnsafe(enrichedPayrollQuery, payroll.id) as any[];
+  const serialized = enrichedPayrolls[0];
+
+  if (serialized) {
+    if (typeof serialized.advanceAmount === 'bigint') serialized.advanceAmount = Number(serialized.advanceAmount);
+    if (typeof serialized.softLoanDeduction === 'bigint') serialized.softLoanDeduction = Number(serialized.softLoanDeduction);
+    if (typeof serialized.absenceDeduction === 'bigint') serialized.absenceDeduction = Number(serialized.absenceDeduction);
+    if (typeof serialized.otherDeductions === 'bigint') serialized.otherDeductions = Number(serialized.otherDeductions);
+    if (typeof serialized.positionAllowance === 'bigint') serialized.positionAllowance = Number(serialized.positionAllowance);
+    if (typeof serialized.mealAllowance === 'bigint') serialized.mealAllowance = Number(serialized.mealAllowance);
+    if (typeof serialized.transportAllowance === 'bigint') serialized.transportAllowance = Number(serialized.transportAllowance);
+    if (typeof serialized.shiftAllowance === 'bigint') serialized.shiftAllowance = Number(serialized.shiftAllowance);
+  }
+
+  return serialized;
 };
 
 // ==========================================
