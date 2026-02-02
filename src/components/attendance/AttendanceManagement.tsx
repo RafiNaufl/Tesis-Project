@@ -1547,6 +1547,12 @@ export default function AttendanceManagement() {
                         scope="col"
                         className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 hidden md:table-cell"
                       >
+                        Total Jam
+                      </th>
+                      <th
+                        scope="col"
+                        className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 hidden md:table-cell"
+                      >
                         Keterangan
                       </th>
                       {isAdmin && (
@@ -1563,7 +1569,7 @@ export default function AttendanceManagement() {
                     {isLoading ? (
                       <tr>
                         <td
-                          colSpan={8}
+                          colSpan={10}
                           className="whitespace-nowrap py-4 px-3 text-sm text-gray-500 text-center"
                         >
                           Memuat data...
@@ -1572,7 +1578,7 @@ export default function AttendanceManagement() {
                     ) : !Array.isArray(attendanceRecords) || attendanceRecords.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={8}
+                          colSpan={10}
                           className="whitespace-nowrap py-4 px-3 text-sm text-gray-500 text-center"
                         >
                           Tidak ditemukan catatan kehadiran
@@ -1686,6 +1692,17 @@ export default function AttendanceManagement() {
                                   : "(Menunggu persetujuan)"}
                               </div>
                             )}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500 hidden md:table-cell">
+                            {(() => {
+                              const regularMinutes = record.checkIn && record.checkOut
+                                ? Math.floor((new Date(record.checkOut).getTime() - new Date(record.checkIn).getTime()) / 60000)
+                                : 0;
+                              const overtimeMinutes = record.overtime || 0;
+                              const totalMinutes = regularMinutes + overtimeMinutes;
+                              
+                              return totalMinutes > 0 ? formatMinutesToHours(totalMinutes) : "-";
+                            })()}
                           </td>
                           <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500 hidden md:table-cell">
                             {(() => {
