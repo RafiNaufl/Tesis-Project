@@ -240,7 +240,7 @@ const calculateNonShiftSalary = (
       if (dayType === WorkdayType.WEEKDAY) {
         dailyHours = 7.5; // Senin-Jumat: 7.5 jam
       } else if (dayType === WorkdayType.SATURDAY) {
-        dailyHours = 5.0; // Sabtu: 5 jam (08:00 - 14:00 dikurangi istirahat)
+        dailyHours = 10.0; // Sabtu: 5 jam kerja x 2 = 10 jam payable
       }
       // Minggu tidak dihitung sebagai jam kerja reguler (hanya lembur)
       
@@ -266,7 +266,7 @@ const calculateNonShiftSalary = (
       if (dayType === WorkdayType.WEEKDAY) {
         totalWorkHours += 7.5;
       } else if (dayType === WorkdayType.SATURDAY) {
-        totalWorkHours += 5.0;
+        totalWorkHours += 10.0;
       }
     }
   }
@@ -356,47 +356,77 @@ const calculateOvertime = async (employeeId: string, month: number, year: number
     // ==========================================
     if (employee.workScheduleType === 'NON_SHIFT') {
       
-      // Aturan Baru: Potong istirahat 0.5 jam (30 menit) jika lembur > 2 jam
-      if (durationHours > 2) {
-        durationHours -= 0.5;
-      }
+      // Calculate raw duration first (before deductions)
+      // durationHours passed from top is already rounded to 0.5
+      
+      // We need absolute times for Zone logic (mostly for cutoff checks)
+      const reqEnd = new Date(req.end);
+      
+      if (isSaturday) {
+         // Saturday Non-Shift Logic
+         // 1. Standard Deduction: 1.0 hour (implied break 12:00-13:00 or during OT)
+         let deduction = 1.0;
+         
+         // 2. Additional Deduction: 0.5 hour if ends after 18:30
+         const cutOff1830 = new Date(req.date);
+         cutOff1830.setHours(18, 30, 0, 0);
+         
+         if (reqEnd > cutOff1830) {
+            deduction += 0.5;
+         }
+         
+         // Apply deduction to duration
+         const netDuration = Math.max(0, durationHours - deduction);
+         
+         // Calculate Payable Hours
+         // Base Bonus: 5 hours (to upgrade 08-13 to 2x)
+         // Zone 1 (13:00 - 16:30): 1x (Max 2.5 hours effective)
+         // Zone 2 (> 16:30): 2x
+         
+         // Note: Zone 1 physical window is 13:00-16:30 (3.5h).
+         // After 1.0h deduction, max effective Zone 1 is 2.5h.
+         // Any net duration beyond 2.5h falls into Zone 2.
+         
+         const zone1 = Math.min(netDuration, 2.5);
+          const zone2 = Math.max(0, netDuration - 2.5);
+          
+          const payableHours = (zone1 * 1.0) + (zone2 * 2.0);
+          dailyAmount += (payableHours * hourlyRate);
+          
+          // Update durationHours for display/logging
+          durationHours = netDuration;
 
-      if (isSunday || isHoliday) {
-        // 4. Minggu / Libur Resmi
-        // - Jam 1-8: 2x
-        // - Jam 9: 3x
-        // - Jam 10-11: 4x
-        // - Max 11 jam
-        const cappedDuration = Math.min(durationHours, 11);
+      } else if (isSunday || isHoliday) {
+        // Sunday / Holiday Non-Shift Logic (New Request)
+        // All hours x2
+        // Deduction: 1h if > 5h, 1.5h if > 11h
         
-        const hoursTier1 = Math.min(cappedDuration, 8); // Jam 1-8
-        const hoursTier2 = Math.min(Math.max(0, cappedDuration - 8), 1); // Jam 9
-        const hoursTier3 = Math.max(0, cappedDuration - 9); // Jam 10+
+        let deduction = 0;
+        if (durationHours > 11) {
+             deduction = 1.5;
+        } else if (durationHours > 5) {
+             deduction = 1.0;
+        }
 
-        dailyAmount += (hoursTier1 * 2.0 * hourlyRate);
-        dailyAmount += (hoursTier2 * 3.0 * hourlyRate);
-        dailyAmount += (hoursTier3 * 4.0 * hourlyRate);
+        const effectiveDuration = Math.max(0, durationHours - deduction);
         
-        // Update total hours pake capped
-        durationHours = cappedDuration;
-
-      } else if (isSaturday) {
-        // 3. Sabtu (Hari Kerja 5 Jam)
-        // - 5 jam pertama lembur: 2x
-        // - Jam berikutnya: 1x (Kebijakan unik)
-        const hoursTier1 = Math.min(durationHours, 5);
-        const hoursTier2 = Math.max(0, durationHours - 5);
-
-        dailyAmount += (hoursTier1 * 2.0 * hourlyRate);
-        dailyAmount += (hoursTier2 * 1.0 * hourlyRate);
+        dailyAmount += (effectiveDuration * 2.0 * hourlyRate);
+        
+        durationHours = effectiveDuration;
 
       } else {
+        // Weekday
+        // Generic 0.5h deduction if > 2h
+        if (durationHours > 2) {
+             durationHours -= 0.5;
+        }
+
         // 2. Hari Biasa (Senin-Jumat)
         // - Jam ke-1: 1.5x
         // - Jam ke-2 dst: 2x
         const hoursTier1 = Math.min(durationHours, 1);
         const hoursTier2 = Math.max(0, durationHours - 1);
-
+        
         dailyAmount += (hoursTier1 * 1.5 * hourlyRate);
         dailyAmount += (hoursTier2 * 2.0 * hourlyRate);
       }

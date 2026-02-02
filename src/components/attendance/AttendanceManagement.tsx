@@ -449,6 +449,9 @@ export default function AttendanceManagement() {
           if (item.report && Array.isArray(item.report.attendances)) {
             return item.report.attendances.map((attendance: any) => ({
               ...attendance,
+              checkIn: attendance.checkIn ? new Date(attendance.checkIn) : null,
+              checkOut: attendance.checkOut ? new Date(attendance.checkOut) : null,
+              date: new Date(attendance.date),
               employee: {
                 id: item.employee?.id || "",
                 employeeId: item.employee?.employeeId || "",
@@ -1723,7 +1726,7 @@ export default function AttendanceManagement() {
                                     breakEnd.setHours(13, 0, 0, 0);
                                    
                                    const start = startTime;
-                                   const end = record.checkOut.getTime();
+                                   const end = new Date(record.checkOut).getTime();
                                    const bStart = breakStart.getTime();
                                    const bEnd = breakEnd.getTime();
                                    

@@ -64,7 +64,8 @@ const RULES = {
  */
 export function calculateAutomaticOvertime(
   checkOutTime: Date, 
-  workdayType: WorkdayType
+  workdayType: WorkdayType,
+  isNonShift: boolean = false
 ): OvertimeCalculationResult {
   const breakdown: string[] = [];
   let totalPayable = 0;
@@ -98,7 +99,8 @@ export function calculateAutomaticOvertime(
       let diffHours = diffMinutes / 60;
 
       // Aturan Baru: Potong istirahat 0.5 jam (30 menit) jika lembur > 2 jam
-      if (diffHours > 2) {
+      // HANYA UNTUK NON-SHIFT
+      if (isNonShift && diffHours > 2) {
         diffHours -= 0.5;
         breakdown.push(`Potongan Istirahat Lembur: 0.5 jam (Durasi Lembur > 2 jam)`);
       }
@@ -139,42 +141,94 @@ export function calculateAutomaticOvertime(
     //    - Minggu: Semua x2 (sesuai aturan sebelumnya)
     
     if (workdayType === WorkdayType.SATURDAY) {
-        // Sabtu
-        if (workHours <= 4) {
-             const pay = workHours * 2;
-             totalPayable += pay; // Add to totalPayable as it is Normal hours (just paid x2)
-             normalHours = workHours;
-             breakdown.push(`Kerja Sabtu (≤4 jam): ${workHours.toFixed(2)} jam x 2 = ${pay.toFixed(2)} jam`);
-             // overtimePayable is 0 for this part
-        } else {
-             // Lebih dari 4 jam (Gunakan aturan Sabtu lama: Normal 5h x2 + Sisa x1)
-             // Normal 5 jam
-             const normalH = 5;
-             normalHours = normalH;
-             const normalPay = normalH * 2;
-             totalPayable += normalPay;
-             
-             // Sisa lembur
-             const effectiveHours = workHours > 4 ? workHours - 1 : workHours;
-             const effectiveOvertime = Math.max(0, effectiveHours - normalH);
-             
-             // totalPayable += effectiveOvertime; // REMOVED: Will be added via overtimePayable at the end
-             overtimePayable += effectiveOvertime; // Add to overtimePayable
-             
-             breakdown.push(`Kerja Sabtu Normal: ${normalH} jam x 2 = ${normalPay} jam`);
-             if (effectiveOvertime > 0) {
-                 breakdown.push(`Lembur Sabtu: ${effectiveOvertime.toFixed(2)} jam x 1 = ${effectiveOvertime.toFixed(2)} jam`);
+        if (isNonShift) {
+             // Non-Shift Saturday Logic
+             const checkInDate = new Date(checkOutTime);
+             checkInDate.setHours(8, 0, 0, 0);
+             const rawDiffMs = checkOutTime.getTime() - checkInDate.getTime();
+             const rawHours = rawDiffMs / (1000 * 60 * 60);
+
+             if (rawHours <= 5) {
+                 normalHours = rawHours;
+                 const payable = rawHours * 2;
+                 totalPayable += payable;
+                 breakdown.push(`Kerja Sabtu (≤5 jam): ${rawHours.toFixed(2)} jam x 2 = ${payable.toFixed(2)} jam`);
+                 overtimeDurationReal = 0;
+             } else {
+                 let breakDed = 1.0; 
+                 if (rawHours > 10.5) {
+                     breakDed += 0.5;
+                     breakdown.push(`Potongan Istirahat Tambahan: 0.5 jam (Lembur > 18:30)`);
+                 }
+
+                 const effectiveTotal = Math.max(5, rawHours - breakDed);
+                 const overtimeNet = Math.max(0, effectiveTotal - 5);
+                 
+                 normalHours = 5;
+                 totalPayable += 5;
+                 
+                 const zone1 = Math.min(overtimeNet, 2.5); 
+                 const zone2 = Math.max(0, overtimeNet - 2.5);
+                 
+                 const overtimeVal = 5 + (zone1 * 1.0) + (zone2 * 2.0);
+                 overtimePayable += overtimeVal;
+                 
+                 overtimeDurationReal = overtimeNet;
+                 
+                 breakdown.push(`Kerja Sabtu Normal (Base): 5 jam x 2 = 10 jam (5 Normal + 5 Lembur)`);
+                 if (zone1 > 0) {
+                     breakdown.push(`Lembur Zone 1 (13:00-16:30): ${zone1.toFixed(2)} jam x 1 = ${zone1.toFixed(2)} jam`);
+                 }
+                 if (zone2 > 0) {
+                     breakdown.push(`Lembur Zone 2 (>16:30): ${zone2.toFixed(2)} jam x 2 = ${(zone2 * 2).toFixed(2)} jam`);
+                 }
              }
-             overtimeDurationReal = effectiveOvertime;
+        } else {
+             // Sabtu Shift (Old Logic)
+             if (workHours <= 4) {
+                  const pay = workHours * 2;
+                  totalPayable += pay; 
+                  normalHours = workHours;
+                  breakdown.push(`Kerja Sabtu (≤4 jam): ${workHours.toFixed(2)} jam x 2 = ${pay.toFixed(2)} jam`);
+             } else {
+                  const normalH = 5;
+                  normalHours = normalH;
+                  const normalPay = normalH * 2;
+                  totalPayable += normalPay;
+                  
+                  const effectiveHours = workHours > 4 ? workHours - 1 : workHours;
+                  const effectiveOvertime = Math.max(0, effectiveHours - normalH);
+                  
+                  overtimePayable += effectiveOvertime;
+                  
+                  breakdown.push(`Kerja Sabtu Normal: ${normalH} jam x 2 = ${normalPay} jam`);
+                  if (effectiveOvertime > 0) {
+                      breakdown.push(`Lembur Sabtu: ${effectiveOvertime.toFixed(2)} jam x 1 = ${effectiveOvertime.toFixed(2)} jam`);
+                  }
+                  overtimeDurationReal = effectiveOvertime;
+             }
         }
     } else {
         // Minggu
         // Semua x2
-        // Potong istirahat jika > 4 jam
-        const effectiveHours = workHours > 4 ? workHours - 1 : workHours;
+        // Potong istirahat jika > 5 jam (1 jam)
+        // Tambahan potong 0.5 jam jika > 11 jam (total 1.5 jam)
+        
+        let deduction = 0;
+        if (workHours > 11) {
+            deduction = 1.5;
+        } else if (workHours > 5) {
+            deduction = 1.0;
+        }
+        
+        const effectiveHours = Math.max(0, workHours - deduction);
         const pay = effectiveHours * 2;
-        // totalPayable += pay; // REMOVED: Will be added via overtimePayable at the end
+        
         overtimePayable += pay; 
+        
+        if (deduction > 0) {
+            breakdown.push(`Potongan Istirahat: ${deduction} jam`);
+        }
         breakdown.push(`Kerja Minggu: ${effectiveHours.toFixed(2)} jam x 2 = ${pay.toFixed(2)} jam`);
         overtimeDurationReal = effectiveHours;
     }
@@ -197,39 +251,46 @@ export function calculateAutomaticOvertime(
  * Menghitung jam lembur yang dibayarkan (Payable Hours) berdasarkan durasi
  * @param minutes Durasi lembur dalam menit
  * @param workdayType Jenis hari kerja
+ * @param isNonShift Apakah karyawan non-shift (default false)
  * @returns Jam lembur yang dibayarkan (decimal)
  */
-export function calculatePayableOvertime(minutes: number, workdayType: WorkdayType): number {
+export function calculatePayableOvertime(minutes: number, workdayType: WorkdayType, isNonShift: boolean = false): number {
   if (minutes <= 0) return 0;
   
   let hours = minutes / 60;
   
-  // Aturan Baru: Potong istirahat 1 jam jika lembur >= 4 jam
-  if (hours >= 4) {
-    hours -= 1;
-  }
+  // Note: Break deduction is handled in calculateAutomaticOvertime (overtimeDurationReal is net),
+  // so we don't deduct again here to avoid double deduction.
 
   let payable = 0;
 
-  if (workdayType === WorkdayType.SUNDAY) {
-    // Hari libur: x2 (Simplifikasi sesuai logic Sunday di calculateAutomaticOvertime)
+  if (workdayType === WorkdayType.SATURDAY) {
+     if (isNonShift) {
+       // Saturday Non-Shift:
+       // Input `hours` is Net Overtime (excess over 5 hours normal work).
+       // Payable includes base bonus (5h) + Zone 1 (1x) + Zone 2 (2x).
+       // Zone 1 is max 2.5 hours.
+       const zone1 = Math.min(hours, 2.5);
+       const zone2 = Math.max(0, hours - 2.5);
+       
+       payable = 5 + (zone1 * 1.0) + (zone2 * 2.0);
+     } else {
+       // Saturday Shift:
+       // Normal hours (5h) are paid x2 in totalPayable.
+       // Overtime hours are paid x1.
+       payable = hours * 1.0;
+     }
+  } else if (workdayType === WorkdayType.SUNDAY) {
     payable = hours * 2;
-  } else if (workdayType === WorkdayType.SATURDAY) {
-    // Saturday Logic:
-    // First 5 hours x 2.0
-    // Remaining x 1.0
-    const first5 = Math.min(hours, 5);
-    const remaining = Math.max(0, hours - 5);
-    payable = (first5 * 2.0) + (remaining * 1.0);
   } else {
-    // Weekday (Overtime di hari kerja):
-    // 1 jam pertama x 1.5
-    // Jam berikutnya x 2
-    const firstHour = Math.min(hours, 1);
-    const remainingHours = Math.max(0, hours - 1);
-    
-    payable = (firstHour * 1.5) + (remainingHours * 2);
+    // Weekday:
+    // First hour 1.5, remaining 2.0
+    if (hours > 1) {
+      payable = 1.5 + (hours - 1) * 2;
+    } else {
+      payable = hours * 1.5;
+    }
   }
 
-  return payable;
+  return parseFloat(payable.toFixed(2));
 }

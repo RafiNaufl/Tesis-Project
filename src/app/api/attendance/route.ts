@@ -42,7 +42,9 @@ function formatAttendanceResponse(attendance: any): any {
     try {
       const date = new Date(attendance.date);
       const workdayType = getWorkdayType(date);
-      attendance.overtimePayable = calculatePayableOvertime(attendance.overtime, workdayType);
+      // Cek tipe jadwal kerja karyawan (NON_SHIFT vs SHIFT)
+      const isNonShift = attendance.employee?.workScheduleType === 'NON_SHIFT';
+      attendance.overtimePayable = calculatePayableOvertime(attendance.overtime, workdayType, isNonShift);
     } catch (e) {
       console.error("Error calculating payable overtime:", e);
       attendance.overtimePayable = 0;
