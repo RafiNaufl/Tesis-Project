@@ -22,6 +22,7 @@ export type AttendanceRecord = {
   isLate: boolean;
   lateMinutes: number;
   overtime: number;
+  overtimePayable?: number;
   isOvertimeApproved: boolean;
   isSundayWork: boolean;
   isSundayWorkApproved: boolean;
@@ -1660,7 +1661,16 @@ export default function AttendanceManagement() {
                             })()}
                           </td>
                           <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500 hidden md:table-cell">
-                            {record.overtime > 0 ? formatMinutesToHours(record.overtime) : "-"}
+                            {record.overtime > 0 ? (
+                              <div>
+                                <div>{formatMinutesToHours(record.overtime)}</div>
+                                {record.overtimePayable !== undefined && record.overtimePayable > 0 && (
+                                  <div className="text-xs text-gray-400">
+                                    (Bayar: {record.overtimePayable}j)
+                                  </div>
+                                )}
+                              </div>
+                            ) : "-"}
                             {record.overtime > 0 && (
                               <div className={`text-xs mt-1 ${
                                 record.isOvertimeApproved ? 
@@ -2320,7 +2330,18 @@ export default function AttendanceManagement() {
                 </div>
                 <div>
                    <div className="text-[10px] sm:text-xs font-medium text-gray-500 uppercase tracking-wider">Lembur</div>
-                   <div className="mt-0.5 sm:mt-1 text-sm font-semibold text-gray-900">{detailRecord.overtime > 0 ? formatMinutesToHours(detailRecord.overtime) : '-'}</div>
+                   <div className="mt-0.5 sm:mt-1 text-sm font-semibold text-gray-900">
+                     {detailRecord.overtime > 0 ? (
+                       <span>
+                         {formatMinutesToHours(detailRecord.overtime)}
+                         {detailRecord.overtimePayable !== undefined && detailRecord.overtimePayable > 0 && (
+                           <span className="ml-1 text-xs text-gray-500 font-normal">
+                             (Bayar: {detailRecord.overtimePayable}j)
+                           </span>
+                         )}
+                       </span>
+                     ) : '-'}
+                   </div>
                 </div>
               </div>
 
