@@ -50,6 +50,7 @@ type TodayAttendanceRecord = {
   isLate: boolean;
   lateMinutes: number;
   overtime: number;
+  overtimePayable?: number;
   isOvertimeApproved: boolean;
   isSundayWork: boolean;
   isSundayWorkApproved: boolean;
@@ -793,6 +794,23 @@ export default function EmployeeDashboard() {
                 <div className={`mt-4 inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(todayRecord.status)}`}>
                   {todayRecord.status}
                   {todayRecord.isLate && <span className="ml-1 font-normal opacity-75">({todayRecord.lateMinutes}m late)</span>}
+                </div>
+              )}
+
+              {todayRecord?.overtime !== undefined && todayRecord.overtime > 0 && (
+                <div className={`mt-2 ml-2 inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border ${
+                  todayRecord.isOvertimeApproved 
+                    ? "text-green-600 bg-green-50 border-green-100" 
+                    : "text-yellow-600 bg-yellow-50 border-yellow-100"
+                }`}>
+                  <Clock className="h-3 w-3 mr-1" />
+                  Lembur {Math.floor(todayRecord.overtime / 60)}j {todayRecord.overtime % 60}m
+                  {todayRecord.overtimePayable !== undefined && todayRecord.overtimePayable > 0 && (
+                    <span className="ml-1 opacity-75">
+                      (Bayar: {todayRecord.overtimePayable}j)
+                    </span>
+                  )}
+                  {!todayRecord.isOvertimeApproved && " (menunggu)"}
                 </div>
               )}
             </div>

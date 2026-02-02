@@ -44,6 +44,7 @@ type TodayAttendanceRecord = {
   isLate: boolean;
   lateMinutes: number;
   overtime: number;
+  overtimePayable?: number;
   isOvertimeApproved: boolean;
   isSundayWork: boolean;
   isSundayWorkApproved: boolean;
@@ -705,6 +706,11 @@ export default function EmployeeDashboardMobile() {
                     <Clock className="h-3 w-3" />
                     <span>
                       Lembur {Math.floor(todayRecord.overtime / 60)}j {todayRecord.overtime % 60}m
+                      {todayRecord.overtimePayable !== undefined && todayRecord.overtimePayable > 0 && (
+                        <span className="ml-1 text-xs opacity-75">
+                          (Bayar: {todayRecord.overtimePayable}j)
+                        </span>
+                      )}
                       {!todayRecord.isOvertimeApproved && " (menunggu)"}
                     </span>
                   </div>

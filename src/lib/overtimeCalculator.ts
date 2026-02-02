@@ -185,3 +185,31 @@ export function calculateAutomaticOvertime(
     breakdown
   };
 }
+
+/**
+ * Menghitung jam lembur yang dibayarkan (Payable Hours) berdasarkan durasi
+ * @param minutes Durasi lembur dalam menit
+ * @param workdayType Jenis hari kerja
+ * @returns Jam lembur yang dibayarkan (decimal)
+ */
+export function calculatePayableOvertime(minutes: number, workdayType: WorkdayType): number {
+  if (minutes <= 0) return 0;
+  
+  const hours = minutes / 60;
+  let payable = 0;
+
+  if (workdayType === WorkdayType.SUNDAY) {
+    // Hari libur: x2 (Simplifikasi sesuai logic Sunday di calculateAutomaticOvertime)
+    payable = hours * 2;
+  } else {
+    // Weekday & Saturday (Overtime di hari kerja):
+    // 1 jam pertama x 1.5
+    // Jam berikutnya x 2
+    const firstHour = Math.min(hours, 1);
+    const remainingHours = Math.max(0, hours - 1);
+    
+    payable = (firstHour * 1.5) + (remainingHours * 2);
+  }
+
+  return payable;
+}

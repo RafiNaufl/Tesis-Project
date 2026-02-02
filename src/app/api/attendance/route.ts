@@ -6,7 +6,7 @@ import { format } from "date-fns";
 
 import { checkIn, checkOut, getMonthlyAttendanceReport, startOvertime, endOvertime } from "@/lib/attendance";
 import { getWorkdayType, WorkdayType, getWorkEndTime, isOvertimeCheckOut, isOvertimeCheckIn, toWIB } from "@/lib/attendanceRules";
-import { calculateOvertimeDuration } from "@/lib/overtimeCalculator";
+import { calculateOvertimeDuration, calculatePayableOvertime } from "@/lib/overtimeCalculator";
 import { Status } from "@/types/enums";
 import { 
   createCheckInNotification, 
@@ -35,6 +35,20 @@ function formatAttendanceResponse(attendance: any): any {
   // Pastikan properti lateMinutes ada
   if (attendance && !Object.prototype.hasOwnProperty.call(attendance, 'lateMinutes')) {
     attendance.lateMinutes = 0;
+  }
+
+  // Hitung overtimePayable jika ada lembur
+  if (attendance && attendance.overtime > 0 && attendance.date) {
+    try {
+      const date = new Date(attendance.date);
+      const workdayType = getWorkdayType(date);
+      attendance.overtimePayable = calculatePayableOvertime(attendance.overtime, workdayType);
+    } catch (e) {
+      console.error("Error calculating payable overtime:", e);
+      attendance.overtimePayable = 0;
+    }
+  } else if (attendance) {
+    attendance.overtimePayable = 0;
   }
   
   return attendance;

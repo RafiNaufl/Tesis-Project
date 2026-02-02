@@ -88,8 +88,6 @@ export default function OvertimeApprovals() {
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 15000);
-    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
