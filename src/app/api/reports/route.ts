@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Only admins can access reports
-    if (session.user.role !== "ADMIN") {
+    if (session.user.role !== "ADMIN" && session.user.role !== "DIREKTUR") {
       return NextResponse.json(
         { error: "Only admins can access reports" },
         { status: 403 }

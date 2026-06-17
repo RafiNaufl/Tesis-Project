@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
         year, 
         status: status || undefined 
       },
-      session.user.role === "ADMIN",
+      session.user.role === "ADMIN" || session.user.role === "DIREKTUR",
       session.user.id
     );
     
@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
         year,
         reason
       },
-      session.user.role === "ADMIN",
+      session.user.role === "ADMIN" || session.user.role === "DIREKTUR",
       session.user.id
     );
     
@@ -99,7 +99,7 @@ export async function DELETE(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
     
-    if (!session || session.user.role !== "ADMIN") {
+    if (!session || (session.user.role !== "ADMIN" && session.user.role !== "DIREKTUR")) {
       return NextResponse.json(
         { error: "Unauthorized. Admin access required." },
         { status: 403 }

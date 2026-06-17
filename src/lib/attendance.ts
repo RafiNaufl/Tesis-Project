@@ -685,3 +685,75 @@ export const getMonthlyAttendanceReport = async (employeeId: string, year: numbe
     attendances: enhancedAttendances,
   };
 };
+
+/**
+ * Mendapatkan laporan absensi bulanan untuk banyak karyawan sekaligus
+ * Dioptimalkan untuk mengurangi jumlah query database
+ */
+export const getBulkMonthlyAttendanceReport = async (employeeIds: string[], year: number, month: number) => {
+  const startDate = new Date(year, month - 1, 1);
+  const endDate = new Date(year, month, 0, 23, 59, 59);
+
+  // Fetch all attendances for all employees in one query
+  const allAttendances = await prisma.attendance.findMany({
+    where: {
+      employeeId: { in: employeeIds },
+      date: {
+        gte: startDate,
+        lte: endDate,
+      },
+    },
+    orderBy: {
+      date: "asc",
+    },
+  });
+
+  // Fetch all overtime requests for all employees in one query
+  const allOvertimeRequests = await prisma.overtimeRequest.findMany({
+    where: {
+      employeeId: { in: employeeIds },
+      date: {
+        gte: startDate,
+        lte: endDate,
+      },
+    },
+  });
+
+  // Group data by employeeId
+  const reports = employeeIds.map(employeeId => {
+    const employeeAttendances = allAttendances.filter(a => a.employeeId === employeeId);
+    const employeeOvertimeRequests = allOvertimeRequests.filter(r => r.employeeId === employeeId);
+
+    // Merge overtime reasons
+    const enhancedAttendances = employeeAttendances.map(att => {
+      if (!att.overtimeStartAddressNote && (att.overtime > 0 || att.overtimeStart)) {
+        const attDateStr = att.date.toISOString().split('T')[0];
+        const req = employeeOvertimeRequests.find(r => r.date.toISOString().split('T')[0] === attDateStr);
+        
+        if (req && req.reason) {
+          return { ...att, overtimeStartAddressNote: req.reason };
+        }
+      }
+      return att;
+    });
+
+    const summary = {
+      present: employeeAttendances.filter((a) => a.status === Status.PRESENT).length,
+      late: employeeAttendances.filter((a) => a.status === Status.LATE).length,
+      absent: employeeAttendances.filter((a) => a.status === Status.ABSENT).length,
+      sick: employeeAttendances.filter((a) => a.status === Status.SICK).length,
+      permit: employeeAttendances.filter((a) => a.status === Status.PERMIT).length,
+      totalOvertime: employeeAttendances.reduce((acc, curr) => acc + (curr.overtime || 0), 0),
+    };
+
+    return {
+      employeeId,
+      year,
+      month,
+      summary,
+      attendances: enhancedAttendances,
+    };
+  });
+
+  return reports;
+};

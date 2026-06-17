@@ -19,7 +19,7 @@ export async function GET(
     const { id: employeeId } = await params;
 
     // Allow admins/managers to access any employee, but employees can only access their own data
-    if (session.user.role !== "ADMIN" && session.user.role !== "MANAGER") {
+    if (session.user.role !== "ADMIN" && session.user.role !== "MANAGER" && session.user.role !== "DIREKTUR") {
       const employee = await prisma.employee.findFirst({
         where: {
           id: employeeId,
@@ -76,7 +76,7 @@ export async function PUT(
     }
 
     // Only admins can update employees
-    if (session.user.role !== "ADMIN") {
+    if (session.user.role !== "ADMIN" && session.user.role !== "DIREKTUR") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 

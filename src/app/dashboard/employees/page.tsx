@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 export default async function EmployeesPage() {
   const user = await requireAuth();
   
-  if (user.role !== "ADMIN" && user.role !== "MANAGER") {
+  if (user.role !== "ADMIN" && user.role !== "MANAGER" && user.role !== "DIREKTUR") {
     redirect("/dashboard");
   }
   

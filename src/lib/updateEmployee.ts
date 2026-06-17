@@ -96,6 +96,7 @@ export async function updateEmployee(employeeId: string, data: any, changedByUse
     const result = await prisma.$transaction(async (tx) => {
       const mappedRole =
         validatedData.role === "Admin" ? "ADMIN" :
+        validatedData.role === "Direktur" ? "DIREKTUR" :
         validatedData.role === "Manajer" ? "MANAGER" :
         validatedData.role === "Foreman" ? "FOREMAN" :
         validatedData.role === "Assisten Foreman" ? "ASSISTANT_FOREMAN" :

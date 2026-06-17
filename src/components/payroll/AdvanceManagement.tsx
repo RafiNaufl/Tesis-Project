@@ -88,7 +88,7 @@ export default function AdvanceManagement() {
 
   useEffect(() => {
     fetchAdvances();
-    if (session?.user?.role === "ADMIN") {
+    if (session?.user?.role === "ADMIN" || session?.user?.role === "DIREKTUR") {
       fetchEmployees();
     }
   }, [session, fetchAdvances, fetchEmployees]);
@@ -213,7 +213,7 @@ export default function AdvanceManagement() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <h2 className="text-2xl font-bold text-gray-900">Manajemen Kasbon</h2>
-        {session?.user?.role === "ADMIN" && (
+        {(session?.user?.role === "ADMIN" || session?.user?.role === "DIREKTUR") && (
           <div className="flex w-full sm:w-auto space-x-2">
             <button
               onClick={() => setShowAddForm(true)}
@@ -236,7 +236,7 @@ export default function AdvanceManagement() {
       {/* Filters */}
       <div className="bg-white p-4 rounded-lg shadow">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {session?.user?.role === "ADMIN" && (
+          {(session?.user?.role === "ADMIN" || session?.user?.role === "DIREKTUR") && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Karyawan
@@ -369,7 +369,7 @@ export default function AdvanceManagement() {
                     placeholder="Masukkan jumlah kasbon"
                   />
                 </div>
-                {session?.user?.role !== "ADMIN" && (
+                {session?.user?.role !== "ADMIN" && session?.user?.role !== "DIREKTUR" && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Alasan Kasbon *
@@ -445,7 +445,7 @@ export default function AdvanceManagement() {
 
       {/* Mobile Card View */}
       <div className="md:hidden space-y-4">
-        {session?.user?.role === "ADMIN" && (
+        {(session?.user?.role === "ADMIN" || session?.user?.role === "DIREKTUR") && (
           <div className="flex items-center justify-between bg-white p-4 rounded-lg shadow">
              <label className="flex items-center space-x-3">
               <input
@@ -472,7 +472,7 @@ export default function AdvanceManagement() {
             >
               <div className="flex justify-between items-start">
                 <div className="flex items-start space-x-3 w-full">
-                  {session?.user?.role === "ADMIN" && (
+                  {(session?.user?.role === "ADMIN" || session?.user?.role === "DIREKTUR") && (
                     <div className="pt-1">
                       <input
                         type="checkbox"
@@ -537,7 +537,7 @@ export default function AdvanceManagement() {
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              {session?.user?.role === "ADMIN" && (
+              {(session?.user?.role === "ADMIN" || session?.user?.role === "DIREKTUR") && (
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   <input
                     type="checkbox"
@@ -573,14 +573,14 @@ export default function AdvanceManagement() {
           <tbody className="bg-white divide-y divide-gray-200">
             {advances.length === 0 ? (
               <tr>
-                <td colSpan={session?.user?.role === "ADMIN" ? 8 : 7} className="px-6 py-4 text-center text-gray-500">
+                <td colSpan={(session?.user?.role === "ADMIN" || session?.user?.role === "DIREKTUR") ? 8 : 7} className="px-6 py-4 text-center text-gray-500">
                   Tidak ada data kasbon
                 </td>
               </tr>
             ) : (
               advances.map((advance) => (
                 <tr key={advance.id} id={`advance-row-${advance.id}`} className={`hover:bg-gray-50 ${highlightAdvanceId === advance.id ? 'bg-indigo-50' : ''}`}>
-                  {session?.user?.role === "ADMIN" && (
+                  {(session?.user?.role === "ADMIN" || session?.user?.role === "DIREKTUR") && (
                     <td className="px-6 py-4 whitespace-nowrap">
                       <input
                         type="checkbox"

@@ -44,9 +44,10 @@ export async function GET(
       );
     }
 
-    // Jika bukan admin dan bukan karyawan yang bersangkutan, tolak akses
+    // Jika bukan admin/direktur dan bukan karyawan yang bersangkutan, tolak akses
     if (
       session.user.role !== "ADMIN" &&
+      session.user.role !== "DIREKTUR" &&
       leave.employee.userId !== session.user.id
     ) {
       return NextResponse.json(
@@ -76,12 +77,12 @@ export async function PATCH(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     
-    // Check if user is admin
+    // Check if user is admin or direktur
     const user = await db.user.findUnique({
       where: { email: session.user.email! },
     });
     
-    if (user?.role !== "ADMIN") {
+    if (user?.role !== "ADMIN" && user?.role !== "DIREKTUR") {
       return NextResponse.json({ error: "Akses ditolak" }, { status: 403 });
     }
     
@@ -231,7 +232,7 @@ export async function DELETE(
     }
 
     // Cek apakah pengguna adalah admin atau pemilik cuti
-    const isAdmin = session.user.role === "ADMIN";
+    const isAdmin = session.user.role === "ADMIN" || session.user.role === "DIREKTUR";
     const isOwner = leave.employee.userId === session.user.id;
 
     if (!isAdmin && !isOwner) {

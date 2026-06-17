@@ -43,6 +43,7 @@ export async function GET(
     if (
       session.user.role !== "ADMIN" && 
       session.user.role !== "MANAGER" &&
+      session.user.role !== "DIREKTUR" &&
       attendance.employee.user.id !== session.user.id
     ) {
       return NextResponse.json(

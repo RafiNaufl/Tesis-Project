@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
 
     if (session) {
       isAuthenticated = true;
-      isPrivileged = session.user.role === "ADMIN" || session.user.role === "MANAGER";
+      isPrivileged = session.user.role === "ADMIN" || session.user.role === "MANAGER" || session.user.role === "DIREKTUR";
     }
 
     // Extract query parameters

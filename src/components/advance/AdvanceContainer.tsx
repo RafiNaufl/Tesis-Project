@@ -60,7 +60,7 @@ export default function AdvanceContainer() {
   useEffect(() => {
     if (session) {
       fetchAdvances();
-      if (role === "ADMIN") {
+      if (role === "ADMIN" || role === "DIREKTUR") {
         fetchEmployees();
       }
     }
@@ -255,7 +255,7 @@ export default function AdvanceContainer() {
           <p className="text-sm text-gray-500 mt-1">Kelola pengajuan dan riwayat kasbon karyawan</p>
         </div>
         <div className="flex gap-2 w-full sm:w-auto">
-          {role === "ADMIN" && selectedIds.length > 0 && (
+          {(role === "ADMIN" || role === "DIREKTUR") && selectedIds.length > 0 && (
               <button
                 onClick={handleBulkDelete}
                 className="bg-red-100 text-red-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-200 transition-colors flex items-center gap-2"
@@ -338,7 +338,7 @@ export default function AdvanceContainer() {
             <RefreshCw className="h-5 w-5" />
           </button>
 
-          {role === "ADMIN" && (
+          {(role === "ADMIN" || role === "DIREKTUR") && (
             <button 
                 onClick={exportToCSV}
                 className="p-2 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"

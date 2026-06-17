@@ -34,7 +34,7 @@ export default function AdvanceStats({ totalActive, totalAmount, pendingRequests
         </div>
       </div>
 
-      {role === "ADMIN" && pendingRequests !== undefined && (
+      {(role === "ADMIN" || role === "DIREKTUR") && pendingRequests !== undefined && (
         <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex items-center space-x-4">
           <div className="p-3 bg-yellow-50 rounded-lg text-yellow-600">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">

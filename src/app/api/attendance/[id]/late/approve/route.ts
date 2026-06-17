@@ -9,7 +9,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Tidak diizinkan" }, { status: 401 });
   const role = session.user.role;
-  const allowed = ["ADMIN", "MANAGER", "FOREMAN"];
+  const allowed = ["ADMIN", "MANAGER", "FOREMAN", "DIREKTUR"];
   if (!allowed.includes(role)) return NextResponse.json({ error: "Tidak diizinkan" }, { status: 403 });
 
   const { id: attendanceId } = await params;

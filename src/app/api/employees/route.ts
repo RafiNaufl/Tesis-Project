@@ -13,7 +13,7 @@ export async function GET(_req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    if (session.user.role !== "ADMIN" && session.user.role !== "MANAGER") {
+    if (session.user.role !== "ADMIN" && session.user.role !== "MANAGER" && session.user.role !== "DIREKTUR") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    if (session.user.role !== "ADMIN") {
+    if (session.user.role !== "ADMIN" && session.user.role !== "DIREKTUR") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -88,13 +88,21 @@ export async function POST(req: NextRequest) {
 
     // Create user and employee in a transaction
     const result = await prisma.$transaction(async (tx) => {
+      const mappedRole =
+        position === "Admin" ? "ADMIN" :
+        position === "Direktur" ? "DIREKTUR" :
+        position === "Manajer" ? "MANAGER" :
+        position === "Foreman" ? "FOREMAN" :
+        position === "Assisten Foreman" ? "ASSISTANT_FOREMAN" :
+        "EMPLOYEE";
+
       // Create user
       const user = await tx.user.create({
         data: {
           name,
           email,
           hashedPassword,
-          role: "EMPLOYEE",
+          role: mappedRole,
         },
       });
 

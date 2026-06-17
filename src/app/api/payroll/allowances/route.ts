@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
     if (employeeId) {
       conditions.push(`a."employeeId" = $${params.length + 1}`);
       params.push(employeeId);
-    } else if (session.user.role !== "ADMIN" && session.user.role !== "MANAGER") {
+    } else if (session.user.role !== "ADMIN" && session.user.role !== "MANAGER" && session.user.role !== "DIREKTUR") {
       // If not admin, only show the employee's own allowances
       const employee = await db.employee.findUnique({
         where: { userId: session.user.id },
@@ -98,7 +98,7 @@ export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
     
-    if (!session || (session.user.role !== "ADMIN" && session.user.role !== "MANAGER")) {
+    if (!session || (session.user.role !== "ADMIN" && session.user.role !== "MANAGER" && session.user.role !== "DIREKTUR")) {
       return NextResponse.json(
         { error: "Unauthorized. Admin access required." },
         { status: 403 }
@@ -153,7 +153,7 @@ export async function DELETE(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
     
-    if (!session || session.user.role !== "ADMIN") {
+    if (!session || (session.user.role !== "ADMIN" && session.user.role !== "DIREKTUR")) {
       return NextResponse.json(
         { error: "Unauthorized. Admin access required." },
         { status: 403 }
@@ -171,14 +171,14 @@ export async function DELETE(request: NextRequest) {
     }
     
     // Delete the allowances
-    const result = await db.$executeRaw`
+    const result = await db.$executeRawUnsafe(`
       DELETE FROM allowances
-      WHERE id IN (${ids.join(',')})
-    `;
+      WHERE id IN (${ids.map(id => `'${id}'`).join(',')})
+    `);
     
     return NextResponse.json({ 
       success: true, 
-      message: `${result} allowances deleted successfully` 
+      message: `${Number(result)} allowances deleted successfully` 
     });
   } catch (error) {
     console.error("Error deleting allowances:", error);

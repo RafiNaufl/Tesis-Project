@@ -74,6 +74,7 @@ export default function EmployeeManagement() {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterDivision, setFilterDivision] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
+  const [filterSchedule, setFilterSchedule] = useState("");
   const [selectedOrganizations, setSelectedOrganizations] = useState<string[]>([]);
   const [isOrgDropdownOpen, setIsOrgDropdownOpen] = useState(false);
   // const { data: session } = useSession();
@@ -347,8 +348,15 @@ export default function EmployeeManagement() {
     const matchesOrganization = 
       selectedOrganizations.length === 0 || 
       (employee.organization && selectedOrganizations.includes(employee.organization));
+
+    const matchesStatus = 
+      filterStatus === "" || 
+      (filterStatus === "active" ? employee.isActive : !employee.isActive);
+
+    const matchesSchedule = 
+      filterSchedule === "" || employee.workScheduleType === filterSchedule;
       
-    return matchesSearchTerm && matchesDivision && matchesOrganization;
+    return matchesSearchTerm && matchesDivision && matchesOrganization && matchesStatus && matchesSchedule;
   });
 
   // Get unique divisions for filter dropdown
@@ -469,6 +477,17 @@ export default function EmployeeManagement() {
         <div className="w-full sm:w-40">
           <select
             className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm"
+            value={filterSchedule}
+            onChange={(e) => setFilterSchedule(e.target.value)}
+          >
+            <option value="">Semua Jadwal</option>
+            <option value="SHIFT">Shift</option>
+            <option value="NON_SHIFT">Non-Shift</option>
+          </select>
+        </div>
+        <div className="w-full sm:w-40">
+          <select
+            className="block w-full rounded-md border border-gray-300 bg-white px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 sm:text-sm"
             value={filterStatus}
             onChange={(e) => setFilterStatus(e.target.value)}
           >
@@ -535,6 +554,10 @@ export default function EmployeeManagement() {
                     <div>
                       <p className="text-xs text-gray-500">Status Pegawai</p>
                       <p className="font-medium">{employee.employmentStatus || "-"}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Tipe Jadwal</p>
+                      <p className="font-medium">{employee.workScheduleType === "SHIFT" ? "Shift" : "Non-Shift"}</p>
                     </div>
                   </div>
 
@@ -633,6 +656,12 @@ export default function EmployeeManagement() {
                           scope="col"
                           className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
                         >
+                          Tipe Jadwal
+                        </th>
+                        <th
+                          scope="col"
+                          className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
+                        >
                           Status
                         </th>
                         <th
@@ -669,6 +698,15 @@ export default function EmployeeManagement() {
                           </td>
                           <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                             {employee.division}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                            <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${
+                              employee.workScheduleType === "SHIFT" 
+                                ? "bg-purple-100 text-purple-800" 
+                                : "bg-blue-100 text-blue-800"
+                            }`}>
+                              {employee.workScheduleType === "SHIFT" ? "Shift" : "Non-Shift"}
+                            </span>
                           </td>
                           <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                             <span

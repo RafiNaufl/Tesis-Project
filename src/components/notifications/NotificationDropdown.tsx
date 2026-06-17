@@ -26,7 +26,7 @@ export const getNotificationTarget = (
   role?: string
 ): string => {
   const t = `${title} ${message}`.toLowerCase();
-  const isAdmin = role === 'ADMIN' || role === 'MANAGER' || role === 'FOREMAN' || role === 'ASSISTANT_FOREMAN';
+  const isAdmin = role === 'ADMIN' || role === 'MANAGER' || role === 'DIREKTUR' || role === 'FOREMAN' || role === 'ASSISTANT_FOREMAN';
   if (t.includes('cuti') || t.includes('permohonan cuti')) {
     return isAdmin ? '/leave' : '/leave';
   }

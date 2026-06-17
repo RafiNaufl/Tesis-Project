@@ -64,7 +64,7 @@ export default function AdvanceApproval() {
   }, [filterStatus]);
 
   useEffect(() => {
-    if (session?.user?.role === "ADMIN") {
+    if (session?.user?.role === "ADMIN" || session?.user?.role === "DIREKTUR") {
       fetchAdvances();
     }
   }, [session, fetchAdvances]);
@@ -237,7 +237,7 @@ export default function AdvanceApproval() {
     );
   };
 
-  if (session?.user?.role !== "ADMIN") {
+  if (session?.user?.role !== "ADMIN" && session?.user?.role !== "DIREKTUR") {
     return (
       <div className="text-center py-12">
         <p className="text-gray-500">Anda tidak memiliki akses untuk melihat halaman ini.</p>

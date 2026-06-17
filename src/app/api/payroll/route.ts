@@ -32,8 +32,8 @@ export async function GET(request: NextRequest) {
     if (employeeId) {
       conditions.push(`p."employeeId" = $${params.length + 1}`);
       params.push(employeeId);
-    } else if (session.user.role !== "ADMIN") {
-      // If not admin, only show the employee's own payroll
+    } else if (session.user.role !== "ADMIN" && session.user.role !== "DIREKTUR") {
+      // If not admin or direktur, only show the employee's own payroll
       const employee = await db.employee.findUnique({
         where: { userId: session.user.id },
       });
@@ -159,7 +159,7 @@ export async function PATCH(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
     
-    if (!session || (session.user.role !== "ADMIN" && session.user.role !== "MANAGER")) {
+    if (!session || (session.user.role !== "ADMIN" && session.user.role !== "MANAGER" && session.user.role !== "DIREKTUR")) {
       return NextResponse.json(
         { error: "Unauthorized. Admin access required." },
         { status: 403 }
@@ -258,7 +258,7 @@ export async function DELETE(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
     
-    if (!session || session.user.role !== "ADMIN") {
+    if (!session || (session.user.role !== "ADMIN" && session.user.role !== "DIREKTUR")) {
       return NextResponse.json(
         { error: "Unauthorized. Admin access required." },
         { status: 403 }
@@ -361,7 +361,7 @@ export async function DELETE(request: NextRequest) {
     
     return NextResponse.json({ 
       success: true, 
-      message: `${result} payrolls deleted successfully` 
+      message: `${Number(result)} payrolls deleted successfully` 
     });
   } catch (error) {
     console.error("Error deleting payrolls:", error);
@@ -384,7 +384,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Only admins can generate or update payroll
-    if (session.user.role !== "ADMIN") {
+    if (session.user.role !== "ADMIN" && session.user.role !== "DIREKTUR") {
       return NextResponse.json(
         { error: "Only admins can manage payroll" },
         { status: 403 }

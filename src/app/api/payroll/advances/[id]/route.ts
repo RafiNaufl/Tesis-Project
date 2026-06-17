@@ -13,7 +13,7 @@ export async function PATCH(
   try {
     const session = await getServerSession(authOptions);
     
-    if (!session || session.user.role !== "ADMIN") {
+    if (!session || (session.user.role !== "ADMIN" && session.user.role !== "DIREKTUR")) {
       return NextResponse.json(
         { error: "Unauthorized. Admin access required." },
         { status: 403 }
@@ -92,7 +92,7 @@ export async function GET(
     // Use the centralized function to get advance by ID
     const advance = await getAdvanceById(
       id,
-      session.user.role === "ADMIN",
+      session.user.role === "ADMIN" || session.user.role === "DIREKTUR",
       session.user.id
     );
     

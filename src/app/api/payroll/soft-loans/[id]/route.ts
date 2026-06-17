@@ -13,7 +13,7 @@ export async function GET(
     const user = await requireAuth();
 
     // Use the centralized function to get soft loan by ID
-    const softLoan = await getSoftLoanById(id, user.role === "ADMIN", user.id);
+    const softLoan = await getSoftLoanById(id, user.role === "ADMIN" || user.role === "DIREKTUR", user.id);
 
     return NextResponse.json(softLoan);
   } catch (error) {
@@ -30,7 +30,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   try {
     const user = await requireAuth();
 
-    if (user.role !== "ADMIN") {
+    if (user.role !== "ADMIN" && user.role !== "DIREKTUR") {
       return NextResponse.json({ message: 'Unauthorized' }, { status: 403 });
     }
 

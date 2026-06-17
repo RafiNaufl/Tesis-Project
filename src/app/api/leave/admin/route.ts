@@ -16,7 +16,7 @@ export async function GET(_req: NextRequest) {
       where: { email: session.user.email! },
     });
     
-    if (user?.role !== "ADMIN" && user?.role !== "MANAGER") {
+    if (user?.role !== "ADMIN" && user?.role !== "MANAGER" && user?.role !== "DIREKTUR") {
       return NextResponse.json({ error: "Akses ditolak" }, { status: 403 });
     }
     

@@ -10,7 +10,7 @@ export async function GET(_req: NextRequest) {
     return NextResponse.json({ error: "Tidak diizinkan" }, { status: 401 });
   }
   const role = session.user.role;
-  const allowed = ["ADMIN", "MANAGER", "FOREMAN", "ASSISTANT_FOREMAN"];
+  const allowed = ["ADMIN", "MANAGER", "FOREMAN", "ASSISTANT_FOREMAN", "DIREKTUR"];
   if (!allowed.includes(role)) {
     return NextResponse.json({ error: "Tidak diizinkan" }, { status: 403 });
   }

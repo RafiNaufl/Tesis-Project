@@ -75,6 +75,7 @@ export async function registerEmployee(input: any) {
         profileImageUrl: typeof data.profileImageUrl === "string" ? data.profileImageUrl : undefined,
         role:
           data.role === "Admin" ? "ADMIN" :
+          data.role === "Direktur" ? "DIREKTUR" :
           data.role === "Manajer" ? "MANAGER" :
           data.role === "Foreman" ? "FOREMAN" :
           data.role === "Assisten Foreman" ? "ASSISTANT_FOREMAN" :
@@ -104,7 +105,7 @@ export async function registerEmployee(input: any) {
     return { user, employee };
   });
 
-  const admins = await prisma.user.findMany({ where: { role: { in: ["ADMIN", "MANAGER"] } }, select: { email: true } });
+  const admins = await prisma.user.findMany({ where: { role: { in: ["ADMIN", "MANAGER", "DIREKTUR"] } }, select: { email: true } });
   const adminEmails = admins.map(a => a.email).filter(Boolean) as string[];
   if (adminEmails.length > 0) {
     const subject = `Pendaftaran Karyawan Baru: ${result.user.name}`;

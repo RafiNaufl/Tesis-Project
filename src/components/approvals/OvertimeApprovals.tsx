@@ -160,8 +160,8 @@ export default function OvertimeApprovals() {
     return { requested, approved, rejected, pending };
   }, [items]);
 
-  const canApproveSunday = role === "ADMIN" || role === "MANAGER" || role === "FOREMAN";
-  const canApproveLong = role === "ADMIN" || role === "MANAGER" || role === "FOREMAN";
+  const canApproveSunday = role === "ADMIN" || role === "MANAGER" || role === "FOREMAN" || role === "DIREKTUR";
+  const canApproveLong = role === "ADMIN" || role === "MANAGER" || role === "FOREMAN" || role === "DIREKTUR";
 
   useEffect(() => {
     if (requestIdQuery && filteredSorted.length > 0) {

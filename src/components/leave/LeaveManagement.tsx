@@ -7,7 +7,7 @@ import LeaveList from "./LeaveList";
 
 export default function LeaveManagement() {
   const { data: session } = useSession();
-  const isAdmin = session?.user?.role === "ADMIN";
+  const isAdmin = session?.user?.role === "ADMIN" || session?.user?.role === "DIREKTUR";
   const [activeTab, setActiveTab] = useState<"request" | "history">("request");
   
   // State untuk memicu refresh data di LeaveList tanpa refresh halaman

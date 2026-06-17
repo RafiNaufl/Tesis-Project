@@ -12,7 +12,7 @@ export async function GET(
     const user = await requireAuth();
     
     // Hanya admin atau karyawan yang bersangkutan yang dapat mengakses
-    if (user.role !== "ADMIN") {
+    if (user.role !== "ADMIN" && user.role !== "DIREKTUR") {
       const employee = await prisma.employee.findUnique({
         where: { id },
         select: { userId: true },

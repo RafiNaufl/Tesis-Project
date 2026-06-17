@@ -83,7 +83,7 @@ export default function AdvanceList({
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              {role === "ADMIN" && onSelect && (
+              {(role === "ADMIN" || role === "DIREKTUR") && onSelect && (
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-10">
                   <input
                     type="checkbox"
@@ -105,13 +105,13 @@ export default function AdvanceList({
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Periode Potong</th>
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tanggal</th>
-              {role === "ADMIN" && <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Aksi</th>}
+              {(role === "ADMIN" || role === "DIREKTUR") && <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Aksi</th>}
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {advances.map((advance) => (
               <tr key={advance.id} className="hover:bg-gray-50 transition-colors">
-                {role === "ADMIN" && onSelect && (
+                {(role === "ADMIN" || role === "DIREKTUR") && onSelect && (
                   <td className="px-6 py-4 whitespace-nowrap">
                     <input
                       type="checkbox"
@@ -147,7 +147,7 @@ export default function AdvanceList({
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                   {formatDate(advance.createdAt)}
                 </td>
-                {role === "ADMIN" && (
+                {(role === "ADMIN" || role === "DIREKTUR") && (
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                     <div className="flex justify-end space-x-2">
                       {advance.status === "PENDING" && (
@@ -190,7 +190,7 @@ export default function AdvanceList({
           <div key={advance.id} className="p-4 bg-white">
             <div className="flex justify-between items-start mb-2">
               <div className="flex items-center space-x-3">
-                 {role === "ADMIN" && onSelect && (
+                 {(role === "ADMIN" || role === "DIREKTUR") && onSelect && (
                     <input
                       type="checkbox"
                       className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 h-5 w-5"
@@ -239,7 +239,7 @@ export default function AdvanceList({
                   </div>
                 )}
 
-                {role === "ADMIN" && (
+                {(role === "ADMIN" || role === "DIREKTUR") && (
                   <div className="flex justify-end space-x-3 pt-2">
                      {advance.status === "PENDING" && (
                         <>

@@ -63,7 +63,7 @@ export async function GET(request: NextRequest) {
     if (employeeId) {
       conditions.push(`p."employeeId" = $${params.length + 1}`);
       params.push(employeeId);
-    } else if (session.user.role !== "ADMIN") {
+    } else if (session.user.role !== "ADMIN" && session.user.role !== "DIREKTUR") {
       // If not admin, only show the employee's own payroll
       const employee = await db.employee.findUnique({
         where: { userId: session.user.id },
@@ -152,7 +152,18 @@ export async function GET(request: NextRequest) {
         p.year DESC, p.month DESC
     `;
     
-    const result = await db.$queryRawUnsafe<PayrollRecord[]>(query, ...params);
+    const queryResult = await db.$queryRawUnsafe<any[]>(query, ...params);
+    
+    // Convert BigInt to Number for serialization
+    const result = queryResult.map(record => {
+      const newRecord = { ...record };
+      Object.keys(newRecord).forEach(key => {
+        if (typeof newRecord[key] === 'bigint') {
+          newRecord[key] = Number(newRecord[key]);
+        }
+      });
+      return newRecord;
+    });
     
     // Calculate summary statistics
     const summary = {

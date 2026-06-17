@@ -18,7 +18,7 @@ interface DashboardNavigationProps {
 
 export default function DashboardNavigation({ userRole }: DashboardNavigationProps) {
   const pathname = usePathname();
-  const isAdmin = userRole === 'ADMIN';
+  const isAdmin = userRole === 'ADMIN' || userRole === 'DIREKTUR';
 
   const navigation = [
     { 

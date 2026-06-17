@@ -51,7 +51,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const pathname = usePathname();
   const { data: session } = useSession();
   const role = session?.user?.role;
-  const isAdmin = role === "ADMIN" || role === "MANAGER";
+  const isAdmin = role === "ADMIN" || role === "MANAGER" || role === "DIREKTUR";
   
   // Track user name for efficient re-rendering
   const [userName, setUserName] = useState<string | undefined>(session?.user?.name);
@@ -162,7 +162,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   {userName}
                 </h2>
                 <p className="text-sm font-medium text-blue-100/80 uppercase tracking-wide mt-1">
-                  {session?.user?.position || role?.replace(/_/g, " ")}
+                  {session?.user?.position || (role === "DIREKTUR" ? "Direktur" : role?.replace(/_/g, " "))}
                 </p>
                 <Link 
                   href="/profile"
@@ -358,7 +358,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 <div className="text-right hidden sm:block">
                   <p className="text-sm font-semibold text-gray-900 leading-none group-hover:text-blue-600 transition-colors">{userName}</p>
                   <p className="text-[11px] text-gray-500 mt-1 font-medium uppercase tracking-wide">
-                    {role === "ADMIN" ? "Administrator" : role === "MANAGER" ? "Manager" : "Karyawan"}
+                    {role === "ADMIN" ? "Administrator" : role === "DIREKTUR" ? "Direktur" : role === "MANAGER" ? "Manager" : "Karyawan"}
                   </p>
                 </div>
                 <div className="relative h-10 w-10 flex-shrink-0 rounded-full overflow-hidden ring-2 ring-white shadow-sm group-hover:ring-blue-100 group-hover:shadow-md transition-all duration-300">

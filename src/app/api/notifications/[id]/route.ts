@@ -46,7 +46,7 @@ export async function GET(
     }
     
     // Check if the notification belongs to the requesting user
-    if (notification.userId !== session.user.id && session.user.role !== "ADMIN") {
+    if (notification.userId !== session.user.id && session.user.role !== "ADMIN" && session.user.role !== "DIREKTUR") {
       return NextResponse.json(
         { error: "Unauthorized" },
         { status: 403 }
@@ -117,7 +117,7 @@ export async function PATCH(
     }
     
     // Check if the notification belongs to the requesting user
-    if (notification.userId !== session.user.id && session.user.role !== "ADMIN") {
+    if (notification.userId !== session.user.id && session.user.role !== "ADMIN" && session.user.role !== "DIREKTUR") {
       return NextResponse.json(
         { error: "Unauthorized" },
         { status: 403 }
@@ -206,7 +206,7 @@ export async function DELETE(
     }
     
     // Check if the notification belongs to the requesting user or if user is admin
-    if (notification.userId !== session.user.id && session.user.role !== "ADMIN") {
+    if (notification.userId !== session.user.id && session.user.role !== "ADMIN" && session.user.role !== "DIREKTUR") {
       return NextResponse.json(
         { error: "Unauthorized" },
         { status: 403 }

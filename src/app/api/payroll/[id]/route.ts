@@ -49,7 +49,7 @@ export async function GET(
     }
     
     // Check if the user is admin/manager or the employee associated with this payroll
-    if (session.user.role !== "ADMIN" && session.user.role !== "MANAGER") {
+    if (session.user.role !== "ADMIN" && session.user.role !== "MANAGER" && session.user.role !== "DIREKTUR") {
       const employee = await db.employee.findUnique({
         where: { userId: session.user.id },
       });
@@ -123,7 +123,7 @@ export async function PATCH(
   try {
     const session = await getServerSession(authOptions);
     
-    if (!session || (session.user.role !== "ADMIN" && session.user.role !== "MANAGER")) {
+    if (!session || (session.user.role !== "ADMIN" && session.user.role !== "MANAGER" && session.user.role !== "DIREKTUR")) {
       return NextResponse.json(
         { error: "Unauthorized. Admin access required." },
         { status: 403 }
@@ -238,7 +238,7 @@ export async function DELETE(
   try {
     const session = await getServerSession(authOptions);
     
-    if (!session || session.user.role !== "ADMIN") {
+    if (!session || (session.user.role !== "ADMIN" && session.user.role !== "DIREKTUR")) {
       return NextResponse.json(
         { error: "Unauthorized. Admin access required." },
         { status: 403 }

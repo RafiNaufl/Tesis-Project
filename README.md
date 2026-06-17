@@ -44,6 +44,14 @@ A comprehensive employee management system that handles attendance tracking, pay
 ## Recent Changes & Migration
 **Update (Dec 2025):** The system has been refactored to use **"Division"** instead of "Department". If you are upgrading from an older version, please refer to [MIGRATION_GUIDE.md](./MIGRATION_GUIDE.md) for detailed instructions on database schema updates and code changes.
 
+## System Documentation & Diagrams
+
+For a detailed look at the system's architecture, database design, and process flows, please refer to the following documentation:
+
+- **[System Diagrams](./docs/SYSTEM_DIAGRAMS.md)**: Includes Use Case, ERD, LRS, Activity Diagram, and Flowcharts.
+- **[Payroll Architecture](./docs/payroll-architecture.md)**: Detailed technical breakdown of the payroll engine.
+- **[Overtime Policy](./KEBIJAKAN_LEMBUR.md)**: Official overtime calculation rules and policies.
+
 ## Tech Stack
 
 - **Frontend**: Next.js 15, React, TypeScript, Tailwind CSS

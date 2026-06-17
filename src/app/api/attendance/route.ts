@@ -4,7 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { format } from "date-fns";
 
-import { checkIn, checkOut, getMonthlyAttendanceReport, startOvertime, endOvertime } from "@/lib/attendance";
+import { checkIn, checkOut, getMonthlyAttendanceReport, startOvertime, endOvertime, getBulkMonthlyAttendanceReport } from "@/lib/attendance";
 import { getWorkdayType, WorkdayType, getWorkEndTime, isOvertimeCheckOut, isOvertimeCheckIn, toWIB } from "@/lib/attendanceRules";
 import { calculateOvertimeDuration, calculatePayableOvertime } from "@/lib/overtimeCalculator";
 import { Status } from "@/types/enums";
@@ -91,7 +91,7 @@ export async function GET(req: NextRequest) {
     // Triggered if startDate/endDate/search/department/status is present
     const isFilterMode = startDateParam || endDateParam || searchQuery || departmentParam || positionParam || statusParam || isLateParam || hasLocationParam || dayTypeParam || employeeId;
 
-    if (isFilterMode && (session.user.role === "ADMIN" || session.user.role === "MANAGER")) {
+    if (isFilterMode && (session.user.role === "ADMIN" || session.user.role === "MANAGER" || session.user.role === "DIREKTUR")) {
       const whereClause: any = {
         employee: {
           isActive: true
@@ -286,7 +286,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Special case: If limit is provided without month/year, return recent activities for admin dashboard
-    if (limitNum && (session.user.role === "ADMIN" || session.user.role === "MANAGER") && !month && !year) {
+    if (limitNum && (session.user.role === "ADMIN" || session.user.role === "MANAGER" || session.user.role === "DIREKTUR") && !month && !year) {
       // Get recent attendance records across all employees for admin dashboard
       const recentAttendances = await prisma.attendance.findMany({
         where: {
@@ -397,7 +397,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Admins can see all records, employees can only see their own
-    if (session.user.role !== "ADMIN" && session.user.role !== "MANAGER" && !employeeId) {
+    if (session.user.role !== "ADMIN" && session.user.role !== "MANAGER" && session.user.role !== "DIREKTUR" && !employeeId) {
       // For employees, find their employee ID
       const employee = await prisma.employee.findFirst({
         where: {
@@ -463,7 +463,7 @@ export async function GET(req: NextRequest) {
 
     // For admins/managers with specific employee query
     if (employeeId) {
-      if (session.user.role !== "ADMIN" && session.user.role !== "MANAGER") {
+      if (session.user.role !== "ADMIN" && session.user.role !== "MANAGER" && session.user.role !== "DIREKTUR") {
         const employee = await prisma.employee.findUnique({
           where: { id: employeeId },
           select: { userId: true },
@@ -509,39 +509,36 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    // Get attendance reports for all employees
-    const allReports = await Promise.all(
-      employees.map(async (employee) => {
-        const report = await getMonthlyAttendanceReport(
-          employee.id,
-          yearNum,
-          monthNum
-        );
-        
-        // Format attendances
-        if (report && report.attendances) {
-          report.attendances = report.attendances.map(formatAttendanceResponse);
-        }
-        
-        return {
-          employee: {
-            id: employee.id,
-            employeeId: employee.employeeId,
+    // Get attendance reports for all employees using optimized bulk fetch
+    const employeeIds = employees.map(e => e.id);
+    const reports = await getBulkMonthlyAttendanceReport(employeeIds, yearNum, monthNum);
+
+    const allReports = employees.map((employee, index) => {
+      const report = reports[index];
+      
+      // Format attendances
+      if (report && report.attendances) {
+        report.attendances = report.attendances.map(formatAttendanceResponse);
+      }
+      
+      return {
+        employee: {
+          id: employee.id,
+          employeeId: employee.employeeId,
+          name: employee.user.name,
+          email: employee.user.email,
+          position: employee.position,
+          division: employee.division,
+          organization: employee.organization ?? null,
+          workScheduleType: employee.workScheduleType ?? null,
+          user: {
             name: employee.user.name,
-            email: employee.user.email,
-            position: employee.position,
-            division: employee.division,
-            organization: employee.organization ?? null,
-            workScheduleType: employee.workScheduleType ?? null,
-            user: {
-              name: employee.user.name,
-              profileImageUrl: employee.user.profileImageUrl ?? undefined,
-            },
+            profileImageUrl: employee.user.profileImageUrl ?? undefined,
           },
-          report,
-        };
-      })
-    );
+        },
+        report,
+      };
+    });
 
     // Create response with cache control headers
     const response = NextResponse.json(allReports);

@@ -29,7 +29,7 @@ export async function GET(
     }
 
     // Check if user can access this payroll
-    if (session.user.role !== "ADMIN" && session.user.id !== payroll.employee.userId) {
+    if (session.user.role !== "ADMIN" && session.user.role !== "DIREKTUR" && session.user.id !== payroll.employee.userId) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useSession } from "next-auth/react";
 import { NOTIFICATION_UPDATE_EVENT } from "../notifications/NotificationDropdown";
 import { ACTIVITY_UPDATE_EVENT } from "../dashboard/AdminDashboard";
@@ -73,6 +73,70 @@ export const getAttendanceActionState = (record: AttendanceRecord | null): 'chec
   return 'check-in';
 };
 
+// Helper functions moved outside component to prevent re-creation on every render
+const formatTime = (date: Date | null): string => {
+  if (!date) return "-";
+  return new Date(date).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
+
+const formatDateDMY = (date: Date): string => {
+  const d = new Date(date);
+  const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+  const dayName = days[d.getDay()];
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${dayName}, ${day}-${month}-${year}`;
+};
+
+const getStatusProps = (status: string): { label: string; cls: string } => {
+  switch (status) {
+    case "PRESENT":
+      return { label: "Hadir", cls: "bg-green-100 text-green-800" };
+    case "ABSENT":
+      return { label: "Alpa", cls: "bg-red-100 text-red-800" };
+    case "LATE":
+      return { label: "Terlambat", cls: "bg-yellow-100 text-yellow-800" };
+    case "LEAVE":
+      return { label: "Izin", cls: "bg-blue-100 text-blue-800" };
+    case "SICK":
+      return { label: "Sakit", cls: "bg-purple-100 text-purple-800" };
+    case "HALFDAY":
+      return { label: "Setengah Hari", cls: "bg-orange-100 text-orange-800" };
+    default:
+      return { label: status, cls: "bg-gray-100 text-gray-800" };
+  }
+};
+
+const formatDate = (date: Date): string => {
+  return new Date(date).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+};
+
+const getMonthName = (month: number): string => {
+  const date = new Date();
+  date.setMonth(month - 1);
+  return date.toLocaleString('default', { month: 'long' });
+};
+
+// Format date for input fields
+const formatDateForInput = (date: Date | null): string => {
+  if (!date) return '';
+  const d = new Date(date);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const hours = String(d.getHours()).padStart(2, '0');
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+};
+
 import { AttendanceFilter, FilterState } from "./AttendanceFilter";
 import AttendanceCapture from "./AttendanceCapture";
 
@@ -90,7 +154,7 @@ export default function AttendanceManagement() {
   const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [selectedDate, setSelectedDate] = useState<number | null>(null);
-  const isAdmin = session?.user?.role === "ADMIN" || session?.user?.role === "MANAGER";
+  const isAdmin = session?.user?.role === "ADMIN" || session?.user?.role === "MANAGER" || session?.user?.role === "DIREKTUR";
   const [isLateModalOpen, setIsLateModalOpen] = useState(false);
   const [employees, setEmployees] = useState<any[]>([]);
   
@@ -178,199 +242,20 @@ export default function AttendanceManagement() {
   
   const [selectedAttendanceId, setSelectedAttendanceId] = useState<string | null>(null);
   const [highlightAttendanceId, setHighlightAttendanceId] = useState<string | null>(null);
+  const isFetchingRef = useRef(false);
 
   // Removed automatic localStorage saving to prevent circular dependency
   // localStorage is now only updated in handleCheckIn and handleCheckOut functions
 
   // Hindari menggunakan localStorage sebagai sumber kebenaran untuk UI tombol
 
-  // Fetch attendance records
-  useEffect(() => {
-    const fetchAttendance = async () => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const queryParams = new URLSearchParams();
-
-        if (isAdmin) {
-          if (filters.search) queryParams.set("search", filters.search);
-          if (filters.employeeId) queryParams.set("employeeId", filters.employeeId);
-          if (filters.department) queryParams.set("department", filters.department);
-          if (filters.position) queryParams.set("position", filters.position);
-          if (filters.status.length > 0) queryParams.set("status", filters.status.join(","));
-          if (filters.isLate) queryParams.set("isLate", "true");
-          if (filters.hasLocation) queryParams.set("hasLocation", "true");
-          if (filters.dayType && filters.dayType !== "ALL") queryParams.set("dayType", filters.dayType);
-          
-          if (selectedDate) {
-             const start = new Date(selectedYear, selectedMonth - 1, selectedDate);
-             start.setHours(0, 0, 0, 0);
-             const end = new Date(selectedYear, selectedMonth - 1, selectedDate);
-             end.setHours(23, 59, 59, 999);
-             queryParams.set("startDate", start.toISOString());
-             queryParams.set("endDate", end.toISOString());
-          } else {
-             // Fallback to month/year selectors if no specific date selected
-             queryParams.set("month", selectedMonth.toString());
-             queryParams.set("year", selectedYear.toString());
-          }
-        } else {
-          queryParams.set("month", selectedMonth.toString());
-          queryParams.set("year", selectedYear.toString());
-        }
-
-        const response = await fetch(`/api/attendance?${queryParams}`, {
-          method: "GET",
-        });
-
-        let data: any = null;
-        if (!response.ok) {
-          let serverError: any = null;
-          try {
-            serverError = await response.json();
-          } catch {
-            try {
-              serverError = await response.text();
-            } catch {
-              serverError = null;
-            }
-          }
-          try {
-            const fallbackParams = new URLSearchParams({ month: selectedMonth.toString(), year: selectedYear.toString() });
-            const fallback = await fetch(`/api/attendance?${fallbackParams}`, { method: "GET" });
-            if (!fallback.ok) {
-              throw new Error(serverError?.error || "Gagal mengambil data kehadiran");
-            }
-            data = await fallback.json();
-          } catch (e: any) {
-            throw new Error(serverError?.error || e.message || "Gagal mengambil data kehadiran");
-          }
-        } else {
-          data = await response.json();
-        }
-        
-        // Pastikan data yang diterima dalam format yang benar
-        let processedData: AttendanceRecord[] = [];
-        
-        // Log data untuk debugging
-        console.log("Data dari API:", data);
-        
-        // Helper function to safely create Date objects
-        const safeCreateDate = (dateValue: any): Date | null => {
-          if (!dateValue) return null;
-          const date = new Date(dateValue);
-          return isNaN(date.getTime()) ? null : date;
-        };
-
-        if (Array.isArray(data)) {
-          // Jika response adalah array (untuk admin)
-          processedData = data.flatMap((item) => {
-            if (item.report && Array.isArray(item.report.attendances)) {
-              return item.report.attendances.map((attendance: any) => {
-                const processedAttendance = {
-                  ...attendance,
-                  // Safely parse dates
-                  checkIn: safeCreateDate(attendance.checkIn),
-                  checkOut: safeCreateDate(attendance.checkOut),
-                  date: safeCreateDate(attendance.date) || new Date(), // Fallback to current date if invalid
-                  employee: {
-                    id: item.employee?.id || "",
-                    employeeId: item.employee?.employeeId || "",
-                    name: item.employee?.name || "",
-                    position: item.employee?.position || undefined,
-                    division: item.employee?.division || undefined,
-                    organization: item.employee?.organization || null,
-                    workScheduleType: item.employee?.workScheduleType || null,
-                    user: {
-                      name: item.employee?.name || "",
-                      profileImageUrl: item.employee?.user?.profileImageUrl || undefined,
-                    }
-                  }
-                };
-                
-                // Log if any date was invalid
-                if (!safeCreateDate(attendance.date)) {
-                  console.warn("Invalid date found in attendance record:", attendance);
-                }
-                
-                return processedAttendance;
-              });
-            }
-            return [];
-          });
-        } else if (data && data.attendances && Array.isArray(data.attendances)) {
-          processedData = data.attendances.map((attendance: any) => {
-            const processedAttendance = {
-              ...attendance,
-              // Pastikan checkIn dan checkOut adalah objek Date yang valid
-              checkIn: safeCreateDate(attendance.checkIn),
-              checkOut: safeCreateDate(attendance.checkOut),
-              date: safeCreateDate(attendance.date) || new Date() // Fallback to current date if invalid
-            };
-            
-            // Log if any date was invalid
-            if (!safeCreateDate(attendance.date)) {
-              console.warn("Invalid date found in attendance record:", attendance);
-            }
-            
-            return processedAttendance;
-          });
-        } else {
-          console.warn("Format data tidak dikenali:", data);
-        }
-        
-        // Pastikan attendanceRecords selalu array
-        const sortedData = (Array.isArray(processedData) ? processedData : []).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-        setAttendanceRecords(sortedData);
-
-        // Check if there's a record for today
-        const today = new Date();
-        const todayString = today.getFullYear() + '-' + 
-          String(today.getMonth() + 1).padStart(2, '0') + '-' + 
-          String(today.getDate()).padStart(2, '0');
-        const todayAttendance = processedData.find((record: AttendanceRecord) => {
-          if (!record.date || !(record.date instanceof Date) || isNaN(record.date.getTime())) {
-            return false;
-          }
-          const recordDate = record.date.getFullYear() + '-' + 
-            String(record.date.getMonth() + 1).padStart(2, '0') + '-' + 
-            String(record.date.getDate()).padStart(2, '0');
-          return recordDate === todayString;
-        });
-
-        // Log data kehadiran hari ini untuk debugging
-        console.log("Today's attendance record:", todayAttendance);
-        
-        setTodayRecord(todayAttendance || null);
-        console.log("🎯 Final todayRecord yang diset:", todayAttendance);
-      } catch (err) {
-        console.error("Error fetching attendance:", err);
-        setError("Gagal memuat data kehadiran");
-        // Jika terjadi error, pastikan attendanceRecords masih array kosong
-        setAttendanceRecords([]);
-        
-        // Jangan gunakan localStorage sebagai fallback
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    if (session) {
-      if (isAdmin) {
-        const timeoutId = setTimeout(() => {
-          fetchAttendance();
-          localStorage.setItem("adminAttendanceFilters", JSON.stringify(filters));
-        }, 500);
-        return () => clearTimeout(timeoutId);
-      } else {
-        fetchAttendance();
-      }
-    }
-  }, [session, selectedMonth, selectedYear, selectedDate, filters, isAdmin]);
-
-  // Tambahkan effect untuk refresh otomatis ketika ada update dari penolakan
-  // Function untuk fetch attendance - dipindahkan keluar dari useEffect
+  // Function untuk fetch attendance - dipindahkan ke useCallback tunggal
   const fetchAttendanceRecords = useCallback(async (retryCount = 0) => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
+    
+    setIsLoading(true);
+    setError(null);
     try {
       const queryParams = new URLSearchParams();
 
@@ -430,6 +315,12 @@ export default function AttendanceManagement() {
             serverError = null;
           }
         }
+        
+        // Jika error connection pool, jangan retry otomatis karena akan memperburuk situasi
+        if (serverError?.error?.includes("pool_size") || serverError?.error?.includes("max clients reached")) {
+            throw new Error(serverError.error);
+        }
+
         const fbParams = new URLSearchParams();
         fbParams.set("month", selectedMonth.toString());
         fbParams.set("year", selectedYear.toString());
@@ -444,14 +335,20 @@ export default function AttendanceManagement() {
       
       let processedData: AttendanceRecord[] = [];
       
+      const safeCreateDate = (dateValue: any): Date | null => {
+        if (!dateValue) return null;
+        const date = new Date(dateValue);
+        return isNaN(date.getTime()) ? null : date;
+      };
+
       if (Array.isArray(data)) {
         processedData = data.flatMap((item) => {
           if (item.report && Array.isArray(item.report.attendances)) {
             return item.report.attendances.map((attendance: any) => ({
               ...attendance,
-              checkIn: attendance.checkIn ? new Date(attendance.checkIn) : null,
-              checkOut: attendance.checkOut ? new Date(attendance.checkOut) : null,
-              date: new Date(attendance.date),
+              checkIn: safeCreateDate(attendance.checkIn),
+              checkOut: safeCreateDate(attendance.checkOut),
+              date: safeCreateDate(attendance.date) || new Date(),
               employee: {
                 id: item.employee?.id || "",
                 employeeId: item.employee?.employeeId || "",
@@ -471,17 +368,12 @@ export default function AttendanceManagement() {
       } else if (data && data.attendances && Array.isArray(data.attendances)) {
         processedData = data.attendances.map((attendance: any) => ({
           ...attendance,
-          // Pastikan checkIn dan checkOut adalah objek Date yang valid
-          checkIn: attendance.checkIn ? new Date(attendance.checkIn) : null,
-          checkOut: attendance.checkOut ? new Date(attendance.checkOut) : null,
-          date: new Date(attendance.date)
+          checkIn: safeCreateDate(attendance.checkIn),
+          checkOut: safeCreateDate(attendance.checkOut),
+          date: safeCreateDate(attendance.date) || new Date()
         }));
-      } else {
-        // Jika format data tidak dikenali, tetap gunakan array kosong
-        console.warn("Format data tidak dikenali:", data);
       }
       
-      // Cari record hari ini
       const today = new Date();
       const todayString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
       const todayRecordFromAPI = processedData.find((record) => {
@@ -490,85 +382,155 @@ export default function AttendanceManagement() {
         return recordDateString === todayString;
       });
       
-      console.log("📊 [FETCH] Today's record from API:", todayRecordFromAPI);
-
-      // Selalu update todayRecord untuk hari ini, terlepas dari filter bulan/tahun
       setTodayRecord(todayRecordFromAPI || null);
-      
-      // Sort data berdasarkan tanggal terbaru
       const sortedData = processedData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-      
       setAttendanceRecords(sortedData);
-      setIsLoading(false);
     } catch (error: any) {
       console.error("❌ [FETCH] Error fetching attendance records:", error);
       
-      // Retry mechanism untuk network errors pada mobile
-      if (retryCount < 3 && (error.name === 'AbortError' || error.message.includes('fetch') || error.message.includes('network'))) {
-        console.log(`🔄 [FETCH] Retrying... Attempt ${retryCount + 1}/3`);
+      // Jangan retry jika error database connection pool
+      const isPoolError = error.message?.includes("pool_size") || error.message?.includes("max clients reached");
+      
+      if (!isPoolError && retryCount < 2 && (error.name === 'AbortError' || error.message.includes('fetch') || error.message.includes('network'))) {
+        console.log(`🔄 [FETCH] Retrying... Attempt ${retryCount + 1}/2`);
         setTimeout(() => {
+          isFetchingRef.current = false;
           fetchAttendanceRecords(retryCount + 1);
-        }, 1000 * (retryCount + 1)); // Exponential backoff
+        }, 2000 * (retryCount + 1));
         return;
       }
       
-      // Set error message yang lebih informatif
-      let errorMessage = "Gagal mengambil data kehadiran";
-      if (error.name === 'AbortError') {
-        errorMessage = "Koneksi timeout. Periksa koneksi internet Anda.";
-      } else if (error.message.includes('fetch')) {
-        errorMessage = "Masalah koneksi jaringan. Silakan coba lagi.";
-      }
+      let errorMessage = error.message || "Gagal mengambil data kehadiran";
+      if (error.name === 'AbortError') errorMessage = "Koneksi timeout. Periksa koneksi internet Anda.";
       
       setError(errorMessage);
       toast.error(errorMessage);
-      setIsLoading(false);
       
-      // Error fallback: coba gunakan data dari localStorage jika ada
+      // Fallback logic
       const savedAttendance = localStorage.getItem('todayAttendance');
       if (savedAttendance) {
         try {
-          const parsedAttendance = JSON.parse(savedAttendance);
-          // Konversi string tanggal kembali ke objek Date dengan validasi
-          if (parsedAttendance.date) {
-            const dateObj = new Date(parsedAttendance.date);
-            parsedAttendance.date = isNaN(dateObj.getTime()) ? null : dateObj;
-          }
-          if (parsedAttendance.checkIn) {
-            const checkInObj = new Date(parsedAttendance.checkIn);
-            parsedAttendance.checkIn = isNaN(checkInObj.getTime()) ? null : checkInObj;
-          }
-          if (parsedAttendance.checkOut) {
-            const checkOutObj = new Date(parsedAttendance.checkOut);
-            parsedAttendance.checkOut = isNaN(checkOutObj.getTime()) ? null : checkOutObj;
-          }
-          if (parsedAttendance.approvedAt) {
-            const approvedAtObj = new Date(parsedAttendance.approvedAt);
-            parsedAttendance.approvedAt = isNaN(approvedAtObj.getTime()) ? null : approvedAtObj;
-          }
-          
+          const parsed = JSON.parse(savedAttendance);
           const today = new Date();
-          const todayString = today.getFullYear() + '-' + 
-            String(today.getMonth() + 1).padStart(2, '0') + '-' + 
-            String(today.getDate()).padStart(2, '0');
-          // Safely get the persisted date string using local timezone
-          const persistedDate = parsedAttendance.date && parsedAttendance.date instanceof Date && !isNaN(parsedAttendance.date.getTime())
-            ? (parsedAttendance.date.getFullYear() + '-' + 
-               String(parsedAttendance.date.getMonth() + 1).padStart(2, '0') + '-' + 
-               String(parsedAttendance.date.getDate()).padStart(2, '0'))
-            : null;
-          
-          // Jika data localStorage untuk hari ini, selalu prioritaskan localStorage
-          if (persistedDate && persistedDate === todayString) {
-            console.log("✅ [ERROR FALLBACK] Menggunakan data absensi dari localStorage:", parsedAttendance);
-            setTodayRecord(parsedAttendance);
+          const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+          if (parsed.date && parsed.date.startsWith(todayStr)) {
+            setTodayRecord(parsed);
           }
-        } catch (error) {
-          console.error("❌ [ERROR FALLBACK] Error parsing saved attendance:", error);
+        } catch (e) {}
+      }
+    } finally {
+      setIsLoading(false);
+      isFetchingRef.current = false;
+    }
+  }, [selectedMonth, selectedYear, selectedDate, filters, isAdmin, session]);
+
+  // Effect untuk initial load dan filter change
+  useEffect(() => {
+    if (!session) return;
+    
+    if (isAdmin) {
+      const timeoutId = setTimeout(() => {
+        fetchAttendanceRecords();
+        localStorage.setItem("adminAttendanceFilters", JSON.stringify(filters));
+      }, 500);
+      return () => clearTimeout(timeoutId);
+    } else {
+      fetchAttendanceRecords();
+    }
+  }, [session, filters, selectedMonth, selectedYear, selectedDate, isAdmin, fetchAttendanceRecords]);
+
+  // Helper function to handle successful attendance API responses
+  const handleAttendanceResponse = useCallback(async (response: Response, actionType: string) => {
+    try {
+      const data = await response.json();
+      console.log(`${actionType} response:`, data);
+
+      // Hapus checkout jika ini adalah pengajuan ulang (khusus check-in)
+      if (actionType === 'check-in') {
+        if ((data.notes && data.notes.includes("Di Tolak")) || 
+            (data.approvedAt && (!data.isSundayWorkApproved || !data.isOvertimeApproved))) {
+          data.checkOut = null;
         }
       }
+
+      // Pastikan data berformat Date
+      if (data.date) data.date = new Date(data.date);
+      if (data.checkIn) data.checkIn = new Date(data.checkIn);
+      if (data.checkOut) data.checkOut = new Date(data.checkOut);
+      if (data.overtimeStart) data.overtimeStart = new Date(data.overtimeStart);
+      if (data.overtimeEnd) data.overtimeEnd = new Date(data.overtimeEnd);
+
+      setTodayRecord(data);
+
+      // Buka modal keterlambatan jika perlu (khusus check-in)
+      if (actionType === 'check-in' && !isAdmin && ((data.status === "LATE" || data.status === "ABSENT") && !data.lateSubmittedAt)) {
+        setIsLateModalOpen(true);
+      }
+
+      // Simpan data ke localStorage
+      const attendanceDataToSave = {
+        ...data,
+        employee: {
+          id: session?.user?.id || "",
+          employeeId: session?.user?.id || "",
+          name: session?.user?.name || "",
+          user: {
+            name: session?.user?.name || "",
+          }
+        }
+      };
+
+      try {
+        localStorage.setItem('todayAttendance', JSON.stringify(attendanceDataToSave));
+        console.log(`✅ Data absensi (${actionType}) berhasil disimpan ke localStorage`);
+        
+        // Dispatch event khusus
+        if (actionType === 'check-in') {
+          window.dispatchEvent(new CustomEvent('attendance-checkin', { detail: attendanceDataToSave }));
+        }
+      } catch (storageError) {
+        console.error("❌ Error menyimpan ke localStorage:", storageError);
+      }
+
+      // Tampilkan pesan sukses di modal (menggunakan helper global jika tersedia)
+      if ((window as any).showAttendanceSuccess) {
+        let successMsg = "";
+        switch (actionType) {
+          case 'check-in':
+            successMsg = ((data.notes && data.notes.includes("Di Tolak")) || 
+                         (data.approvedAt && (!data.isSundayWorkApproved || !data.isOvertimeApproved)))
+              ? "✅ Pengajuan ulang absen berhasil dicatat! Menunggu persetujuan admin."
+              : "✅ Absen masuk berhasil dicatat! Selamat bekerja!";
+            break;
+          case 'check-out':
+            successMsg = "✅ Absen keluar berhasil dicatat! Terima kasih atas kerja keras Anda hari ini!";
+            break;
+          case 'overtime-start':
+            successMsg = "✅ Pengajuan lembur berhasil dimulai! Selamat bekerja!";
+            break;
+          case 'overtime-end':
+            successMsg = "✅ Lembur berhasil diselesaikan! Terima kasih!";
+            break;
+        }
+        if (successMsg) (window as any).showAttendanceSuccess(successMsg);
+      }
+
+      // Handle notifications & admin activity updates
+      if (response.headers.get('X-Notification-Update') === 'true') {
+        window.dispatchEvent(new Event(NOTIFICATION_UPDATE_EVENT));
+        window.dispatchEvent(new Event(ACTIVITY_UPDATE_EVENT));
+        localStorage.setItem('attendance-update', Date.now().toString());
+        localStorage.setItem('notification-update', Date.now().toString());
+      }
+
+      // Refresh data list
+      await fetchAttendanceRecords();
+
+    } catch (err) {
+      console.error(`Error handling ${actionType} response:`, err);
+      throw err;
     }
-  }, [selectedMonth, selectedYear, selectedDate, filters, isAdmin]);
+  }, [isAdmin, session, fetchAttendanceRecords]);
 
   useEffect(() => {
     // Function untuk menangani event storage
@@ -680,9 +642,9 @@ export default function AttendanceManagement() {
       
       // Lanjutkan dengan proses sesuai aksi
       if (captureAction === 'check-in') {
-        await processCheckIn(uploadedPhotoUrl, latitude, longitude);
+        await processCheckIn(uploadedPhotoUrl, latitude, longitude, locationNote);
       } else if (captureAction === 'check-out') {
-        await processCheckOut(uploadedPhotoUrl, latitude, longitude);
+        await processCheckOut(uploadedPhotoUrl, latitude, longitude, locationNote);
       } else if (captureAction === 'overtime-start') {
         const reason = (window as any).overtimeReason || '';
         const consentConfirmed = (window as any).overtimeConsentConfirmed === true;
@@ -712,7 +674,7 @@ export default function AttendanceManagement() {
 
 
   // Fungsi untuk memproses check-in setelah foto dan lokasi didapatkan
-  const processCheckIn = async (photoUrl: string, latitude: number, longitude: number) => {
+  const processCheckIn = async (photoUrl: string, latitude: number, longitude: number, locationNote?: string) => {
     setError(null);
     setIsCheckingIn(true);
     const toastId = toast.loading("Mengirim absen masuk...");
@@ -738,7 +700,8 @@ export default function AttendanceManagement() {
             action: "check-in",
             photoUrl: photoUrl,
             latitude: latitude,
-            longitude: longitude
+            longitude: longitude,
+            locationNote: locationNote
           }),
           signal: controller.signal,
         });
@@ -764,6 +727,8 @@ export default function AttendanceManagement() {
         
         // If we reach here, the request was successful
         successfulResponse = response;
+        toast.dismiss(toastId);
+        toast.success("Absen masuk berhasil");
         break;
         
       } catch (err: any) {
@@ -787,8 +752,6 @@ export default function AttendanceManagement() {
         console.log(`⏳ Waiting ${delay}ms before retry...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
-      toast.dismiss(toastId);
-      toast.success("Absen masuk berhasil");
     }
     
     try {
@@ -797,115 +760,7 @@ export default function AttendanceManagement() {
         throw new Error('No successful response received');
       }
       
-      const data = await successfulResponse.json();
-      console.log("Check-in response:", data); // Log response untuk debugging
-      
-      // Hapus checkout jika ini adalah pengajuan ulang
-      if (data.notes && data.notes.includes("Di Tolak") || 
-          (data.approvedAt && (!data.isSundayWorkApproved || !data.isOvertimeApproved))) {
-        // Reset checkout ke null
-        data.checkOut = null;
-      }
-      
-      // Pastikan data berformat Date
-      if (data.date) data.date = new Date(data.date);
-      if (data.checkIn) data.checkIn = new Date(data.checkIn);
-      if (data.checkOut) data.checkOut = new Date(data.checkOut);
-      
-      setTodayRecord(data);
-      if (!isAdmin && ((data.status === "LATE" || data.status === "ABSENT") && !data.lateSubmittedAt)) {
-        setIsLateModalOpen(true);
-      }
-      
-      // Simpan data absensi ke localStorage segera setelah absen berhasil
-      const attendanceDataToSave = {
-        id: data.id,
-        date: data.date,
-        checkIn: data.checkIn, // Pastikan ini tidak null setelah check-in
-        checkOut: data.checkOut,
-        status: data.status,
-        notes: data.notes,
-        isLate: data.isLate,
-        lateMinutes: data.lateMinutes,
-        overtime: data.overtime,
-        isOvertime: data.isOvertime,
-        overtimeApproved: data.overtimeApproved,
-        isOvertimeApproved: data.isOvertimeApproved,
-        isSundayWork: data.isSundayWork,
-        isSundayWorkApproved: data.isSundayWorkApproved,
-        sundayWorkApproved: data.sundayWorkApproved,
-        approvedBy: data.approvedBy,
-        approvedAt: data.approvedAt,
-        employee: {
-          id: session?.user?.id || "",
-          employeeId: session?.user?.id || "",
-          name: session?.user?.name || "",
-          user: {
-            name: session?.user?.name || "",
-          }
-        }
-      };
-      
-      // Validasi data sebelum menyimpan
-      if (!attendanceDataToSave.checkIn) {
-        console.error("⚠️ Warning: checkIn is null/undefined, ini tidak seharusnya terjadi setelah check-in berhasil");
-      }
-      
-      try {
-        localStorage.setItem('todayAttendance', JSON.stringify(attendanceDataToSave));
-        console.log("✅ Data absensi berhasil disimpan ke localStorage:", attendanceDataToSave);
-        
-        // Dispatch event untuk memastikan komponen lain mengetahui perubahan
-        window.dispatchEvent(new CustomEvent('attendance-checkin', { 
-          detail: attendanceDataToSave 
-        }));
-      } catch (storageError) {
-        console.error("❌ Error menyimpan ke localStorage:", storageError);
-      }
-      
-      // Tampilkan pesan sukses di modal
-      if (window.showAttendanceSuccess) {
-        if (data.notes && data.notes.includes("Di Tolak") || 
-            (data.approvedAt && (!data.isSundayWorkApproved || !data.isOvertimeApproved))) {
-          window.showAttendanceSuccess("✅ Pengajuan ulang absen berhasil dicatat! Menunggu persetujuan admin.");
-        } else {
-          window.showAttendanceSuccess("✅ Absen masuk berhasil dicatat! Selamat bekerja!");
-        }
-      }
-      
-      // Check if the response header indicates a notification update
-      if (successfulResponse.headers.get('X-Notification-Update') === 'true') {
-        // Dispatch custom event to update notifications
-        window.dispatchEvent(new Event(NOTIFICATION_UPDATE_EVENT));
-        // Tambahkan event untuk memperbarui aktivitas di dashboard admin
-        window.dispatchEvent(new Event(ACTIVITY_UPDATE_EVENT));
-        
-        // Tambahkan juga storage event untuk komunikasi antar tab
-        localStorage.setItem('attendance-update', Date.now().toString());
-        localStorage.setItem('notification-update', Date.now().toString());
-      }
-      
-      // Refresh attendance records
-      const queryParams = new URLSearchParams({
-        month: selectedMonth.toString(),
-        year: selectedYear.toString(),
-      });
-      const refreshResponse = await fetch(`/api/attendance?${queryParams}`);
-      if (refreshResponse.ok) {
-        const refreshData = await refreshResponse.json();
-        
-        // Pastikan refreshData adalah array sebelum meng-update state
-        if (refreshData && refreshData.attendances && Array.isArray(refreshData.attendances)) {
-          setAttendanceRecords(refreshData.attendances);
-        } else if (Array.isArray(refreshData)) {
-          // Jika data langsung berupa array
-          setAttendanceRecords(refreshData);
-        } else {
-          // Jika format tidak dikenali, gunakan array kosong
-          console.warn("Format data refresh tidak dikenali:", refreshData);
-          setAttendanceRecords([]);
-        }
-      }
+      await handleAttendanceResponse(successfulResponse, 'check-in');
     } catch (err: any) {
       console.error("Error checking in:", err);
       setError(err.message || "Gagal melakukan absen masuk");
@@ -929,291 +784,232 @@ export default function AttendanceManagement() {
 
 
   const processOvertimeStart = async (photoUrl: string, latitude: number, longitude: number, locationNote?: string, reason?: string, consentConfirmed?: boolean) => {
-    try {
-      const response = await fetch("/api/attendance", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: 'overtime-start', photoUrl, latitude, longitude, locationNote, reason, consentConfirmed }),
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || "Gagal memulai lembur");
-      }
-      if (data.date) data.date = new Date(data.date);
-      if (data.checkIn) data.checkIn = new Date(data.checkIn);
-      if (data.checkOut) data.checkOut = new Date(data.checkOut);
-      if (data.overtimeStart) data.overtimeStart = new Date(data.overtimeStart);
-      if (data.overtimeEnd) data.overtimeEnd = new Date(data.overtimeEnd);
-      setTodayRecord(data);
-      const queryParams = new URLSearchParams({ month: selectedMonth.toString(), year: selectedYear.toString() });
-      const refreshResponse = await fetch(`/api/attendance?${queryParams}`);
-      if (refreshResponse.ok) {
-        const refreshData = await refreshResponse.json();
-        if (refreshData && refreshData.attendances && Array.isArray(refreshData.attendances)) {
-          setAttendanceRecords(refreshData.attendances);
-        } else if (Array.isArray(refreshData)) {
-          setAttendanceRecords(refreshData);
+    setError(null);
+    const toastId = toast.loading("Mengirim pengajuan lembur...");
+    
+    const maxRetries = 3;
+    let retryCount = 0;
+    let successfulResponse: Response | null = null;
+
+    while (retryCount < maxRetries) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        
+        const response = await fetch("/api/attendance", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ 
+            action: 'overtime-start', 
+            photoUrl, 
+            latitude, 
+            longitude, 
+            locationNote, 
+            reason, 
+            consentConfirmed 
+          }),
+          signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) {
+          const data = await response.json();
+          throw new Error(data.error || "Gagal memulai lembur");
         }
+        
+        successfulResponse = response;
+        toast.dismiss(toastId);
+        toast.success("Lembur berhasil dimulai");
+        break;
+      } catch (err: any) {
+        retryCount++;
+        if (retryCount >= maxRetries) {
+          setError(err.message || "Gagal memulai lembur");
+          toast.dismiss(toastId);
+          toast.error(err.message || "Gagal memulai lembur");
+          return;
+        }
+        await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
       }
+    }
+
+    try {
+      if (!successfulResponse) return;
+      await handleAttendanceResponse(successfulResponse, 'overtime-start');
     } catch (err: any) {
       setError(err.message);
     }
   };
 
   const processOvertimeEnd = async (photoUrl: string, latitude: number, longitude: number, locationNote?: string) => {
-    try {
-      const response = await fetch("/api/attendance", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: 'overtime-end', photoUrl, latitude, longitude, locationNote }),
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || "Gagal menyelesaikan lembur");
-      }
-      if (data.date) data.date = new Date(data.date);
-      if (data.checkIn) data.checkIn = new Date(data.checkIn);
-      if (data.checkOut) data.checkOut = new Date(data.checkOut);
-      if (data.overtimeStart) data.overtimeStart = new Date(data.overtimeStart);
-      if (data.overtimeEnd) data.overtimeEnd = new Date(data.overtimeEnd);
-      setTodayRecord(data);
-      const queryParams = new URLSearchParams({ month: selectedMonth.toString(), year: selectedYear.toString() });
-      const refreshResponse = await fetch(`/api/attendance?${queryParams}`);
-      if (refreshResponse.ok) {
-        const refreshData = await refreshResponse.json();
-        if (refreshData && refreshData.attendances && Array.isArray(refreshData.attendances)) {
-          setAttendanceRecords(refreshData.attendances);
-        } else if (Array.isArray(refreshData)) {
-          setAttendanceRecords(refreshData);
+    setError(null);
+    const toastId = toast.loading("Mengirim penyelesaian lembur...");
+    
+    const maxRetries = 3;
+    let retryCount = 0;
+    let successfulResponse: Response | null = null;
+
+    while (retryCount < maxRetries) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        
+        const response = await fetch("/api/attendance", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ 
+            action: 'overtime-end', 
+            photoUrl, 
+            latitude, 
+            longitude, 
+            locationNote 
+          }),
+          signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) {
+          const data = await response.json();
+          throw new Error(data.error || "Gagal menyelesaikan lembur");
         }
+        
+        successfulResponse = response;
+        toast.dismiss(toastId);
+        toast.success("Lembur berhasil diselesaikan");
+        break;
+      } catch (err: any) {
+        retryCount++;
+        if (retryCount >= maxRetries) {
+          setError(err.message || "Gagal menyelesaikan lembur");
+          toast.dismiss(toastId);
+          toast.error(err.message || "Gagal menyelesaikan lembur");
+          return;
+        }
+        await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
       }
+    }
+
+    try {
+      if (!successfulResponse) return;
+      await handleAttendanceResponse(successfulResponse, 'overtime-end');
     } catch (err: any) {
       setError(err.message);
     }
   };
 
   // Fungsi untuk memproses check-out setelah foto dan lokasi didapatkan
-  const processCheckOut = async (photoUrl: string, latitude: number, longitude: number, retryCount = 0) => {
-    const maxRetries = 3;
+  const processCheckOut = async (photoUrl: string, latitude: number, longitude: number, locationNote?: string) => {
     setError(null);
     setIsCheckingOut(true);
     const toastId = toast.loading("Mengirim absen keluar...");
-    try {
-      console.log(`🔄 Attempting check-out (attempt ${retryCount + 1}/${maxRetries})`);
-      
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-      
-      const response = await fetch("/api/attendance", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ 
-          action: "check-out",
-          photoUrl: photoUrl,
-          latitude: latitude,
-          longitude: longitude,
-          confirmOvertime: (() => {
-            const now = new Date();
-            const outside = getWorkdayType(now) === WorkdayType.SUNDAY || isOvertimeCheckOut(now, now);
-            return outside && !todayRecord?.overtimeStart && ((window as any).overtimeConsentConfirmed === true);
-          })(),
-          overtimeReason: (window as any).overtimeReason || undefined,
-          consentConfirmed: (window as any).overtimeConsentConfirmed === true || undefined,
-        }),
-        signal: controller.signal,
-      });
-      
-      clearTimeout(timeoutId);
-      console.log(`✅ Check-out fetch successful, response status: ${response.status}`);
+    
+    const maxRetries = 3;
+    let retryCount = 0;
+    let successfulResponse: Response | null = null;
 
-      // Ambil data respons terlebih dahulu
-        const data = await response.json();
+    while (retryCount < maxRetries) {
+      try {
+        console.log(`🔄 Attempting check-out (attempt ${retryCount + 1}/${maxRetries})`);
         
-      // Cek status respons setelah mendapatkan data
-      if (!response.ok) {
-        // Tampilkan pesan khusus untuk double absen
-        if (data.error === "Anda sudah melakukan check-out hari ini") {
-          // Jika ada data existingAttendance dari respons, gunakan itu
-          if (data.existingAttendance) {
-            // Konversi data tanggal
-            if (data.existingAttendance.date) data.existingAttendance.date = new Date(data.existingAttendance.date);
-            if (data.existingAttendance.checkIn) data.existingAttendance.checkIn = new Date(data.existingAttendance.checkIn);
-            if (data.existingAttendance.checkOut) data.existingAttendance.checkOut = new Date(data.existingAttendance.checkOut);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+        
+        const response = await fetch("/api/attendance", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ 
+            action: "check-out",
+            photoUrl: photoUrl,
+            latitude: latitude,
+            longitude: longitude,
+            locationNote: locationNote,
+            confirmOvertime: (() => {
+              const now = new Date();
+              const outside = getWorkdayType(now) === WorkdayType.SUNDAY || isOvertimeCheckOut(now, now);
+              return outside && !todayRecord?.overtimeStart && ((window as any).overtimeConsentConfirmed === true);
+            })(),
+            overtimeReason: (window as any).overtimeReason || undefined,
+            consentConfirmed: (window as any).overtimeConsentConfirmed === true || undefined,
+          }),
+          signal: controller.signal,
+        });
+        
+        clearTimeout(timeoutId);
+        console.log(`✅ Check-out fetch successful, response status: ${response.status}`);
+
+        if (!response.ok) {
+          const data = await response.json();
+          // Tampilkan pesan khusus untuk double absen
+          if (data.error === "Anda sudah melakukan check-out hari ini") {
+            // Jika ada data existingAttendance dari respons, gunakan itu
+            if (data.existingAttendance) {
+              // Konversi data tanggal
+              if (data.existingAttendance.date) data.existingAttendance.date = new Date(data.existingAttendance.date);
+              if (data.existingAttendance.checkIn) data.existingAttendance.checkIn = new Date(data.existingAttendance.checkIn);
+              if (data.existingAttendance.checkOut) data.existingAttendance.checkOut = new Date(data.existingAttendance.checkOut);
+              
+              // Update todayRecord dengan data yang sudah ada
+              setTodayRecord(data.existingAttendance);
+            }
             
-            // Update todayRecord dengan data yang sudah ada
-            setTodayRecord(data.existingAttendance);
+            // Tampilkan pesan ramah di UI
+            const checkInStr = data.existingAttendance?.checkIn ? formatTime(new Date(data.existingAttendance.checkIn)) : (todayRecord?.checkIn ? formatTime(todayRecord.checkIn) : '-');
+            const checkOutStr = data.existingAttendance?.checkOut ? formatTime(new Date(data.existingAttendance.checkOut)) : (todayRecord?.checkOut ? formatTime(todayRecord.checkOut) : '-');
+            
+            setError(`Anda sudah melakukan check-out hari ini. Data kehadiran sebelumnya: Check-in ${checkInStr}, Check-out ${checkOutStr}`);
+            toast.dismiss(toastId);
+            toast("Anda sudah melakukan check-out hari ini");
+            return; // Hentikan eksekusi
           }
           
-          // Tampilkan pesan ramah di UI
-          setError(`Anda sudah melakukan check-out hari ini. Data kehadiran sebelumnya: Check-in ${todayRecord?.checkIn ? formatTime(todayRecord.checkIn) : '-'}, Check-out ${todayRecord?.checkOut ? formatTime(todayRecord.checkOut) : '-'}`);
-          toast.dismiss(toastId);
-          toast("Anda sudah melakukan check-out hari ini");
-          return; // Hentikan eksekusi
+          throw new Error(data.error || "Gagal melakukan absen keluar");
         }
         
-        throw new Error(data.error || "Gagal melakukan absen keluar");
-      }
-      
-      // Pastikan data berformat Date
-      if (data.date) data.date = new Date(data.date);
-      if (data.checkIn) data.checkIn = new Date(data.checkIn);
-      if (data.checkOut) data.checkOut = new Date(data.checkOut);
-      
-      // Update state dengan data terbaru
-      setTodayRecord(data);
-      console.log("Check-out berhasil, data:", data);
-      
-      // Simpan data absensi ke localStorage segera setelah absen keluar berhasil
-      const attendanceDataToSave = {
-        id: data.id,
-        date: data.date,
-        checkIn: data.checkIn,
-        checkOut: data.checkOut, // Sekarang sudah ada checkOut
-        status: data.status,
-        notes: data.notes,
-        isLate: data.isLate,
-        lateMinutes: data.lateMinutes,
-        overtime: data.overtime,
-        isOvertime: data.isOvertime,
-        overtimeApproved: data.overtimeApproved,
-        isOvertimeApproved: data.isOvertimeApproved,
-        isSundayWork: data.isSundayWork,
-        isSundayWorkApproved: data.isSundayWorkApproved,
-        sundayWorkApproved: data.sundayWorkApproved,
-        approvedBy: data.approvedBy,
-        approvedAt: data.approvedAt,
-        employee: {
-          id: session?.user?.id || "",
-          employeeId: session?.user?.id || "",
-          name: session?.user?.name || "",
-          user: {
-            name: session?.user?.name || "",
+        successfulResponse = response;
+        toast.dismiss(toastId);
+        toast.success("Absen keluar berhasil");
+        break;
+
+      } catch (err: any) {
+        console.error(`❌ Check-out attempt ${retryCount + 1} failed:`, err);
+        
+        retryCount++;
+        
+        if (retryCount >= maxRetries) {
+          let errorMessage = "Gagal melakukan absen keluar";
+          if (err.name === 'AbortError') {
+            errorMessage = "Koneksi timeout saat absen keluar. Periksa koneksi internet Anda.";
+          } else if (err.message.includes('fetch') || err.message.includes('network')) {
+            errorMessage = "Masalah koneksi jaringan saat absen keluar. Silakan coba lagi.";
+          } else {
+            errorMessage = err.message || errorMessage;
           }
+          throw new Error(errorMessage);
         }
-      };
-      
-      try {
-        localStorage.setItem('todayAttendance', JSON.stringify(attendanceDataToSave));
-        console.log("✅ Data absensi checkout berhasil disimpan ke localStorage:", attendanceDataToSave);
-      } catch (storageError) {
-        console.error("❌ Error menyimpan checkout ke localStorage:", storageError);
-      }
-      
-      // Tampilkan pesan sukses di modal
-      if (window.showAttendanceSuccess) {
-        window.showAttendanceSuccess("✅ Absen keluar berhasil dicatat! Terima kasih atas kerja keras Anda hari ini!");
-      }
-      toast.dismiss(toastId);
-      toast.success("Absen keluar berhasil");
-      
-      // Check if the response header indicates a notification update
-      if (response.headers.get('X-Notification-Update') === 'true') {
-        // Dispatch custom event to update notifications
-        window.dispatchEvent(new Event(NOTIFICATION_UPDATE_EVENT));
-        // Tambahkan event untuk memperbarui aktivitas di dashboard admin
-        window.dispatchEvent(new Event(ACTIVITY_UPDATE_EVENT));
-      }
         
-      // Tambahkan storage event untuk komunikasi antar tab
-        localStorage.setItem('attendance-update', Date.now().toString());
-        localStorage.setItem('notification-update', Date.now().toString());
-      
-      // Refresh attendance records
-      await fetchAttendanceRecords();
-      
-      // Force refresh setelah beberapa saat untuk memastikan data konsisten
-      setTimeout(() => {
-        fetchAttendanceRecords();
-      }, 1000);
+        // Wait before retrying
+        const delay = Math.pow(2, retryCount) * 1000;
+        console.log(`⏳ Waiting ${delay}ms before retry...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+
+    try {
+      if (!successfulResponse) {
+        throw new Error('No successful response received');
+      }
+
+      await handleAttendanceResponse(successfulResponse, 'check-out');
     } catch (err: any) {
-      console.error("❌ [CHECK-OUT] Error checking out:", err);
-      
-      // Retry mechanism untuk network errors pada mobile
-      if (retryCount < maxRetries - 1 && (err.name === 'AbortError' || err.message.includes('fetch') || err.message.includes('network'))) {
-        console.log(`🔄 [CHECK-OUT] Retrying... Attempt ${retryCount + 2}/${maxRetries}`);
-        setTimeout(() => {
-          processCheckOut(photoUrl, latitude, longitude, retryCount + 1);
-        }, 1000 * (retryCount + 1)); // Exponential backoff
-        return;
-      }
-      
-      // Set error message yang lebih informatif
-      let errorMessage = "Gagal melakukan absen keluar";
-      if (err.name === 'AbortError') {
-        errorMessage = "Koneksi timeout saat absen keluar. Periksa koneksi internet Anda.";
-      } else if (err.message.includes('fetch')) {
-        errorMessage = "Masalah koneksi jaringan saat absen keluar. Silakan coba lagi.";
-      }
-      
-      setError(errorMessage);
+      console.error("❌ [CHECK-OUT] Final processing error:", err);
+      setError(err.message || "Gagal memproses data absen keluar");
     } finally {
       setIsCheckingOut(false);
     }
-  };
-
-  const formatTime = (date: Date | null): string => {
-    if (!date) return "-";
-    return new Date(date).toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
-
-  const formatDateDMY = (date: Date): string => {
-    const d = new Date(date);
-    const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
-    const dayName = days[d.getDay()];
-    const day = String(d.getDate()).padStart(2, '0');
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const year = d.getFullYear();
-    return `${dayName}, ${day}-${month}-${year}`;
-  };
-
-  const getStatusProps = (status: string): { label: string; cls: string } => {
-    switch (status) {
-      case "PRESENT":
-        return { label: "Hadir", cls: "bg-green-100 text-green-800" };
-      case "ABSENT":
-        return { label: "Alpa", cls: "bg-red-100 text-red-800" };
-      case "LATE":
-        return { label: "Terlambat", cls: "bg-yellow-100 text-yellow-800" };
-      case "LEAVE":
-        return { label: "Izin", cls: "bg-blue-100 text-blue-800" };
-      case "SICK":
-        return { label: "Sakit", cls: "bg-purple-100 text-purple-800" };
-      case "HALFDAY":
-        return { label: "Setengah Hari", cls: "bg-orange-100 text-orange-800" };
-      default:
-        return { label: status, cls: "bg-gray-100 text-gray-800" };
-    }
-  };
-
-  const formatDate = (date: Date): string => {
-    return new Date(date).toLocaleDateString(undefined, {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
-  };
-
-  const getMonthName = (month: number): string => {
-    const date = new Date();
-    date.setMonth(month - 1);
-    return date.toLocaleString('default', { month: 'long' });
-  };
-
-  // Format date for input fields
-  const formatDateForInput = (date: Date | null): string => {
-    if (!date) return '';
-    const d = new Date(date);
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    const hours = String(d.getHours()).padStart(2, '0');
-    const minutes = String(d.getMinutes()).padStart(2, '0');
-    return `${year}-${month}-${day}T${hours}:${minutes}`;
   };
 
   // Handle opening the edit modal for a record

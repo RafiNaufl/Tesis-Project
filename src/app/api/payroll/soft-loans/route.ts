@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
     // Use the centralized function to get soft loans
     const softLoans = await getSoftLoans(
       { employeeId, status },
-      session.user.role === "ADMIN",
+      session.user.role === "ADMIN" || session.user.role === "DIREKTUR",
       session.user.id
     );
     
@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
         reason,
         monthlyAmount
       },
-      session.user.role === "ADMIN",
+      session.user.role === "ADMIN" || session.user.role === "DIREKTUR",
       session.user.id
     );
 
@@ -94,7 +94,7 @@ export async function PUT(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session || session.user.role !== "ADMIN") {
+    if (!session || (session.user.role !== "ADMIN" && session.user.role !== "DIREKTUR")) {
       return NextResponse.json(
         { error: "Unauthorized" },
         { status: 401 }
@@ -138,7 +138,7 @@ export async function DELETE(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session || session.user.role !== "ADMIN") {
+    if (!session || (session.user.role !== "ADMIN" && session.user.role !== "DIREKTUR")) {
       return NextResponse.json(
         { error: "Unauthorized" },
         { status: 401 }
@@ -179,7 +179,7 @@ export async function PATCH(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
     
-    if (!session || session.user.role !== "ADMIN") {
+    if (!session || (session.user.role !== "ADMIN" && session.user.role !== "DIREKTUR")) {
       return NextResponse.json(
         { error: "Unauthorized. Admin access required." },
         { status: 403 }

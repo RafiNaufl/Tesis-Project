@@ -19,7 +19,7 @@ export async function POST(
       );
     }
     const role = session.user.role;
-    const allowedRoles = ["ADMIN", "MANAGER", "FOREMAN", "ASSISTANT_FOREMAN"];
+    const allowedRoles = ["ADMIN", "MANAGER", "FOREMAN", "ASSISTANT_FOREMAN", "DIREKTUR"];
     if (!allowedRoles.includes(role)) {
       return NextResponse.json(
         { error: "Anda tidak memiliki izin untuk melakukan tindakan ini" },

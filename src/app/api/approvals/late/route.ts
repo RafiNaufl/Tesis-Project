@@ -7,7 +7,7 @@ export async function GET(_req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Tidak diizinkan" }, { status: 401 });
   const role = session.user.role;
-  const allowed = ["ADMIN", "MANAGER", "FOREMAN", "ASSISTANT_FOREMAN"];
+  const allowed = ["ADMIN", "MANAGER", "FOREMAN", "ASSISTANT_FOREMAN", "DIREKTUR"];
   if (!allowed.includes(role)) return NextResponse.json({ error: "Tidak diizinkan" }, { status: 403 });
 
   const pending = await prisma.attendance.findMany({

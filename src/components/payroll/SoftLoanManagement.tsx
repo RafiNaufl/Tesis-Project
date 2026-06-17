@@ -175,6 +175,7 @@ export default function SoftLoanManagement({ embedded = false }: { embedded?: bo
   const { data: session } = useSession();
   const searchParams = useSearchParams();
   const highlightId = searchParams.get("loanId");
+  const isAdmin = session?.user?.role === "ADMIN" || session?.user?.role === "DIREKTUR";
   
   const [softLoans, setSoftLoans] = useState<SoftLoan[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -278,10 +279,10 @@ export default function SoftLoanManagement({ embedded = false }: { embedded?: bo
 
   useEffect(() => {
     fetchSoftLoans();
-    if (session?.user?.role === "ADMIN") {
+    if (isAdmin) {
       fetchEmployees();
     }
-  }, [session, fetchSoftLoans, fetchEmployees]);
+  }, [session, fetchSoftLoans, fetchEmployees, isAdmin]);
 
   // --- Logic ---
 
@@ -465,7 +466,6 @@ export default function SoftLoanManagement({ embedded = false }: { embedded?: bo
 
   // --- Render ---
 
-  const isAdmin = session?.user?.role === "ADMIN";
   const showHeader = !embedded || isAdmin;
 
   return (

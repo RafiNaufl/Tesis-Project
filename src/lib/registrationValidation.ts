@@ -7,6 +7,7 @@ export const organizationNames: Record<typeof organizations[number], string> = {
 };
 export const employmentStatuses = ["Tetap", "Tidak Tetap"] as const;
 export const roles = [
+  "Direktur",
   "Manajer",
   "Admin",
   "Foreman",

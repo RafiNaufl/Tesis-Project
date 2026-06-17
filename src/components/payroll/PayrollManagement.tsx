@@ -66,7 +66,7 @@ function PayrollManagement() {
   const [selectedRecord, setSelectedRecord] = useState<PayrollRecord | null>(null);
   const [attendanceData, setAttendanceData] = useState<any[]>([]);
   const previewRef = useRef<HTMLDivElement>(null);
-  const isAdmin = session?.user?.role === "ADMIN";
+  const isAdmin = session?.user?.role === "ADMIN" || session?.user?.role === "DIREKTUR";
   const [selectedPayrollId, setSelectedPayrollId] = useState<string | null>(null);
   const [highlightPayrollId, setHighlightPayrollId] = useState<string | null>(null);
   

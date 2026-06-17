@@ -43,7 +43,7 @@ export async function GET(
 
     // Check if the user is authorized to view this record
     if (
-      session.user.role !== "ADMIN" && session.user.role !== "MANAGER" &&
+      session.user.role !== "ADMIN" && session.user.role !== "MANAGER" && session.user.role !== "DIREKTUR" &&
       attendance.employee.user.id !== session.user.id
     ) {
       return NextResponse.json(
@@ -75,7 +75,7 @@ export async function PUT(
     }
 
     // Only admins can update attendance records
-    if (session.user.role !== "ADMIN") {
+    if (session.user.role !== "ADMIN" && session.user.role !== "DIREKTUR") {
       return NextResponse.json(
         { error: "Only admins can update attendance records" },
         { status: 403 }
@@ -135,7 +135,7 @@ export async function DELETE(
     }
 
     // Only admins can delete attendance records
-    if (session.user.role !== "ADMIN") {
+    if (session.user.role !== "ADMIN" && session.user.role !== "DIREKTUR") {
       return NextResponse.json(
         { error: "Only admins can delete attendance records" },
         { status: 403 }

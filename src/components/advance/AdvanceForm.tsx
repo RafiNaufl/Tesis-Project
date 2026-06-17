@@ -66,7 +66,7 @@ export default function AdvanceForm({ isOpen, onClose, onSubmit, role, employees
         </div>
 
         <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4">
-          {role === "ADMIN" && (
+          {(role === "ADMIN" || role === "DIREKTUR") && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Karyawan</label>
               <select

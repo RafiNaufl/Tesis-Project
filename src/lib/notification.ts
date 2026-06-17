@@ -186,9 +186,9 @@ export const createAdminNotifications = async (
   opts?: { refType?: string; refId?: string }
 ) => {
   try {
-    // Dapatkan semua pengguna dengan peran ADMIN
+    // Dapatkan semua pengguna dengan peran ADMIN atau DIREKTUR
     const admins = await prisma.user.findMany({
-      where: { role: "ADMIN" },
+      where: { role: { in: ["ADMIN", "DIREKTUR"] } },
       select: { id: true }
     });
 

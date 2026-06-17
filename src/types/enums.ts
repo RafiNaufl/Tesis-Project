@@ -15,6 +15,7 @@ export enum LeaveStatus {
 
 export enum Role {
   ADMIN = 'ADMIN',
+  DIREKTUR = 'DIREKTUR',
   EMPLOYEE = 'EMPLOYEE',
   MANAGER = 'MANAGER',
   FOREMAN = 'FOREMAN',

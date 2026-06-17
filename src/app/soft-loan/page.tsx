@@ -5,7 +5,7 @@ import SoftLoanManagement from "@/components/payroll/SoftLoanManagement";
 
 export default async function SoftLoanPage() {
   const user = await requireAuth();
-  const isAdmin = user.role === "ADMIN";
+  const isAdmin = user.role === "ADMIN" || user.role === "DIREKTUR";
   
   return (
     <DashboardLayout>
