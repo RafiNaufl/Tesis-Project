@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { format } from "date-fns";
+import { calculateDistance } from "@/lib/geoUtils";
 
 import { checkIn, checkOut, getMonthlyAttendanceReport, startOvertime, endOvertime, getBulkMonthlyAttendanceReport } from "@/lib/attendance";
 import { getWorkdayType, WorkdayType, getWorkEndTime, isOvertimeCheckOut, isOvertimeCheckIn, toWIB } from "@/lib/attendanceRules";
@@ -602,6 +603,38 @@ export async function POST(req: NextRequest) {
           { status: 400 }
         );
       }
+
+      // VALIDASI GEOFENCING
+      let office = await prisma.officeLocation.findFirst();
+      if (!office) {
+        office = await prisma.officeLocation.create({
+          data: {
+            name: "Kantor Pusat",
+            latitude: -6.001741,
+            longitude: 106.012622,
+            radius: 50,
+          },
+        });
+      }
+
+      const distance = calculateDistance(
+        latitude,
+        longitude,
+        office.latitude,
+        office.longitude
+      );
+
+      if (distance > office.radius) {
+        return NextResponse.json(
+          { 
+            error: "Absensi gagal: Anda berada di luar radius kantor",
+            distance: Math.round(distance),
+            maxRadius: office.radius
+          },
+          { status: 400 }
+        );
+      }
+      // AKHIR VALIDASI GEOFENCING
 
       // Validasi berdasarkan aturan kehadiran dan jam kerja
       if (action === "check-in") {

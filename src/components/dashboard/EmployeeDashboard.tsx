@@ -287,7 +287,7 @@ export default function EmployeeDashboard() {
   }, [todayRecord]);
 
   // Fungsi untuk mengunggah foto ke server
-  const uploadPhoto = async (photoBase64: string): Promise<string> => {
+  const uploadPhoto = async (photoBase64: string): Promise<{ url?: string; error?: string }> => {
     try {
       // Konversi base64 ke blob
       const response = await fetch(photoBase64);
@@ -305,25 +305,30 @@ export default function EmployeeDashboard() {
       });
       
       if (!uploadResponse.ok) {
-        throw new Error('Gagal mengunggah foto');
+        return { error: 'Gagal mengunggah foto' };
       }
       
       const uploadResult = await uploadResponse.json();
-      return uploadResult.url;
+      return { url: uploadResult.url };
     } catch (error) {
       console.error('Error uploading photo:', error);
-      throw new Error('Gagal mengunggah foto');
+      return { error: 'Gagal mengunggah foto' };
     }
   };
   
   // Fungsi untuk menangani hasil dari AttendanceCapture
   const handleCaptureComplete = async (photoUrl: string, latitude: number, longitude: number, locationNote?: string) => {
     try {
-      // Simpan data yang ditangkap
-      
       // Upload foto dan dapatkan URL
       setIsUploadingPhoto(true);
-      const uploadedPhotoUrl = await uploadPhoto(photoUrl);
+      const uploadResult = await uploadPhoto(photoUrl);
+      
+      if (uploadResult.error) {
+        setError(uploadResult.error);
+        return;
+      }
+
+      const uploadedPhotoUrl = uploadResult.url!;
       
       if (captureAction === 'check-in') {
         await processCheckIn(uploadedPhotoUrl, latitude, longitude);
@@ -343,7 +348,7 @@ export default function EmployeeDashboard() {
       } else if (captureAction === 'overtime-end') {
         await processOvertimeEnd(uploadedPhotoUrl, latitude, longitude, locationNote);
       }
-  } catch (error: any) {
+    } catch (error: any) {
       console.error('Error in capture workflow:', error);
       setError(error.message || 'Terjadi kesalahan saat memproses absensi');
     } finally {
@@ -399,24 +404,30 @@ export default function EmployeeDashboard() {
         
         // Tampilkan pesan khusus untuk double absen dan gunakan existingAttendance jika ada
         if (errorData.error === "Anda sudah melakukan check-in hari ini" && errorData.existingAttendance) {
-          // Konversi data tanggal
+          // ... (logika existingData)
           const existingData = errorData.existingAttendance;
           if (existingData.date) existingData.date = new Date(existingData.date);
           if (existingData.checkIn) existingData.checkIn = new Date(existingData.checkIn);
           if (existingData.checkOut) existingData.checkOut = new Date(existingData.checkOut);
           
-          // Update todayRecord dengan data yang sudah ada
           setTodayRecord(existingData);
-          
-          // isCheckedIn akan diperbarui oleh useEffect berdasarkan todayRecord
-          
           console.log("Double check-in detected, using existing attendance:", existingData);
-          
           setError(errorData.error || 'Gagal melakukan absen masuk');
           return;
         }
         
-        throw new Error(errorData.error || 'Gagal melakukan absen masuk');
+        // Handle geofencing error gracefully without throwing
+        if (errorData.error && errorData.error.includes("di luar radius")) {
+          let errorMsg = errorData.error;
+          if (errorData.distance && errorData.maxRadius) {
+            errorMsg += ` (Jarak: ${errorData.distance}m, Radius: ${errorData.maxRadius}m)`;
+          }
+          setError(errorMsg);
+          return;
+        }
+
+        setError(errorData.error || 'Gagal melakukan absen masuk');
+        return;
       }
 
       const data = await response.json();
@@ -576,7 +587,18 @@ export default function EmployeeDashboard() {
           return;
         }
         
-        throw new Error(data.error || 'Gagal melakukan absen keluar');
+        // Handle geofencing error gracefully without throwing
+        if (data.error && data.error.includes("di luar radius")) {
+          let errorMsg = data.error;
+          if (data.distance && data.maxRadius) {
+            errorMsg += ` (Jarak: ${data.distance}m, Radius: ${data.maxRadius}m)`;
+          }
+          setError(errorMsg);
+          return;
+        }
+
+        setError(data.error || 'Gagal melakukan absen keluar');
+        return;
       }
       
       // Pastikan data berformat Date
@@ -656,7 +678,17 @@ export default function EmployeeDashboard() {
       });
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.error || 'Gagal memulai lembur');
+        // Handle geofencing error gracefully
+        if (data.error && data.error.includes("di luar radius")) {
+          let errorMsg = data.error;
+          if (data.distance && data.maxRadius) {
+            errorMsg += ` (Jarak: ${data.distance}m, Radius: ${data.maxRadius}m)`;
+          }
+          setError(errorMsg);
+          return;
+        }
+        setError(data.error || 'Gagal memulai lembur');
+        return;
       }
       if (data.date) data.date = new Date(data.date);
       if (data.checkIn) data.checkIn = new Date(data.checkIn);
@@ -694,7 +726,17 @@ export default function EmployeeDashboard() {
       });
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.error || 'Gagal menyelesaikan lembur');
+        // Handle geofencing error gracefully
+        if (data.error && data.error.includes("di luar radius")) {
+          let errorMsg = data.error;
+          if (data.distance && data.maxRadius) {
+            errorMsg += ` (Jarak: ${data.distance}m, Radius: ${data.maxRadius}m)`;
+          }
+          setError(errorMsg);
+          return;
+        }
+        setError(data.error || 'Gagal menyelesaikan lembur');
+        return;
       }
       if (data.date) data.date = new Date(data.date);
       if (data.checkIn) data.checkIn = new Date(data.checkIn);

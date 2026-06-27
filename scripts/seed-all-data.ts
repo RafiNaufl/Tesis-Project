@@ -4,13 +4,19 @@ import { hash } from 'bcrypt';
 import { generateEmployeeId } from '../src/lib/employeeId';
 import { generateMonthlyPayroll } from '../src/lib/payroll';
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({
+  datasources: {
+    db: {
+      url: process.env.DIRECT_URL || process.env.DATABASE_URL
+    }
+  }
+});
 
 // Helper function to generate random integer in [min, max]
 const randomInt = (min: number, max: number) => Math.floor(Math.random() * (max - min + 1)) + min;
 
 // Helper function to create date object
-const createDate = (year: number, month: number, day: number, hour: number, minute: number) => new Date(year, month - 1, day, hour, minute);
+const createDate = (year: number, month: number, day: number, hour: number, minute: number, second: number = 0) => new Date(year, month - 1, day, hour, minute, second);
 
 async function main() {
   console.log('=== SEEDING ALL DATA (Attendance, Overtime, Payroll) ===');
@@ -75,6 +81,68 @@ async function main() {
       const month = currentDate.getMonth() + 1;
       const date = currentDate.getDate();
       
+      // Special case for employee Rahmat R (CTU-006) whose internal id is cmk6tni7m0002l504cexzrboq in May 2026
+      if (emp.id === 'cmk6tni7m0002l504cexzrboq' && month === 5 && year === 2026) {
+        const specialData: Record<number, { in: string, out: string }> = {
+          4: { in: "08:01:15", out: "16:21:01" },
+          5: { in: "08:12:50", out: "16:06:24" },
+          6: { in: "08:09:27", out: "16:06:24" },
+          7: { in: "08:10:21", out: "16:21:01" },
+          8: { in: "08:06:10", out: "16:21:01" },
+          12: { in: "08:12:09", out: "16:28:40" },
+          13: { in: "08:11:18", out: "16:21:01" },
+          18: { in: "08:09:15", out: "16:30:19" },
+          19: { in: "08:00:53", out: "16:05:45" },
+          20: { in: "08:13:27", out: "16:05:45" },
+          21: { in: "08:01:32", out: "16:15:19" },
+          22: { in: "08:12:17", out: "16:09:53" },
+          25: { in: "08:14:17", out: "16:06:28" },
+          29: { in: "08:13:35", out: "16:06:04" },
+        };
+
+        if (specialData[date]) {
+          const [inH, inM, inS] = specialData[date].in.split(':').map(Number);
+          const [outH, outM, outS] = specialData[date].out.split(':').map(Number);
+          const checkInDate = createDate(year, month, date, inH, inM, inS);
+          const checkOutDate = createDate(year, month, date, outH, outM, outS);
+          const isLate = inH > 8 || (inH === 8 && inM > 30);
+          
+          const att = await prisma.attendance.create({
+            data: {
+              employeeId: emp.id,
+              date: new Date(currentDate),
+              checkIn: checkInDate,
+              checkOut: checkOutDate,
+              status: isLate ? 'LATE' : 'PRESENT',
+              isLate: isLate,
+              lateMinutes: isLate ? (inH - 8) * 60 + inM : 0
+            }
+          });
+
+          if (isLate) {
+            await prisma.approvalLog.create({
+              data: {
+                attendanceId: att.id,
+                action: 'LATE_REQUEST_SUBMITTED',
+                actorUserId: emp.userId,
+                note: 'Macet di jalan'
+              }
+            });
+          }
+        } else if (day !== 0 && day !== 6) {
+          // Weekday but no record in special data = ABSENT
+          await prisma.attendance.create({
+            data: {
+              employeeId: emp.id,
+              date: new Date(currentDate),
+              status: 'ABSENT'
+            }
+          });
+        }
+        currentDate.setDate(currentDate.getDate() + 1);
+        continue;
+      }
+
       // Randomize: decide what kind of day
       const isPresent = Math.random() > 0.05; // 95% present
       const isLate = isPresent && Math.random() > 0.75; // 25% late

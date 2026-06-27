@@ -50,6 +50,9 @@ type PayrollRecord = {
   mealAllowance?: number;
   transportAllowance?: number;
   shiftAllowance?: number;
+  payableHours?: number;
+  hourlyRate?: number;
+  empBasicSalary?: number;
 };
 
 function PayrollManagement() {
@@ -382,6 +385,7 @@ function PayrollManagement() {
           ['Hari Kerja', `${selectedRecord.daysPresent} hari`],
           ['Hari Tidak Hadir', `${selectedRecord.daysAbsent} hari`],
           ['Jam Lembur', `${selectedRecord.overtimeHours} jam`],
+          ['Total Jam Kerja', `${(selectedRecord.payableHours || 0).toLocaleString('id-ID', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} jam`],
         ],
         theme: 'striped',
         headStyles: { fillColor: [66, 66, 66] },
@@ -394,6 +398,12 @@ function PayrollManagement() {
       
       // 3. Tambahkan tabel rincian gaji menggunakan jspdf-autotable
       lastY = (doc as any).lastAutoTable.finalY + 10;
+      
+      // Hitung upah per jam untuk tampilan
+      const displayHourlyRate = selectedRecord.hourlyRate || (selectedRecord.empBasicSalary / 173) || 0;
+      const payableHours = selectedRecord.payableHours || (selectedRecord.daysPresent * 8 + selectedRecord.overtimeHours) || 0;
+      const calculatedBaseSalary = displayHourlyRate * payableHours;
+      
       doc.setFontSize(11);
       doc.setFont("helvetica", "bold");
       doc.text("RINCIAN GAJI", 10, lastY);
@@ -413,7 +423,9 @@ function PayrollManagement() {
         startY: lastY + 5,
         head: [['Deskripsi', 'Jumlah']],
         body: [
-          ['Gaji Pokok', formatCurrency(selectedRecord.baseSalary)],
+          ['Upah per Jam', formatCurrency(displayHourlyRate)],
+          ['Total Jam Kerja', `${payableHours.toLocaleString('id-ID', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} jam`],
+          ['Gaji Pokok', formatCurrency(calculatedBaseSalary)],
           
           ...(positionAllowance > 0 ? [['Tunjangan Jabatan', formatCurrency(positionAllowance)]] : []),
           ...(mealAllowance > 0 ? [['Tunjangan Makan', formatCurrency(mealAllowance)]] : []),
@@ -422,6 +434,8 @@ function PayrollManagement() {
           ...(otherAllowances > 0 ? [['Tunjangan Lainnya', formatCurrency(otherAllowances)]] : []),
           
           ['Lembur', formatCurrency(selectedRecord.overtimeAmount)],
+          
+          ['Total Gaji Kotor', formatCurrency(calculatedBaseSalary + selectedRecord.totalAllowances + selectedRecord.overtimeAmount)],
           
           // Potongan Keterlambatan
           [
@@ -465,7 +479,7 @@ function PayrollManagement() {
           
           // Total Gaji Bersih
           ['Total Gaji Bersih', formatCurrency(
-            selectedRecord.baseSalary + 
+            calculatedBaseSalary + 
             selectedRecord.totalAllowances + 
             selectedRecord.overtimeAmount - 
             (
@@ -1082,7 +1096,7 @@ function PayrollManagement() {
                     <Clock className="h-4 w-4 text-indigo-500" />
                     Ringkasan Kehadiran
                   </h4>
-                  <div className="grid grid-cols-3 gap-2 text-center">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-center">
                     <div className="bg-blue-50 p-2 rounded-lg">
                       <p className="text-xs text-blue-600 font-medium">Hadir</p>
                       <p className="text-lg font-bold text-blue-700">{selectedRecord.daysPresent}</p>
@@ -1094,6 +1108,10 @@ function PayrollManagement() {
                     <div className="bg-green-50 p-2 rounded-lg">
                       <p className="text-xs text-green-600 font-medium">Lembur</p>
                       <p className="text-lg font-bold text-green-700">{selectedRecord.overtimeHours}j</p>
+                    </div>
+                    <div className="bg-indigo-50 p-2 rounded-lg">
+                      <p className="text-xs text-indigo-600 font-medium">Total Jam</p>
+                      <p className="text-lg font-bold text-indigo-700">{(selectedRecord.payableHours || 0).toLocaleString('id-ID', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}j</p>
                     </div>
                   </div>
                 </div>
@@ -1107,10 +1125,24 @@ function PayrollManagement() {
                   <div className="border border-gray-200 rounded-lg overflow-hidden">
                     <table className="min-w-full divide-y divide-gray-200">
                       <tbody className="divide-y divide-gray-200 bg-white">
-                        <tr className="bg-gray-50">
-                          <td className="px-4 py-2 text-sm font-medium text-gray-900">Gaji Pokok</td>
-                          <td className="px-4 py-2 text-sm text-gray-900 text-right">{formatCurrency(selectedRecord.baseSalary)}</td>
-                        </tr>
+                        {(() => {
+                          const displayHourlyRate = selectedRecord.hourlyRate || (selectedRecord.empBasicSalary / 173) || 0;
+                          const payableHours = selectedRecord.payableHours || (selectedRecord.daysPresent * 8 + selectedRecord.overtimeHours) || 0;
+                          const calculatedBaseSalary = displayHourlyRate * payableHours;
+                          return (
+                            <>
+                              <tr className="bg-gray-50">
+                                <td className="px-4 py-2 text-sm font-medium text-gray-900">Upah per Jam</td>
+                                <td className="px-4 py-2 text-sm text-gray-900 text-right">{formatCurrency(displayHourlyRate)}</td>
+                              </tr>
+                              <tr className="bg-gray-50">
+                                <td className="px-4 py-2 text-sm font-medium text-gray-900">Total Jam Kerja</td>
+                                <td className="px-4 py-2 text-sm text-gray-900 text-right">{payableHours.toLocaleString('id-ID', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} jam</td>
+                              </tr>
+                              <tr>
+                                <td className="px-4 py-2 text-sm font-medium text-gray-900">Gaji Pokok</td>
+                                <td className="px-4 py-2 text-sm text-gray-900 text-right">{formatCurrency(calculatedBaseSalary)}</td>
+                              </tr>
                         {(selectedRecord.positionAllowance || 0) > 0 && (
                           <tr>
                             <td className="px-4 py-2 text-sm text-gray-500">Tunjangan Jabatan</td>
@@ -1144,6 +1176,10 @@ function PayrollManagement() {
                         <tr>
                           <td className="px-4 py-2 text-sm text-gray-500">Lembur</td>
                           <td className="px-4 py-2 text-sm text-gray-900 text-right">{formatCurrency(selectedRecord.overtimeAmount)}</td>
+                        </tr>
+                        <tr className="bg-gray-50">
+                          <td className="px-4 py-2 text-sm font-bold text-gray-900">Total Gaji Kotor</td>
+                          <td className="px-4 py-2 text-sm font-bold text-gray-900 text-right">{formatCurrency(calculatedBaseSalary + selectedRecord.totalAllowances + selectedRecord.overtimeAmount)}</td>
                         </tr>
                         {/* Potongan Keterlambatan - Tampilkan jika ada nilai atau jika ini record non-shift (untuk konsistensi) */}
                         {(selectedRecord.lateDeduction || 0) > 0 && (
@@ -1201,7 +1237,7 @@ function PayrollManagement() {
                           <td className="px-4 py-3 text-base font-bold text-indigo-900">Total Gaji Bersih</td>
                           <td className="px-4 py-3 text-base font-bold text-indigo-700 text-right">
                             {formatCurrency(
-                              selectedRecord.baseSalary + 
+                              calculatedBaseSalary + 
                               selectedRecord.totalAllowances + 
                               selectedRecord.overtimeAmount - 
                               (
@@ -1216,6 +1252,9 @@ function PayrollManagement() {
                             )}
                           </td>
                         </tr>
+                            </>
+                          );
+                        })()}
                       </tbody>
                     </table>
                   </div>

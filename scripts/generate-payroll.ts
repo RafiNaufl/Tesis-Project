@@ -66,6 +66,7 @@ interface CalculationMeta {
   daysLate: number;
   overtimeHours: number;
   overtimeAmount: number;
+  totalWorkHours: number;
 }
 
 interface SalaryCalculationResult {
@@ -156,6 +157,7 @@ const calculateShiftSalary = (
       daysLate,
       overtimeHours: overtimeData.hours,
       overtimeAmount: overtimeData.amount,
+      totalWorkHours: daysPresent * 8,
     },
   };
 };
@@ -261,6 +263,7 @@ const calculateNonShiftSalary = (
       daysLate,
       overtimeHours: overtimeData.hours,
       overtimeAmount: overtimeData.amount,
+      totalWorkHours: totalWorkHours,
     },
   };
 };
@@ -550,8 +553,10 @@ const generateMonthlyPayroll = async (
         netSalary,
         daysPresent: salaryCalculation.meta.daysPresent,
         daysAbsent: salaryCalculation.meta.daysAbsent,
+        daysLate: salaryCalculation.meta.daysLate,
         overtimeHours: salaryCalculation.meta.overtimeHours,
         overtimeAmount: salaryCalculation.meta.overtimeAmount,
+        payableHours: salaryCalculation.meta.totalWorkHours + salaryCalculation.meta.overtimeHours,
         lateDeduction: salaryCalculation.deductions
           .filter((d) => d.type === "LATE")
           .reduce((sum, d) => sum + d.amount, 0),

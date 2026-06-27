@@ -683,8 +683,9 @@ export default function AttendanceManagement() {
     const maxRetries = 3;
     let retryCount = 0;
     let successfulResponse: Response | null = null;
+    let validationError: string | null = null;
     
-    while (retryCount < maxRetries) {
+    while (retryCount < maxRetries && !validationError) {
       try {
         console.log(`🔄 Attempting check-in (attempt ${retryCount + 1}/${maxRetries})`);
         
@@ -719,7 +720,21 @@ export default function AttendanceManagement() {
             setError(`Anda sudah melakukan check-in hari ini. Data kehadiran sebelumnya: ${todayRecord?.checkIn ? formatTime(todayRecord.checkIn) : '-'}`);
             toast.dismiss(toastId);
             toast("Anda sudah melakukan check-in hari ini");
+            validationError = data.error;
             return; // Hentikan eksekusi
+          }
+
+          // Jika error geofencing atau validasi, jangan retry dan jangan throw (untuk menghindari overlay dev)
+          if (data.error && data.error.includes("di luar radius")) {
+            validationError = data.error;
+            let errorMsg = data.error;
+            if (data.distance && data.maxRadius) {
+              errorMsg += ` (Jarak: ${data.distance}m, Radius: ${data.maxRadius}m)`;
+            }
+            setError(errorMsg);
+            toast.dismiss(toastId);
+            toast.error(errorMsg);
+            return; // Kembalikan tanpa throw
           }
           
           throw new Error(data.error || "Gagal melakukan absen masuk");
@@ -733,6 +748,10 @@ export default function AttendanceManagement() {
         
       } catch (err: any) {
         console.error(`❌ Check-in attempt ${retryCount + 1} failed:`, err);
+        
+        if (validationError) {
+          break; // Tidak usah retry jika sudah ada validasi error
+        }
         
         retryCount++;
         
@@ -908,8 +927,9 @@ export default function AttendanceManagement() {
     const maxRetries = 3;
     let retryCount = 0;
     let successfulResponse: Response | null = null;
+    let validationError: string | null = null;
 
-    while (retryCount < maxRetries) {
+    while (retryCount < maxRetries && !validationError) {
       try {
         console.log(`🔄 Attempting check-out (attempt ${retryCount + 1}/${maxRetries})`);
         
@@ -963,7 +983,21 @@ export default function AttendanceManagement() {
             setError(`Anda sudah melakukan check-out hari ini. Data kehadiran sebelumnya: Check-in ${checkInStr}, Check-out ${checkOutStr}`);
             toast.dismiss(toastId);
             toast("Anda sudah melakukan check-out hari ini");
+            validationError = data.error;
             return; // Hentikan eksekusi
+          }
+
+          // Jika error geofencing atau validasi, jangan retry dan jangan throw (untuk menghindari overlay dev)
+          if (data.error && data.error.includes("di luar radius")) {
+            validationError = data.error;
+            let errorMsg = data.error;
+            if (data.distance && data.maxRadius) {
+              errorMsg += ` (Jarak: ${data.distance}m, Radius: ${data.maxRadius}m)`;
+            }
+            setError(errorMsg);
+            toast.dismiss(toastId);
+            toast.error(errorMsg);
+            return; // Kembalikan tanpa throw
           }
           
           throw new Error(data.error || "Gagal melakukan absen keluar");
@@ -977,6 +1011,10 @@ export default function AttendanceManagement() {
       } catch (err: any) {
         console.error(`❌ Check-out attempt ${retryCount + 1} failed:`, err);
         
+        if (validationError) {
+          break; // Tidak usah retry jika sudah ada validasi error
+        }
+
         retryCount++;
         
         if (retryCount >= maxRetries) {
@@ -1007,6 +1045,8 @@ export default function AttendanceManagement() {
     } catch (err: any) {
       console.error("❌ [CHECK-OUT] Final processing error:", err);
       setError(err.message || "Gagal memproses data absen keluar");
+      toast.dismiss(toastId);
+      toast.error(err.message || "Gagal memproses data absen keluar");
     } finally {
       setIsCheckingOut(false);
     }

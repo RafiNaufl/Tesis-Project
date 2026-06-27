@@ -16,8 +16,8 @@ const ABSENCE_PENALTY_PERCENT = 100; // 100% dari gaji harian dipotong jika alph
 // Allowance Config
 // Catatan: Karena logika ditukar, Shift sekarang Monthly, Non-Shift sekarang Daily
 const SHIFT_FIXED_ALLOWANCE = 0; // Tidak ada tunjangan fixed untuk Shift
-const NON_SHIFT_MEAL_ALLOWANCE = 20000; // Tunjangan makan per kehadiran (Non-Shift Logic Baru)
-const NON_SHIFT_TRANSPORT_ALLOWANCE = 20000; // Tunjangan transport per kehadiran (Non-Shift Logic Baru)
+const NON_SHIFT_MEAL_ALLOWANCE = 25000; // Tunjangan makan per kehadiran (Non-Shift Logic Baru)
+const NON_SHIFT_TRANSPORT_ALLOWANCE = 25000; // Tunjangan transport per kehadiran (Non-Shift Logic Baru)
 
 // Position Allowance Config
 const ASSISTANT_FOREMAN_ALLOWANCE = 240000;
@@ -76,6 +76,7 @@ interface CalculationMeta {
   daysLate: number;
   overtimeHours: number;
   overtimeAmount: number;
+  totalWorkHours: number;
 }
 
 interface SalaryCalculationResult {
@@ -174,7 +175,8 @@ const calculateShiftSalary = (
       daysAbsent,
       daysLate,
       overtimeHours: overtimeData.hours,
-      overtimeAmount: overtimeData.amount
+      overtimeAmount: overtimeData.amount,
+      totalWorkHours: daysPresent * 8 // Asumsi 8 jam per shift
     }
   };
 };
@@ -298,7 +300,8 @@ const calculateNonShiftSalary = (
       daysAbsent,
       daysLate,
       overtimeHours: overtimeData.hours,
-      overtimeAmount: overtimeData.amount
+      overtimeAmount: overtimeData.amount,
+      totalWorkHours: totalWorkHours
     }
   };
 };
@@ -701,29 +704,59 @@ export const generateMonthlyPayroll = async (employeeId: string, month: number, 
 
     // 3.6 WRITE TO DATABASE (SIDE EFFECTS PHASE)
     
-    // a. Buat Payroll Record
-    const newPayroll = await tx.payroll.create({
-      data: {
-        employeeId,
-        month,
-        year,
-        baseSalary,
-        totalAllowances,
-        totalDeductions,
-        netSalary,
-        daysPresent: meta.daysPresent,
-        daysAbsent: meta.daysAbsent,
-        daysLate: meta.daysLate,
-        overtimeHours: meta.overtimeHours,
-        overtimeAmount: meta.overtimeAmount,
-        lateDeduction: salaryResult.deductions.filter(d => d.type === 'LATE').reduce((s, d) => s + d.amount, 0),
-        advanceDeduction: advanceResult.totalAmount,
-        softLoanDeduction: loanResult.totalAmount,
-        bpjsKesehatanAmount: bpjsResult.deductions.find(d => d.type === 'BPJS_KESEHATAN')?.amount || 0,
-        bpjsKetenagakerjaanAmount: bpjsResult.deductions.find(d => d.type === 'BPJS_KETENAGAKERJAAN')?.amount || 0,
-        status: "PENDING",
-      }
-    });
+    // a. Buat Payroll Record with graceful fallbacks
+    let newPayroll;
+    try {
+      // Try first with payableHours
+      newPayroll = await tx.payroll.create({
+        data: {
+          employeeId,
+          month,
+          year,
+          baseSalary,
+          totalAllowances,
+          totalDeductions,
+          netSalary,
+          daysPresent: meta.daysPresent,
+          daysAbsent: meta.daysAbsent,
+          daysLate: meta.daysLate,
+          overtimeHours: meta.overtimeHours,
+          overtimeAmount: meta.overtimeAmount,
+          payableHours: meta.totalWorkHours + meta.overtimeHours,
+          lateDeduction: salaryResult.deductions.filter(d => d.type === 'LATE').reduce((s, d) => s + d.amount, 0),
+          advanceDeduction: advanceResult.totalAmount,
+          softLoanDeduction: loanResult.totalAmount,
+          bpjsKesehatanAmount: bpjsResult.deductions.find(d => d.type === 'BPJS_KESEHATAN')?.amount || 0,
+          bpjsKetenagakerjaanAmount: bpjsResult.deductions.find(d => d.type === 'BPJS_KETENAGAKERJAAN')?.amount || 0,
+          status: "PENDING",
+        }
+      });
+    } catch (e: any) {
+      // If it fails (probably because payableHours column doesn't exist yet), try without it
+      console.warn("payableHours column not found yet, retrying without it:", e.message);
+      newPayroll = await tx.payroll.create({
+        data: {
+          employeeId,
+          month,
+          year,
+          baseSalary,
+          totalAllowances,
+          totalDeductions,
+          netSalary,
+          daysPresent: meta.daysPresent,
+          daysAbsent: meta.daysAbsent,
+          daysLate: meta.daysLate,
+          overtimeHours: meta.overtimeHours,
+          overtimeAmount: meta.overtimeAmount,
+          lateDeduction: salaryResult.deductions.filter(d => d.type === 'LATE').reduce((s, d) => s + d.amount, 0),
+          advanceDeduction: advanceResult.totalAmount,
+          softLoanDeduction: loanResult.totalAmount,
+          bpjsKesehatanAmount: bpjsResult.deductions.find(d => d.type === 'BPJS_KESEHATAN')?.amount || 0,
+          bpjsKetenagakerjaanAmount: bpjsResult.deductions.find(d => d.type === 'BPJS_KETENAGAKERJAAN')?.amount || 0,
+          status: "PENDING",
+        }
+      });
+    }
 
     // b. Simpan Allowances
     if (allAllowances.length > 0) {
@@ -817,6 +850,7 @@ export const generateMonthlyPayroll = async (employeeId: string, month: number, 
       p."daysAbsent",
       p."overtimeHours",
       p."overtimeAmount",
+      p."payableHours",
       p."bpjsKesehatanAmount",
       p."bpjsKetenagakerjaanAmount",
       p."lateDeduction",
@@ -827,6 +861,8 @@ export const generateMonthlyPayroll = async (employeeId: string, month: number, 
       u.name AS "employeeName",
       e.position,
       e.division,
+      e."hourlyRate",
+      e."basicSalary" AS "empBasicSalary",
       (SELECT COALESCE(SUM(d."amount"), 0) FROM deductions d WHERE d."payrollId" = p.id AND d."type" = 'KASBON') AS "advanceAmount",
       (SELECT COALESCE(SUM(d."amount"), 0) FROM deductions d WHERE d."payrollId" = p.id AND d."type" = 'PINJAMAN') AS "softLoanDeduction",
       (SELECT COALESCE(SUM(d."amount"), 0) FROM deductions d WHERE d."payrollId" = p.id AND d."type" = 'ABSENCE') AS "absenceDeduction",

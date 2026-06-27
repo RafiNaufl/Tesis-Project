@@ -286,6 +286,7 @@ export const generateMonthlyPayrollReport = async (year: number, month: number) 
       totalDeductions: payroll.totalDeductions,
       overtimeHours: payroll.overtimeHours,
       overtimeAmount: payroll.overtimeAmount,
+      payableHours: payroll.payableHours,
       daysPresent: payroll.daysPresent,
       daysAbsent: payroll.daysAbsent,
       daysLate: payroll.daysLate,

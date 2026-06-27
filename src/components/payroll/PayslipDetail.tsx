@@ -23,6 +23,7 @@ interface PayrollDetail {
   daysAbsent: number;
   overtimeHours: number;
   overtimeAmount: number;
+  payableHours: number;
   status: string;
   createdAt: string;
   paidAt: string | null;
@@ -246,7 +247,7 @@ export default function PayslipDetail({ payrollId, onClose }: PayslipDetailProps
           {/* Attendance Info */}
           <div className="mb-8">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Informasi Kehadiran</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div className="bg-green-50 p-4 rounded-lg">
                 <div className="text-center">
                   <div className="text-2xl font-bold text-green-600">{payroll.daysPresent}</div>
@@ -263,6 +264,12 @@ export default function PayslipDetail({ payrollId, onClose }: PayslipDetailProps
                 <div className="text-center">
                   <div className="text-2xl font-bold text-blue-600">{payroll.overtimeHours}</div>
                   <div className="text-sm text-gray-600">Jam Lembur</div>
+                </div>
+              </div>
+              <div className="bg-indigo-50 p-4 rounded-lg">
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-indigo-600">{(payroll.payableHours || 0).toLocaleString('id-ID', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</div>
+                  <div className="text-sm text-gray-600">Total Jam Kerja</div>
                 </div>
               </div>
             </div>
@@ -311,43 +318,60 @@ export default function PayslipDetail({ payrollId, onClose }: PayslipDetailProps
             <div>
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Pendapatan</h3>
               <div className="bg-gray-50 p-4 rounded-lg space-y-3">
-                <div className="flex justify-between">
-                  <span className="text-gray-700">Gaji Pokok</span>
-                  <span className="font-medium text-gray-900">{formatCurrency(payroll.baseSalary)}</span>
-                </div>
-                {payroll.allowances && payroll.allowances.length > 0 ? (
-                  payroll.allowances.map((allowance, index) => (
-                    <div key={index} className="flex justify-between">
-                      <span className="text-gray-700">
-                        {allowance.type === "NON_SHIFT_MEAL_ALLOWANCE" ? "Tunjangan Makan" :
-                         allowance.type === "NON_SHIFT_TRANSPORT_ALLOWANCE" ? "Tunjangan Transport" :
-                         allowance.type === "SHIFT_FIXED_ALLOWANCE" ? "Tunjangan Shift" :
-                         allowance.type.startsWith("TUNJANGAN_JABATAN") ? "Tunjangan Jabatan" :
-                         "Tunjangan Lainnya"}
-                      </span>
-                      <span className="font-medium text-gray-900">{formatCurrency(allowance.amount)}</span>
-                    </div>
-                  ))
-                ) : (
-                  payroll.totalAllowances > 0 && (
-                    <div className="flex justify-between">
-                      <span className="text-gray-700">Total Tunjangan</span>
-                      <span className="font-medium text-gray-900">{formatCurrency(payroll.totalAllowances)}</span>
-                    </div>
-                  )
-                )}
-                <div className="flex justify-between">
-                  <span className="text-gray-700">Lembur</span>
-                  <span className="font-medium text-gray-900">{formatCurrency(payroll.overtimeAmount)}</span>
-                </div>
-                <div className="border-t pt-3">
-                  <div className="flex justify-between font-semibold">
-                    <span className="text-gray-900">Total Pendapatan</span>
-                    <span className="text-green-600">
-                      {formatCurrency(payroll.baseSalary + payroll.totalAllowances + payroll.overtimeAmount)}
-                    </span>
-                  </div>
-                </div>
+                {(() => {
+                  const displayHourlyRate = payroll.hourlyRate || (payroll.empBasicSalary / 173) || 0;
+                  const payableHours = payroll.payableHours || (payroll.daysPresent * 8 + payroll.overtimeHours) || 0;
+                  const calculatedBaseSalary = displayHourlyRate * payableHours;
+                  return (
+                    <>
+                      <div className="flex justify-between">
+                        <span className="text-gray-700">Upah per Jam</span>
+                        <span className="font-medium text-gray-900">{formatCurrency(displayHourlyRate)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-700">Total Jam Kerja</span>
+                        <span className="font-medium text-gray-900">{payableHours.toLocaleString('id-ID', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} jam</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-700">Gaji Pokok</span>
+                        <span className="font-medium text-gray-900">{formatCurrency(calculatedBaseSalary)}</span>
+                      </div>
+                      {payroll.allowances && payroll.allowances.length > 0 ? (
+                        payroll.allowances.map((allowance, index) => (
+                          <div key={index} className="flex justify-between">
+                            <span className="text-gray-700">
+                              {allowance.type === "NON_SHIFT_MEAL_ALLOWANCE" ? "Tunjangan Makan" :
+                               allowance.type === "NON_SHIFT_TRANSPORT_ALLOWANCE" ? "Tunjangan Transport" :
+                               allowance.type === "SHIFT_FIXED_ALLOWANCE" ? "Tunjangan Shift" :
+                               allowance.type.startsWith("TUNJANGAN_JABATAN") ? "Tunjangan Jabatan" :
+                               "Tunjangan Lainnya"}
+                            </span>
+                            <span className="font-medium text-gray-900">{formatCurrency(allowance.amount)}</span>
+                          </div>
+                        ))
+                      ) : (
+                        payroll.totalAllowances > 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-700">Total Tunjangan</span>
+                            <span className="font-medium text-gray-900">{formatCurrency(payroll.totalAllowances)}</span>
+                          </div>
+                        )
+                      )}
+                      <div className="flex justify-between">
+                        <span className="text-gray-700">Lembur</span>
+                        <span className="font-medium text-gray-900">{formatCurrency(payroll.overtimeAmount)}</span>
+                      </div>
+                      <div className="border-t pt-3">
+                        <div className="flex justify-between font-semibold">
+                          <span className="text-gray-900">Total Pendapatan</span>
+                          <span className="text-green-600">
+                            {formatCurrency(calculatedBaseSalary + payroll.totalAllowances + payroll.overtimeAmount)}
+                          </span>
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
             </div>
 

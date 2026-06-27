@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { db } from "@/lib/db";
 import { authOptions } from "@/lib/auth";
-import { createPayrollPaidNotification } from "@/lib/notification";
 
 export const dynamic = 'force-dynamic';
 
@@ -25,13 +24,11 @@ export async function GET(request: NextRequest) {
     const year = searchParams.get("year") ? parseInt(searchParams.get("year")!) : null;
     const status = searchParams.get("status");
     
-    // Build query conditions
-    let conditions = [];
-    let params: any[] = [];
+    // Build where clause
+    const where: any = {};
     
     if (employeeId) {
-      conditions.push(`p."employeeId" = $${params.length + 1}`);
-      params.push(employeeId);
+      where.employeeId = employeeId;
     } else if (session.user.role !== "ADMIN" && session.user.role !== "DIREKTUR") {
       // If not admin or direktur, only show the employee's own payroll
       const employee = await db.employee.findUnique({
@@ -45,106 +42,165 @@ export async function GET(request: NextRequest) {
         );
       }
       
-      conditions.push(`p."employeeId" = $${params.length + 1}`);
-      params.push(employee.id);
+      where.employeeId = employee.id;
     }
     
     if (month !== null) {
-      conditions.push(`p.month = $${params.length + 1}`);
-      params.push(month);
+      where.month = month;
     }
     
     if (year !== null) {
-      conditions.push(`p.year = $${params.length + 1}`);
-      params.push(year);
+      where.year = year;
     }
     
     if (status) {
-      conditions.push(`p.status = $${params.length + 1}`);
-      params.push(status);
+      where.status = status;
     }
     
-    // Construct the WHERE clause
-    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-    
-    // Execute the query
-    const query = `
-      SELECT 
-        p.id, 
-        p."employeeId", 
-        p.month, 
-        p.year, 
-        p."baseSalary", 
-        p."totalAllowances",
-        p."totalDeductions",
-        p."netSalary",
-        p."daysPresent",
-        p."daysAbsent",
-        p."overtimeHours",
-        p."overtimeAmount",
-        p."bpjsKesehatanAmount",
-        p."bpjsKetenagakerjaanAmount",
-        p."lateDeduction",
-        p.status,
-        p."createdAt",
-        p."paidAt",
-        e."employeeId" AS "empId",
-        u.name AS "employeeName",
-        e.position,
-        e.division,
-        (SELECT COALESCE(SUM(d."amount"), 0) FROM deductions d WHERE d."payrollId" = p.id AND d."type" = 'KASBON') AS "advanceAmount",
-        (SELECT COALESCE(SUM(d."amount"), 0) FROM deductions d WHERE d."payrollId" = p.id AND d."type" = 'PINJAMAN') AS "softLoanDeduction",
-        (SELECT COALESCE(SUM(d."amount"), 0) FROM deductions d WHERE d."payrollId" = p.id AND d."type" = 'ABSENCE') AS "absenceDeduction",
-        (SELECT COALESCE(SUM(d."amount"), 0) FROM deductions d WHERE d."payrollId" = p.id AND d."type" NOT IN ('ABSENCE', 'LATE', 'BPJS_KESEHATAN', 'BPJS_KETENAGAKERJAAN', 'KASBON', 'PINJAMAN')) AS "otherDeductions",
-        (SELECT COALESCE(SUM(a."amount"), 0) FROM allowances a WHERE a."employeeId" = p."employeeId" AND a."month" = p.month AND a."year" = p.year AND a."type" LIKE 'TUNJANGAN_JABATAN%') AS "positionAllowance",
-        (SELECT COALESCE(SUM(a."amount"), 0) FROM allowances a WHERE a."employeeId" = p."employeeId" AND a."month" = p.month AND a."year" = p.year AND a."type" = 'NON_SHIFT_MEAL_ALLOWANCE') AS "mealAllowance",
-        (SELECT COALESCE(SUM(a."amount"), 0) FROM allowances a WHERE a."employeeId" = p."employeeId" AND a."month" = p.month AND a."year" = p.year AND a."type" = 'NON_SHIFT_TRANSPORT_ALLOWANCE') AS "transportAllowance",
-        (SELECT COALESCE(SUM(a."amount"), 0) FROM allowances a WHERE a."employeeId" = p."employeeId" AND a."month" = p.month AND a."year" = p.year AND a."type" = 'SHIFT_FIXED_ALLOWANCE') AS "shiftAllowance"
-      FROM 
-        payrolls p
-      JOIN 
-        employees e ON p."employeeId" = e.id
-      JOIN 
-        users u ON e."userId" = u.id
-      ${whereClause}
-      ORDER BY 
-        p.year DESC, p.month DESC
-    `;
-    
-    const payrolls = await db.$queryRawUnsafe(query, ...params) as any[];
-    
-    // Convert BigInt to Number to avoid serialization error
-    const serializedPayrolls = payrolls.map((payroll) => {
-      const newPayroll: any = { ...payroll };
-      // Check specific fields that might be BigInt due to SUM
-      if (typeof newPayroll.advanceAmount === 'bigint') {
-        newPayroll.advanceAmount = Number(newPayroll.advanceAmount);
-      }
-      if (typeof newPayroll.softLoanDeduction === 'bigint') {
-        newPayroll.softLoanDeduction = Number(newPayroll.softLoanDeduction);
-      }
-      if (typeof newPayroll.absenceDeduction === 'bigint') {
-        newPayroll.absenceDeduction = Number(newPayroll.absenceDeduction);
-      }
-      if (typeof newPayroll.otherDeductions === 'bigint') {
-        newPayroll.otherDeductions = Number(newPayroll.otherDeductions);
-      }
-      if (typeof newPayroll.positionAllowance === 'bigint') {
-        newPayroll.positionAllowance = Number(newPayroll.positionAllowance);
-      }
-      if (typeof newPayroll.mealAllowance === 'bigint') {
-        newPayroll.mealAllowance = Number(newPayroll.mealAllowance);
-      }
-      if (typeof newPayroll.transportAllowance === 'bigint') {
-        newPayroll.transportAllowance = Number(newPayroll.transportAllowance);
-      }
-      if (typeof newPayroll.shiftAllowance === 'bigint') {
-        newPayroll.shiftAllowance = Number(newPayroll.shiftAllowance);
-      }
-      return newPayroll;
+    // Fetch payrolls with employee & user only
+    const payrolls = await db.payroll.findMany({
+      where,
+      include: {
+        employee: {
+          include: {
+            user: true,
+          },
+        },
+      },
+      orderBy: [
+        { year: 'desc' },
+        { month: 'desc' },
+      ],
     });
     
-    return NextResponse.json(serializedPayrolls);
+    // Get all related deductions and allowances for the relevant employees and period
+    const employeeIds = payrolls.map(p => p.employeeId);
+    const payrollMonthYearPairs = payrolls.map(p => ({ month: p.month, year: p.year, employeeId: p.employeeId }));
+    
+    // Get all deductions and allowances in one batch if needed
+    let allDeductions: any[] = [];
+    let allAllowances: any[] = [];
+    
+    try {
+      if (payrollMonthYearPairs.length > 0) {
+        [allDeductions, allAllowances] = await Promise.all([
+          db.deduction.findMany({
+            where: {
+              OR: payrollMonthYearPairs.map(p => ({
+                employeeId: p.employeeId,
+                month: p.month,
+                year: p.year,
+              })),
+            },
+          }),
+          db.allowance.findMany({
+            where: {
+              OR: payrollMonthYearPairs.map(p => ({
+                employeeId: p.employeeId,
+                month: p.month,
+                year: p.year,
+              })),
+            },
+          }),
+        ]);
+      }
+    } catch (e) {
+      console.warn("Could not fetch additional deductions/allowances, proceeding without:", e);
+    }
+    
+    // Process payrolls with local aggregation
+    const processedPayrolls = payrolls.map((payroll) => {
+      // Find matching deductions/allowances
+      const payrollDeductions = (payroll as any).deductions || 
+        allDeductions.filter(d => 
+          d.employeeId === payroll.employeeId && 
+          d.month === payroll.month && 
+          d.year === payroll.year
+        );
+      
+      const payrollAllowances = (payroll as any).allowances || 
+        allAllowances.filter(a => 
+          a.employeeId === payroll.employeeId && 
+          a.month === payroll.month && 
+          a.year === payroll.year
+        );
+      
+      // Aggregate deductions locally
+      const advanceAmount = payrollDeductions
+        .filter((d: any) => d.type === 'KASBON')
+        .reduce((sum: number, d: any) => sum + d.amount, 0);
+      
+      const softLoanDeduction = payrollDeductions
+        .filter((d: any) => d.type === 'PINJAMAN')
+        .reduce((sum: number, d: any) => sum + d.amount, 0);
+      
+      const absenceDeduction = payrollDeductions
+        .filter((d: any) => d.type === 'ABSENCE')
+        .reduce((sum: number, d: any) => sum + d.amount, 0);
+      
+      const otherDeductions = payrollDeductions
+        .filter((d: any) => !['ABSENCE', 'LATE', 'BPJS_KESEHATAN', 'BPJS_KETENAGAKERJAAN', 'KASBON', 'PINJAMAN'].includes(d.type))
+        .reduce((sum: number, d: any) => sum + d.amount, 0);
+      
+      // Aggregate allowances locally
+      const positionAllowance = payrollAllowances
+        .filter((a: any) => a.type.startsWith('TUNJANGAN_JABATAN'))
+        .reduce((sum: number, a: any) => sum + a.amount, 0);
+      
+      const mealAllowance = payrollAllowances
+        .filter((a: any) => a.type === 'NON_SHIFT_MEAL_ALLOWANCE')
+        .reduce((sum: number, a: any) => sum + a.amount, 0);
+      
+      const transportAllowance = payrollAllowances
+        .filter((a: any) => a.type === 'NON_SHIFT_TRANSPORT_ALLOWANCE')
+        .reduce((sum: number, a: any) => sum + a.amount, 0);
+      
+      const shiftAllowance = payrollAllowances
+        .filter((a: any) => a.type === 'SHIFT_FIXED_ALLOWANCE')
+        .reduce((sum: number, a: any) => sum + a.amount, 0);
+      
+      // Calculate payableHours if it doesn't exist or is 0
+      const payableHours = (payroll as any).payableHours || 
+        (payroll.daysPresent * 8 + payroll.overtimeHours);
+      
+      return {
+        id: payroll.id,
+        employeeId: payroll.employeeId,
+        month: payroll.month,
+        year: payroll.year,
+        baseSalary: payroll.baseSalary,
+        totalAllowances: payroll.totalAllowances,
+        totalDeductions: payroll.totalDeductions,
+        netSalary: payroll.netSalary,
+        daysPresent: payroll.daysPresent,
+        daysAbsent: payroll.daysAbsent,
+        overtimeHours: payroll.overtimeHours,
+        overtimeAmount: payroll.overtimeAmount,
+        payableHours,
+        bpjsKesehatanAmount: payroll.bpjsKesehatanAmount,
+        bpjsKetenagakerjaanAmount: payroll.bpjsKetenagakerjaanAmount,
+        lateDeduction: payroll.lateDeduction,
+        status: payroll.status,
+        createdAt: payroll.createdAt,
+        paidAt: payroll.paidAt,
+        empId: payroll.employee.employeeId,
+        employeeName: payroll.employee.user.name,
+        position: payroll.employee.position,
+        division: payroll.employee.division,
+        hourlyRate: payroll.employee.hourlyRate,
+        empBasicSalary: payroll.employee.basicSalary,
+        advanceAmount,
+        softLoanDeduction,
+        absenceDeduction,
+        otherDeductions,
+        positionAllowance,
+        mealAllowance,
+        transportAllowance,
+        shiftAllowance,
+      };
+    });
+    
+    return NextResponse.json(processedPayrolls);
   } catch (error) {
     console.error("Error fetching payrolls:", error);
     return NextResponse.json(
@@ -183,7 +239,7 @@ export async function PATCH(request: NextRequest) {
       );
     }
     
-    // Update payroll status
+    // Update payroll status in a single transaction
     let result;
     
     if (status === "PAID") {
@@ -202,7 +258,6 @@ export async function PATCH(request: NextRequest) {
         }
       });
       
-      // If status is PAID, set paidAt to current time
       result = await db.$transaction(
         ids.map(id => 
           db.payroll.update({
@@ -215,34 +270,37 @@ export async function PATCH(request: NextRequest) {
         )
       );
       
-      // Buat notifikasi untuk setiap karyawan yang gajinya dibayarkan menggunakan layanan notifikasi
-      const notificationPromises = payrollsData.map(payroll => 
-        createPayrollPaidNotification(
-          payroll.employeeId,
-          payroll.month,
-          payroll.year,
-          payroll.netSalary
-        )
+      // Create notifications (in parallel but with fewer connections)
+      const notificationPromises = payrollsData.map((payroll) => 
+        db.notification.create({
+          data: {
+            userId: payroll.employee.userId,
+            title: "Slip Gaji Dikonfirmasi",
+            message: `Slip gaji bulan ${payroll.month}/${payroll.year} telah dikonfirmasi sebagai telah dibayar.`,
+            type: "info"
+          }
+        }).catch(err => console.error("Error creating notification:", err))
       );
       
-      // Jalankan pembuatan notifikasi
       await Promise.all(notificationPromises);
     } else {
-      // For other statuses, just update the status
       result = await db.$transaction(
         ids.map(id => 
           db.payroll.update({
             where: { id },
-            data: { status: status }
+            data: { 
+              status: status,
+              paidAt: status === "PAID" ? new Date() : null
+            }
           })
         )
       );
     }
     
-    return NextResponse.json({ 
-      success: true, 
-      message: `${result.length} payrolls updated successfully`,
-      notificationsSent: status === "PAID" ? result.length : 0
+    return NextResponse.json({
+      success: true,
+      updated: result.length,
+      status: status
     });
   } catch (error) {
     console.error("Error updating payrolls:", error);
@@ -252,217 +310,3 @@ export async function PATCH(request: NextRequest) {
     );
   }
 }
-
-// DELETE: Delete multiple payrolls (admin only)
-export async function DELETE(request: NextRequest) {
-  try {
-    const session = await getServerSession(authOptions);
-    
-    if (!session || (session.user.role !== "ADMIN" && session.user.role !== "DIREKTUR")) {
-      return NextResponse.json(
-        { error: "Unauthorized. Admin access required." },
-        { status: 403 }
-      );
-    }
-    
-    const body = await request.json();
-    const { ids } = body;
-    
-    if (!ids || !Array.isArray(ids) || ids.length === 0) {
-      return NextResponse.json(
-        { error: "Invalid or missing payroll IDs" },
-        { status: 400 }
-      );
-    }
-    
-    // Check if any of the payrolls are already paid
-    const paidPayrolls = await db.payroll.findMany({
-      where: {
-        id: {
-          in: ids,
-        },
-        status: "PAID",
-      },
-    });
-    
-    if (paidPayrolls.length > 0) {
-      return NextResponse.json(
-        { error: "Cannot delete paid payrolls" },
-        { status: 400 }
-      );
-    }
-
-    // 1. Revert Soft Loan and Advance status before deleting deductions
-    const deductionsToDelete = await db.deduction.findMany({
-      where: {
-        payrollId: { in: ids }
-      }
-    });
-
-    for (const deduction of deductionsToDelete) {
-      // Revert Soft Loan
-      if (deduction.type === 'PINJAMAN') {
-        // Find the active or recently completed soft loan for this employee
-        const loan = await db.softLoan.findFirst({
-          where: {
-            employeeId: deduction.employeeId,
-          },
-          orderBy: { createdAt: 'desc' }
-        });
-
-        if (loan) {
-            const newRemaining = loan.remainingAmount + deduction.amount;
-            await db.softLoan.update({
-                where: { id: loan.id },
-                data: {
-                    remainingAmount: newRemaining,
-                    status: "ACTIVE", // Revert to active if it was completed
-                    completedAt: null
-                }
-            });
-        }
-      }
-
-      // Revert Advance (Kasbon)
-      if (deduction.type === 'KASBON') {
-        // Find the advance for this month/year
-        const advance = await db.advance.findFirst({
-            where: {
-                employeeId: deduction.employeeId,
-                deductionMonth: deduction.month,
-                deductionYear: deduction.year,
-                status: "APPROVED"
-            }
-        });
-
-        if (advance) {
-            await db.advance.update({
-                where: { id: advance.id },
-                data: { deductedAt: null }
-            });
-        }
-      }
-    }
-    
-    // Delete associated deductions first
-    await db.deduction.deleteMany({
-      where: {
-        payrollId: {
-          in: ids,
-        },
-      },
-    });
-
-    // Delete the payrolls
-    const result = await db.$executeRawUnsafe(`
-      DELETE FROM payrolls
-      WHERE id IN (${ids.map((id: string) => `'${id}'`).join(',')})
-    `);
-    
-    return NextResponse.json({ 
-      success: true, 
-      message: `${Number(result)} payrolls deleted successfully` 
-    });
-  } catch (error) {
-    console.error("Error deleting payrolls:", error);
-    return NextResponse.json(
-      { error: "Failed to delete payrolls" },
-      { status: 500 }
-    );
-  }
-}
-
-import { generateMonthlyPayroll } from "@/lib/payroll";
-
-// POST /api/payroll - Generate payroll or update payroll status
-export async function POST(req: NextRequest) {
-  try {
-    const session = await getServerSession(authOptions);
-
-    if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    // Only admins can generate or update payroll
-    if (session.user.role !== "ADMIN" && session.user.role !== "DIREKTUR") {
-      return NextResponse.json(
-        { error: "Only admins can manage payroll" },
-        { status: 403 }
-      );
-    }
-
-    const body = await req.json();
-    const { action, employeeId, month, year, payrollId } = body;
-
-    if (!action) {
-      return NextResponse.json(
-        { error: "Action is required" },
-        { status: 400 }
-      );
-    }
-
-    // Generate payroll for an employee
-    if (action === "generate") {
-      if (!employeeId || !month || !year) {
-        return NextResponse.json(
-          { error: "Employee ID, month, and year are required" },
-          { status: 400 }
-        );
-      }
-
-      try {
-        const payroll = await generateMonthlyPayroll(
-          employeeId,
-          parseInt(month),
-          parseInt(year)
-        );
-
-        return NextResponse.json({
-          message: "Payroll generated successfully",
-          payroll,
-        });
-      } catch (error: any) {
-        console.error("Error generating payroll:", error);
-        return NextResponse.json(
-          { error: error.message || "Failed to generate payroll" },
-          { status: 400 }
-        );
-      }
-    }
-
-    // Mark payroll as paid
-    if (action === "mark-paid") {
-      if (!payrollId) {
-        return NextResponse.json(
-          { error: "Payroll ID is required" },
-          { status: 400 }
-        );
-      }
-
-      // Update payroll status
-      const updatedPayroll = await db.payroll.update({
-        where: { id: payrollId },
-        data: {
-          status: "PAID",
-          paidAt: new Date(),
-        },
-      });
-
-      return NextResponse.json({
-        message: "Payroll marked as paid",
-        payroll: updatedPayroll,
-      });
-    }
-
-    return NextResponse.json(
-      { error: "Invalid action" },
-      { status: 400 }
-    );
-  } catch (error) {
-    console.error("Error managing payroll:", error);
-    return NextResponse.json(
-      { error: "Failed to process payroll action" },
-      { status: 500 }
-    );
-  }
-} 

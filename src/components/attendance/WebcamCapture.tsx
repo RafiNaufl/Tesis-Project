@@ -31,9 +31,9 @@ const WebcamCapture: React.FC<WebcamCaptureProps> = ({ onCapture, onCancel }) =>
   }, []);
 
   const videoConstraints = {
-    width: 320,
-    height: 320,
-    facingMode: { exact: facingMode },
+    width: { ideal: 320 },
+    height: { ideal: 320 },
+    facingMode: facingMode,
   };
 
   const captureNative = useCallback(async () => {

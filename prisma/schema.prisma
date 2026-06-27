@@ -208,6 +208,7 @@ model Payroll {
   daysLate                  Int               @default(0)
   overtimeHours             Float             @default(0)
   overtimeAmount            Float             @default(0)
+  payableHours              Float             @default(0)
   lateDeduction             Float             @default(0)
   advanceDeduction          Float             @default(0)
   softLoanDeduction         Float             @default(0)
@@ -217,6 +218,7 @@ model Payroll {
   createdAt                 DateTime          @default(now())
   paidAt                    DateTime?
   deductions                Deduction[]
+  allowances                Allowance[]
   auditLogs                 PayrollAuditLog[]
   employee                  Employee          @relation(fields: [employeeId], references: [id])
 
@@ -342,7 +344,9 @@ model Allowance {
   type       String
   amount     Float
   date       DateTime @default(now())
+  payrollId  String?
   employee   Employee @relation(fields: [employeeId], references: [id])
+  payroll    Payroll? @relation(fields: [payrollId], references: [id])
 
   @@map("allowances")
 }
@@ -400,4 +404,16 @@ model SoftLoan {
   employee        Employee  @relation(fields: [employeeId], references: [id])
 
   @@map("soft_loans")
+}
+
+model OfficeLocation {
+  id        String   @id @default(cuid())
+  name      String   @default("Main Office")
+  latitude  Float
+  longitude Float
+  radius    Float    @default(50) // meters
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("office_locations")
 }
