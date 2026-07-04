@@ -7,6 +7,15 @@ const config: CapacitorConfig = {
   server: {
     url: 'https://tesis-project.vercel.app',
     cleartext: false
+  },
+  ios: {
+    contentInset: "always"
+  },
+  android: {
+    backgroundColor: "#ffffff",
+    allowMixedContent: false,
+    captureInput: true,
+    webContentsDebuggingEnabled: true,
   }
 };
 
