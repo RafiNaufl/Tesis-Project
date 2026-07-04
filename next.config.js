@@ -9,6 +9,9 @@ const nextConfig = {
       },
     ],
   },
+  env: {
+    NEXTAUTH_TRUST_HOST: "true",
+  },
   async headers() {
     return [
       {
