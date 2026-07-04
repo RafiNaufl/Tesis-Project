@@ -319,7 +319,7 @@ export default function PayslipDetail({ payrollId, onClose }: PayslipDetailProps
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Pendapatan</h3>
               <div className="bg-gray-50 p-4 rounded-lg space-y-3">
                 {(() => {
-                  const displayHourlyRate = payroll.hourlyRate || (payroll.empBasicSalary / 173) || 0;
+                  const displayHourlyRate = (payroll as any).hourlyRate || (((payroll as any).empBasicSalary || 0) / 173) || 0;
                   const payableHours = payroll.payableHours || (payroll.daysPresent * 8 + payroll.overtimeHours) || 0;
                   const calculatedBaseSalary = displayHourlyRate * payableHours;
                   return (

@@ -400,7 +400,7 @@ function PayrollManagement() {
       lastY = (doc as any).lastAutoTable.finalY + 10;
       
       // Hitung upah per jam untuk tampilan
-      const displayHourlyRate = selectedRecord.hourlyRate || (selectedRecord.empBasicSalary / 173) || 0;
+      const displayHourlyRate = selectedRecord.hourlyRate || ((selectedRecord.empBasicSalary || 0) / 173) || 0;
       const payableHours = selectedRecord.payableHours || (selectedRecord.daysPresent * 8 + selectedRecord.overtimeHours) || 0;
       const calculatedBaseSalary = displayHourlyRate * payableHours;
       
@@ -1126,7 +1126,7 @@ function PayrollManagement() {
                     <table className="min-w-full divide-y divide-gray-200">
                       <tbody className="divide-y divide-gray-200 bg-white">
                         {(() => {
-                          const displayHourlyRate = selectedRecord.hourlyRate || (selectedRecord.empBasicSalary / 173) || 0;
+                          const displayHourlyRate = selectedRecord.hourlyRate || ((selectedRecord.empBasicSalary || 0) / 173) || 0;
                           const payableHours = selectedRecord.payableHours || (selectedRecord.daysPresent * 8 + selectedRecord.overtimeHours) || 0;
                           const calculatedBaseSalary = displayHourlyRate * payableHours;
                           return (
