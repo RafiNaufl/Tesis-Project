@@ -29,6 +29,19 @@ export async function GET(_req: NextRequest) {
       },
     });
 
+    // Sort to put Rahmat R and Johan Irawan at the top
+    const targetNames = ["Rahmat R", "JOHAN IRAWAN"];
+    employees.sort((a, b) => {
+        const aIsTarget = targetNames.includes(a.user?.name || "");
+        const bIsTarget = targetNames.includes(b.user?.name || "");
+        if (aIsTarget && !bIsTarget) return -1;
+        if (!aIsTarget && bIsTarget) return 1;
+        if (aIsTarget && bIsTarget) {
+            return (a.user?.name || "").localeCompare(b.user?.name || "");
+        }
+        return 0;
+    });
+
     return NextResponse.json(employees);
   } catch (error) {
     console.error("Error fetching employees:", error);

@@ -514,7 +514,7 @@ export async function GET(req: NextRequest) {
     const employeeIds = employees.map(e => e.id);
     const reports = await getBulkMonthlyAttendanceReport(employeeIds, yearNum, monthNum);
 
-    const allReports = employees.map((employee, index) => {
+    let allReports = employees.map((employee, index) => {
       const report = reports[index];
       
       // Format attendances
@@ -539,6 +539,19 @@ export async function GET(req: NextRequest) {
         },
         report,
       };
+    });
+
+    // Sort to put Rahmat R and Johan Irawan at the top
+    const targetNames = ["Rahmat R", "JOHAN IRAWAN"];
+    allReports.sort((a, b) => {
+        const aIsTarget = targetNames.includes(a.employee.name || "");
+        const bIsTarget = targetNames.includes(b.employee.name || "");
+        if (aIsTarget && !bIsTarget) return -1;
+        if (!aIsTarget && bIsTarget) return 1;
+        if (aIsTarget && bIsTarget) {
+            return (a.employee.name || "").localeCompare(b.employee.name || "");
+        }
+        return 0;
     });
 
     // Create response with cache control headers
