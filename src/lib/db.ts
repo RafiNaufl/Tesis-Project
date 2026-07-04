@@ -13,7 +13,17 @@ if (process.env.PRISMA_LOG_ERROR !== "false") {
   prismaLog.push("error");
 }
 
-export const db = globalForPrisma.prisma || new PrismaClient({ log: prismaLog });
+// Always use DATABASE_URL (connection pooler) for all queries
+export const db =
+  globalForPrisma.prisma ||
+  new PrismaClient({
+    log: prismaLog,
+    datasources: {
+      db: {
+        url: process.env.DATABASE_URL,
+      },
+    },
+  });
 
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = db;
 
