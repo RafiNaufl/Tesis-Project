@@ -20,11 +20,13 @@ export default function RootLayout({
 }) {
   return (
     <html lang="id">
-      <body className={inter.className}>
+      <body className={`${inter.className} min-h-screen`}>
         <AuthProvider>
           <PermissionGuard />
           <PushNotificationManager />
-          {children}
+          <main className="pb-safe">
+            {children}
+          </main>
           <Toaster position="top-center" />
         </AuthProvider>
       </body>
