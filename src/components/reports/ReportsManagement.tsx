@@ -46,7 +46,6 @@ export default function ReportsManagement() {
 
     try {
       const queryParams = new URLSearchParams({
-        type: reportType,
         month: selectedMonth.toString(),
         year: selectedYear.toString(),
       });
@@ -55,7 +54,12 @@ export default function ReportsManagement() {
         queryParams.append("employeeId", selectedEmployeeId);
       }
 
-      const response = await fetch(`/api/reports?${queryParams}`);
+      const endpoint =
+        reportType === "payroll"
+          ? `/api/reports/payroll?${queryParams}`
+          : `/api/reports?${new URLSearchParams({ type: reportType, ...Object.fromEntries(queryParams) })}`;
+
+      const response = await fetch(endpoint);
       
       if (!response.ok) {
         const errorData = await response.json();
@@ -63,6 +67,59 @@ export default function ReportsManagement() {
       }
 
       const data = await response.json();
+
+      if (reportType === "payroll") {
+        const payroll = (data?.data || []).map((record: any) => ({
+          id: record.id,
+          employee: {
+            id: record.employeeId,
+            employeeId: record.empId,
+            name: record.employeeName,
+          },
+          month: record.month,
+          year: record.year,
+          baseSalary: Number(record.baseSalary),
+          totalAllowances: Number(record.totalAllowances),
+          totalDeductions: Number(record.totalDeductions),
+          overtimeHours: Number(record.overtimeHours),
+          overtimeAmount: Number(record.overtimeAmount),
+          daysPresent: Number(record.daysPresent),
+          daysAbsent: Number(record.daysAbsent),
+          netSalary: Number(record.netSalary),
+          status: record.status,
+          paidAt: record.paidAt,
+          positionAllowance: Number(record.positionAllowance || 0),
+          mealAllowance: Number(record.mealAllowance || 0),
+          transportAllowance: Number(record.transportAllowance || 0),
+          shiftAllowance: Number(record.shiftAllowance || 0),
+          lateDeduction: Number(record.lateDeduction || 0),
+          absenceDeduction: Number(record.absenceDeduction || 0),
+          bpjsKesehatanAmount: Number(record.bpjsKesehatanAmount || 0),
+          bpjsKetenagakerjaanAmount: Number(record.bpjsKetenagakerjaanAmount || 0),
+          advanceAmount: Number(record.advanceAmount || 0),
+          softLoanDeduction: Number(record.softLoanDeduction || 0),
+          otherDeductions: Number(record.otherDeductions || 0),
+        }));
+
+        const summary = data?.summary || {};
+        const overtimeAmount = payroll.reduce((sum: number, record: any) => sum + Number(record.overtimeAmount || 0), 0);
+        const totals = {
+          ...summary,
+          baseSalary: Number(summary.totalBaseSalary ?? summary.baseSalary ?? 0),
+          netSalary: Number(summary.totalNetSalary ?? summary.netSalary ?? 0),
+          overtimeAmount,
+        };
+
+        setReportData({
+          type: "payroll",
+          month: selectedMonth,
+          year: selectedYear,
+          payroll,
+          totals,
+        });
+        return;
+      }
+
       setReportData(data);
     } catch (err: any) {
       console.error("Error generating report:", err);
@@ -72,13 +129,15 @@ export default function ReportsManagement() {
     }
   };
 
-  const formatCurrency = (amount: number): string => {
+  const formatCurrency = (amount: unknown): string => {
+    const numeric = typeof amount === "number" ? amount : Number(amount);
+    const safeAmount = Number.isFinite(numeric) ? numeric : 0;
     return new Intl.NumberFormat("id-ID", {
       style: "currency",
       currency: "IDR",
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
-    }).format(amount);
+    }).format(safeAmount);
   };
 
   const formatDate = (date: string | Date): string => {

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import { useForm } from "react-hook-form";
+import { useForm, type FieldErrors, type FieldPath } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { 
@@ -11,6 +11,24 @@ import {
   ChevronDown, MapPin
 } from "lucide-react";
 import { divisions, employmentStatuses, organizations, roles, workSchedules, phoneRegex, optionalNumber } from "@/lib/registrationValidation";
+import { getEmployeeButtonClass, getEmployeeIconButtonClass } from "./buttonStyles";
+
+const optionalPhone = z.preprocess(
+  (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+  z.string().regex(phoneRegex, { message: "Nomor HP tidak valid" }).optional()
+);
+
+const optionalProfileImageUrl = z.preprocess(
+  (value) => {
+    if (value === null) return undefined;
+    if (typeof value === "string" && value.trim() === "") return undefined;
+    return value;
+  },
+  z.union([
+    z.string().url(),
+    z.string().regex(/^\/uploads\/profiles\/[^\s]+$/),
+  ]).optional()
+);
 
 const employeeEditFormSchema = z.object({
   name: z.string().min(3, { message: "Nama minimal 3 karakter" }),
@@ -22,25 +40,36 @@ const employeeEditFormSchema = z.object({
   workSchedule: z.enum(workSchedules, { required_error: "Jadwal kerja wajib dipilih" }),
   monthlySalary: optionalNumber("Gaji bulanan harus angka"),
   hourlyRate: optionalNumber("Rate per jam harus angka"),
-  contactNumber: z.string().regex(phoneRegex, { message: "Nomor HP tidak valid" }).optional(),
+  contactNumber: optionalPhone,
   address: z.string().optional(),
   isActive: z.boolean(),
   bpjsKesehatan: optionalNumber("BPJS Kesehatan harus angka"),
   bpjsKetenagakerjaan: optionalNumber("BPJS Ketenagakerjaan harus angka"),
-  profileImageUrl: z.union([
-    z.string().url(),
-    z.string().regex(/^\/uploads\/profiles\/[^\s]+$/)
-  ]).optional(),
+  profileImageUrl: optionalProfileImageUrl,
 }).superRefine((data, ctx) => {
   if (data.workSchedule === "SHIFT" && typeof data.monthlySalary !== "number") {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Gaji bulanan wajib diisi untuk Shift" });
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Gaji bulanan wajib diisi untuk Shift",
+      path: ["monthlySalary"],
+    });
   }
   if (data.workSchedule === "NON_SHIFT" && typeof data.hourlyRate !== "number") {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Rate gaji per jam wajib diisi untuk Non Shift" });
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Rate gaji per jam wajib diisi untuk Non Shift",
+      path: ["hourlyRate"],
+    });
   }
 });
 
 type EmployeeEditFormValues = z.infer<typeof employeeEditFormSchema>;
+
+type EmployeeEditSubmitResult = {
+  success: boolean;
+  fieldErrors?: Partial<Record<keyof EmployeeEditFormValues, string>>;
+  formError?: string;
+};
 
 type Employee = {
   id: string;
@@ -68,8 +97,26 @@ type Employee = {
 type EditEmployeeModalProps = {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (id: string, data: EmployeeEditFormValues) => void;
+  onSubmit: (id: string, data: EmployeeEditFormValues) => Promise<EmployeeEditSubmitResult>;
   employee: Employee | null;
+};
+
+const fieldLabels: Partial<Record<keyof EmployeeEditFormValues, string>> = {
+  name: "Nama Lengkap",
+  email: "Email",
+  role: "Role Jabatan",
+  division: "Divisi",
+  organization: "Organisasi",
+  employmentStatus: "Status Karyawan",
+  workSchedule: "Tipe Jadwal",
+  monthlySalary: "Gaji Bulanan",
+  hourlyRate: "Rate Per Jam",
+  contactNumber: "Nomor HP",
+  address: "Alamat",
+  isActive: "Status Akun",
+  bpjsKesehatan: "BPJS Kesehatan",
+  bpjsKetenagakerjaan: "BPJS Ketenagakerjaan",
+  profileImageUrl: "Foto Profil",
 };
 
 
@@ -82,13 +129,17 @@ export default function EditEmployeeModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [profileFile, setProfileFile] = useState<File | null>(null as any);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   
   const {
     register,
     handleSubmit,
     reset,
+    setError,
+    clearErrors,
     watch,
-    formState: { errors },
+    formState: { errors, submitCount },
   } = useForm<EmployeeEditFormValues>({
     resolver: zodResolver(employeeEditFormSchema),
     defaultValues: {
@@ -128,27 +179,65 @@ export default function EditEmployeeModal({
         profileImageUrl: (employee as any)?.user?.profileImageUrl,
       });
       setPreviewUrl((employee as any)?.user?.profileImageUrl || null);
+      setFormError(null);
+      setUploadError(null);
+      clearErrors();
     }
-  }, [employee, reset]);
+  }, [clearErrors, employee, reset]);
 
   // Calculate total BPJS
   const bpjsKesehatan = watch("bpjsKesehatan");
   const bpjsKetenagakerjaan = watch("bpjsKetenagakerjaan");
   const totalBpjs = (Number(bpjsKesehatan) || 0) + (Number(bpjsKetenagakerjaan) || 0);
 
+  const handleFormInvalid = (formErrors: FieldErrors<EmployeeEditFormValues>) => {
+    const formattedErrors = Object.entries(formErrors).map(([field, value]) => ({
+      field,
+      label: fieldLabels[field as keyof EmployeeEditFormValues] || field,
+      message: value?.message || "Nilai tidak valid",
+    }));
+
+    console.error("Edit employee client validation error:", formattedErrors);
+    console.error("Edit employee client validation context:", {
+      employeeId: employee?.id,
+    });
+  };
+
+  const visibleErrorMessages = Object.entries(errors)
+    .map(([field, value]) => ({
+      field,
+      label: fieldLabels[field as keyof EmployeeEditFormValues] || field,
+      message: value?.message || "Nilai tidak valid",
+    }))
+    .filter((item) => Boolean(item.message));
+
   const handleFormSubmit = async (data: EmployeeEditFormValues) => {
     if (employee) {
       setIsSubmitting(true);
+      let shouldClose = false;
       try {
+        clearErrors();
+        setFormError(null);
+        setUploadError(null);
         let profileImageUrl = data.profileImageUrl;
         if (profileFile) {
           if (!["image/jpeg", "image/png"].includes(profileFile.type)) {
-            alert("Format gambar harus JPG/PNG");
+            console.error("Edit employee upload error:", {
+              employeeId: employee.id,
+              message: "Format gambar harus JPG atau PNG",
+              fileType: profileFile.type,
+            });
+            setUploadError("Format gambar harus JPG atau PNG");
             setIsSubmitting(false);
             return;
           }
           if (profileFile.size > 2 * 1024 * 1024) {
-            alert("Ukuran gambar maksimal 2MB");
+            console.error("Edit employee upload error:", {
+              employeeId: employee.id,
+              message: "Ukuran gambar maksimal 2MB",
+              fileSize: profileFile.size,
+            });
+            setUploadError("Ukuran gambar maksimal 2MB");
             setIsSubmitting(false);
             return;
           }
@@ -158,17 +247,55 @@ export default function EditEmployeeModal({
           const res = await fetch("/api/upload", { method: "POST", body: fd });
           if (!res.ok) {
             const err = await res.json().catch(() => ({}));
-            alert(err.error || "Gagal upload gambar");
+            console.error("Edit employee upload error:", {
+              employeeId: employee.id,
+              status: res.status,
+              error: err.error || "Gagal upload gambar",
+            });
+            setUploadError(err.error || "Gagal upload gambar");
             setIsSubmitting(false);
             return;
           }
           const j = await res.json();
           profileImageUrl = j.url;
         }
-        await onSubmit(employee.id, { ...data, profileImageUrl });
+        const result = await onSubmit(employee.id, { ...data, profileImageUrl });
+        if (result.success) {
+          shouldClose = true;
+          return;
+        }
+
+        console.error("Edit employee submit error:", {
+          employeeId: employee.id,
+          formError: result.formError,
+          fieldErrors: result.fieldErrors,
+        });
+
+        if (result.fieldErrors) {
+          Object.entries(result.fieldErrors).forEach(([field, message]) => {
+            if (message) {
+              setError(field as FieldPath<EmployeeEditFormValues>, {
+                type: "server",
+                message,
+              });
+            }
+          });
+        }
+
+        if (result.formError) {
+          setFormError(result.formError);
+        }
+      } catch (error) {
+        console.error("Edit employee unexpected error:", {
+          employeeId: employee.id,
+          error,
+        });
+        setFormError("Terjadi kesalahan saat menyimpan perubahan karyawan");
       } finally {
         setIsSubmitting(false);
-        onClose();
+        if (shouldClose) {
+          onClose();
+        }
       }
     }
   };
@@ -199,7 +326,7 @@ export default function EditEmployeeModal({
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-full bg-gray-50 text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className={getEmployeeIconButtonClass("neutral", "rounded-full text-slate-500")}
           >
             <X className="w-5 h-5" />
           </button>
@@ -207,7 +334,26 @@ export default function EditEmployeeModal({
 
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-gray-50/50">
-          <form id="edit-employee-form" onSubmit={handleSubmit(handleFormSubmit)} className="space-y-6">
+          <form id="edit-employee-form" onSubmit={handleSubmit(handleFormSubmit, handleFormInvalid)} className="space-y-6">
+            {formError ? (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                {formError}
+              </div>
+            ) : null}
+            {!formError && submitCount > 0 && Object.keys(errors).length > 0 ? (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+                <p className="font-medium">
+                  Periksa kembali field yang ditandai merah. Masih ada data yang belum valid.
+                </p>
+                <ul className="mt-2 list-disc space-y-1 pl-5 text-xs">
+                  {visibleErrorMessages.map((item) => (
+                    <li key={item.field}>
+                      {item.label}: {item.message}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
             
             {/* Section: Profile Image & Status */}
             <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
@@ -252,6 +398,9 @@ export default function EditEmployeeModal({
                     <p className="text-xs text-gray-500 mt-1">
                       Upload foto format JPG/PNG, maks 2MB.
                     </p>
+                    {uploadError ? (
+                      <p className="mt-2 text-xs text-red-500">{uploadError}</p>
+                    ) : null}
                   </div>
                   
                   {/* Status Toggle */}
@@ -277,7 +426,9 @@ export default function EditEmployeeModal({
                     <input 
                       type="text" 
                       {...register("name")} 
-                      className="block w-full rounded-lg border-gray-200 pl-9 focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 bg-white shadow-sm" 
+                      className={`block w-full rounded-lg pl-9 text-sm py-2.5 bg-white shadow-sm ${
+                        errors.name ? "border-red-300 focus:border-red-500 focus:ring-red-500" : "border-gray-200 focus:border-indigo-500 focus:ring-indigo-500"
+                      }`} 
                       placeholder="Nama Lengkap" 
                     />
                   </div>
@@ -291,7 +442,9 @@ export default function EditEmployeeModal({
                     <input 
                       type="text" 
                       {...register("contactNumber")} 
-                      className="block w-full rounded-lg border-gray-200 pl-9 focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 bg-white shadow-sm" 
+                      className={`block w-full rounded-lg pl-9 text-sm py-2.5 bg-white shadow-sm ${
+                        errors.contactNumber ? "border-red-300 focus:border-red-500 focus:ring-red-500" : "border-gray-200 focus:border-indigo-500 focus:ring-indigo-500"
+                      }`} 
                       placeholder="0812..." 
                     />
                   </div>
@@ -305,7 +458,9 @@ export default function EditEmployeeModal({
                     <input 
                       type="email" 
                       {...register("email")} 
-                      className="block w-full rounded-lg border-gray-200 pl-9 focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 bg-white shadow-sm" 
+                      className={`block w-full rounded-lg pl-9 text-sm py-2.5 bg-white shadow-sm ${
+                        errors.email ? "border-red-300 focus:border-red-500 focus:ring-red-500" : "border-gray-200 focus:border-indigo-500 focus:ring-indigo-500"
+                      }`} 
                       placeholder="email@company.com" 
                     />
                   </div>
@@ -319,7 +474,9 @@ export default function EditEmployeeModal({
                     <input 
                       type="text" 
                       {...register("address")} 
-                      className="block w-full rounded-lg border-gray-200 pl-9 focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 bg-white shadow-sm" 
+                      className={`block w-full rounded-lg pl-9 text-sm py-2.5 bg-white shadow-sm ${
+                        errors.address ? "border-red-300 focus:border-red-500 focus:ring-red-500" : "border-gray-200 focus:border-indigo-500 focus:ring-indigo-500"
+                      }`} 
                       placeholder="Alamat Lengkap" 
                     />
                   </div>
@@ -336,7 +493,9 @@ export default function EditEmployeeModal({
                   <label className="text-xs font-medium text-gray-700">Organisasi <span className="text-red-500">*</span></label>
                   <div className="relative">
                     <Building className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
-                    <select {...register("organization")} className="block w-full rounded-lg border-gray-200 pl-9 focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 bg-white shadow-sm appearance-none">
+                    <select {...register("organization")} className={`block w-full rounded-lg pl-9 text-sm py-2.5 bg-white shadow-sm appearance-none ${
+                      errors.organization ? "border-red-300 focus:border-red-500 focus:ring-red-500" : "border-gray-200 focus:border-indigo-500 focus:ring-indigo-500"
+                    }`}>
                       {organizations.map((o) => (<option key={o} value={o}>{o}</option>))}
                     </select>
                     <ChevronDown className="absolute right-3 top-3 h-4 w-4 text-gray-400 pointer-events-none" />
@@ -348,7 +507,9 @@ export default function EditEmployeeModal({
                   <label className="text-xs font-medium text-gray-700">Divisi <span className="text-red-500">*</span></label>
                   <div className="relative">
                     <Briefcase className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
-                    <select {...register("division")} className="block w-full rounded-lg border-gray-200 pl-9 focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 bg-white shadow-sm appearance-none">
+                    <select {...register("division")} className={`block w-full rounded-lg pl-9 text-sm py-2.5 bg-white shadow-sm appearance-none ${
+                      errors.division ? "border-red-300 focus:border-red-500 focus:ring-red-500" : "border-gray-200 focus:border-indigo-500 focus:ring-indigo-500"
+                    }`}>
                       {divisions.map((d) => (<option key={d} value={d}>{d}</option>))}
                     </select>
                     <ChevronDown className="absolute right-3 top-3 h-4 w-4 text-gray-400 pointer-events-none" />
@@ -360,7 +521,9 @@ export default function EditEmployeeModal({
                   <label className="text-xs font-medium text-gray-700">Role Jabatan <span className="text-red-500">*</span></label>
                   <div className="relative">
                     <Users className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
-                    <select {...register("role")} className="block w-full rounded-lg border-gray-200 pl-9 focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 bg-white shadow-sm appearance-none">
+                    <select {...register("role")} className={`block w-full rounded-lg pl-9 text-sm py-2.5 bg-white shadow-sm appearance-none ${
+                      errors.role ? "border-red-300 focus:border-red-500 focus:ring-red-500" : "border-gray-200 focus:border-indigo-500 focus:ring-indigo-500"
+                    }`}>
                       {roles.map((r) => (<option key={r} value={r}>{r}</option>))}
                     </select>
                     <ChevronDown className="absolute right-3 top-3 h-4 w-4 text-gray-400 pointer-events-none" />
@@ -372,7 +535,9 @@ export default function EditEmployeeModal({
                   <label className="text-xs font-medium text-gray-700">Status <span className="text-red-500">*</span></label>
                   <div className="relative">
                     <FileText className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
-                    <select {...register("employmentStatus")} className="block w-full rounded-lg border-gray-200 pl-9 focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 bg-white shadow-sm appearance-none">
+                    <select {...register("employmentStatus")} className={`block w-full rounded-lg pl-9 text-sm py-2.5 bg-white shadow-sm appearance-none ${
+                      errors.employmentStatus ? "border-red-300 focus:border-red-500 focus:ring-red-500" : "border-gray-200 focus:border-indigo-500 focus:ring-indigo-500"
+                    }`}>
                       {employmentStatuses.map((s) => (<option key={s} value={s}>{s}</option>))}
                     </select>
                     <ChevronDown className="absolute right-3 top-3 h-4 w-4 text-gray-400 pointer-events-none" />
@@ -414,7 +579,9 @@ export default function EditEmployeeModal({
                         type="number" 
                         step="0.01" 
                         {...register("monthlySalary", { valueAsNumber: true })} 
-                        className="block w-full rounded-lg border-gray-200 pl-9 focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 bg-white shadow-sm"
+                        className={`block w-full rounded-lg pl-9 text-sm py-2.5 bg-white shadow-sm ${
+                          errors.monthlySalary ? "border-red-300 focus:border-red-500 focus:ring-red-500" : "border-gray-200 focus:border-indigo-500 focus:ring-indigo-500"
+                        }`}
                         placeholder="0.00"
                       />
                     </div>
@@ -429,7 +596,9 @@ export default function EditEmployeeModal({
                         type="number" 
                         step="0.01" 
                         {...register("hourlyRate", { valueAsNumber: true })} 
-                        className="block w-full rounded-lg border-gray-200 pl-9 focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 bg-white shadow-sm"
+                        className={`block w-full rounded-lg pl-9 text-sm py-2.5 bg-white shadow-sm ${
+                          errors.hourlyRate ? "border-red-300 focus:border-red-500 focus:ring-red-500" : "border-gray-200 focus:border-indigo-500 focus:ring-indigo-500"
+                        }`}
                         placeholder="0.00"
                       />
                     </div>
@@ -451,7 +620,9 @@ export default function EditEmployeeModal({
                       type="number" 
                       step="100" 
                       {...register("bpjsKesehatan")} 
-                      className="block w-full rounded-lg border-gray-200 pl-9 focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 bg-white shadow-sm"
+                      className={`block w-full rounded-lg pl-9 text-sm py-2.5 bg-white shadow-sm ${
+                        errors.bpjsKesehatan ? "border-red-300 focus:border-red-500 focus:ring-red-500" : "border-gray-200 focus:border-indigo-500 focus:ring-indigo-500"
+                      }`}
                       placeholder="0"
                     />
                   </div>
@@ -465,7 +636,9 @@ export default function EditEmployeeModal({
                       type="number" 
                       step="100" 
                       {...register("bpjsKetenagakerjaan")} 
-                      className="block w-full rounded-lg border-gray-200 pl-9 focus:border-indigo-500 focus:ring-indigo-500 text-sm py-2.5 bg-white shadow-sm"
+                      className={`block w-full rounded-lg pl-9 text-sm py-2.5 bg-white shadow-sm ${
+                        errors.bpjsKetenagakerjaan ? "border-red-300 focus:border-red-500 focus:ring-red-500" : "border-gray-200 focus:border-indigo-500 focus:ring-indigo-500"
+                      }`}
                       placeholder="0"
                     />
                   </div>
@@ -491,7 +664,7 @@ export default function EditEmployeeModal({
           <button
             type="button"
             onClick={onClose}
-            className="w-full sm:w-auto inline-flex justify-center items-center px-4 py-2.5 border border-gray-300 shadow-sm text-sm font-medium rounded-lg text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"
+            className={getEmployeeButtonClass("secondary", "w-full sm:w-auto")}
           >
             Batal
           </button>
@@ -499,7 +672,7 @@ export default function EditEmployeeModal({
             type="submit"
             form="edit-employee-form"
             disabled={isSubmitting}
-            className="w-full sm:w-auto inline-flex justify-center items-center px-4 py-2.5 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-indigo-300 disabled:cursor-not-allowed transition-colors"
+            className={getEmployeeButtonClass("primary", "w-full sm:w-auto")}
           >
             {isSubmitting ? (
               <>

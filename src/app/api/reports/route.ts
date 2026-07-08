@@ -80,7 +80,29 @@ async function generateAttendanceReport(month: number, year: number, employeeId?
   };
 
   if (employeeId) {
+    const employeeExists = await db.employee.findUnique({
+      where: { id: employeeId },
+      select: { id: true },
+    });
+
+    if (!employeeExists) {
+      const workingDays = calculateWorkingDaysInMonth(month, year);
+      return {
+        type: "attendance",
+        month,
+        year,
+        workingDays,
+        employees: [],
+      };
+    }
+
     whereClause.employeeId = employeeId;
+  } else {
+    const employees = await db.employee.findMany({
+      select: { id: true },
+    });
+
+    whereClause.employeeId = { in: employees.map(e => e.id) };
   }
 
   // Get all attendance records for the month

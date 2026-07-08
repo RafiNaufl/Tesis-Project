@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, type KeyboardEvent } from "react";
 import Image from "next/image";
-// import { useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import AddEmployeeModal from "./AddEmployeeModal";
-import EditEmployeeModal from "./EditEmployeeModal";
+import { getEmployeeButtonClass } from "./buttonStyles";
 // import { useSession } from "next-auth/react";
 
 type Employee = {
@@ -47,29 +47,10 @@ type EmployeeFormValues = {
   bpjsKetenagakerjaan?: number;
 };
 
-type EmployeeEditFormValues = {
-  name: string;
-  email: string;
-  role: string;
-  division: string;
-  organization: string;
-  employmentStatus: string;
-  workSchedule: "SHIFT" | "NON_SHIFT";
-  monthlySalary?: number;
-  hourlyRate?: number;
-  contactNumber?: string;
-  address?: string;
-  isActive: boolean;
-  bpjsKesehatan?: number;
-  bpjsKetenagakerjaan?: number;
-  profileImageUrl?: string;
-};
-
 export default function EmployeeManagement() {
+  const router = useRouter();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterDivision, setFilterDivision] = useState("");
@@ -78,8 +59,6 @@ export default function EmployeeManagement() {
   const [selectedOrganizations, setSelectedOrganizations] = useState<string[]>([]);
   const [isOrgDropdownOpen, setIsOrgDropdownOpen] = useState(false);
   // const { data: session } = useSession();
-  // const router = useRouter();
-
   // Fetch employees from API
   useEffect(() => {
     const fetchEmployees = async () => {
@@ -115,125 +94,6 @@ export default function EmployeeManagement() {
 
   const handleAddEmployee = () => {
     setIsAddModalOpen(true);
-  };
-
-  const handleEditEmployee = (employee: Employee) => {
-    setSelectedEmployee(employee);
-    setIsEditModalOpen(true);
-  };
-
-  const handleDeleteEmployee = async (employeeId: string) => {
-    if (!confirm("Apakah Anda yakin ingin menghapus karyawan ini? Semua data terkait (kehadiran, penggajian) juga akan dihapus.")) {
-      return;
-    }
-    
-    try {
-      const response = await fetch(`/api/employees/${employeeId}`, {
-        method: "DELETE",
-      });
-      
-      if (!response.ok) {
-        let errorMessage = `Gagal menghapus karyawan (${response.status})`;
-        try {
-          const raw = await response.text();
-          if (raw) {
-            const errJson = JSON.parse(raw);
-            errorMessage = errJson.error || errorMessage;
-            console.error("Error response:", errJson);
-          } else {
-            console.error("Error response: empty body");
-          }
-        } catch {
-          console.error("Error response: non-JSON body");
-        }
-        alert(errorMessage);
-        throw new Error(errorMessage);
-      }
-      
-      setEmployees(employees.filter((emp) => emp.id !== employeeId));
-      
-      let message = "Karyawan berhasil dihapus";
-      try {
-        const raw = await response.text();
-        if (raw) {
-          const data = JSON.parse(raw);
-          message = data.message || message;
-          if (data.deletedRelatedData) {
-            console.log("Data terkait yang dihapus:", data.deletedRelatedData);
-          }
-        }
-      } catch (parseError) {
-        console.error("Failed to parse delete response:", parseError);
-      }
-      alert(message);
-    } catch (error: any) {
-      console.error("Error deleting employee:", error);
-      
-      // Coba identifikasi kemungkinan penyebab kesalahan
-      let errorMessage = "Gagal menghapus karyawan: ";
-      
-      if (error.message.includes("foreign key constraint")) {
-        errorMessage += "Karyawan ini memiliki data terkait yang tidak dapat dihapus secara otomatis. Hubungi administrator sistem.";
-      } else if (error.message.includes("not found")) {
-        errorMessage += "Karyawan tidak ditemukan.";
-      } else {
-        errorMessage += error.message || "Terjadi kesalahan pada server.";
-      }
-      
-      alert(errorMessage);
-    }
-  };
-
-  const handleToggleStatus = async (employeeId: string, currentStatus: boolean) => {
-    try {
-      const employee = employees.find(emp => emp.id === employeeId);
-      if (!employee) return;
-      const payload: EmployeeEditFormValues = {
-        name: (employee.user?.name || employee.name || ""),
-        email: (employee.user?.email || employee.email || ""),
-        role: employee.position,
-        division: employee.division,
-        organization: (employee.organization as any) || "CTU",
-        employmentStatus: (employee.employmentStatus as any) || "Tetap",
-        workSchedule: (employee.workScheduleType as any) || "SHIFT",
-        monthlySalary: employee.workScheduleType === "SHIFT" ? (employee.basicSalary || 0) : undefined,
-        hourlyRate: employee.workScheduleType === "NON_SHIFT" ? (employee.hourlyRate ?? undefined) : undefined,
-        contactNumber: employee.contactNumber,
-        address: employee.address,
-        isActive: !currentStatus,
-      };
-
-      const response = await fetch(`/api/employees/${employeeId}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
-      
-      if (!response.ok) {
-        let msg = "Gagal memperbarui status karyawan";
-        try {
-          const raw = await response.text();
-          if (raw) {
-            const err = JSON.parse(raw);
-            msg = Array.isArray(err.error) ? err.error.join(", ") : (err.error || msg);
-          }
-        } catch (e) {
-          console.error(e);
-        }
-        alert(msg);
-        throw new Error(msg);
-      }
-      
-      setEmployees(
-        employees.map((emp) =>
-          emp.id === employeeId ? { ...emp, isActive: !currentStatus } : emp
-        )
-      );
-    } catch (error) {
-      console.error("Error updating employee status:", error);
-    }
   };
 
   const handleAddEmployeeSubmit = async (data: EmployeeFormValues) => {
@@ -277,62 +137,6 @@ export default function EmployeeManagement() {
     }
   };
 
-  const handleEditEmployeeSubmit = async (id: string, data: EmployeeEditFormValues) => {
-    try {
-      const response = await fetch(`/api/employees/${id}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(data),
-      });
-      
-      if (!response.ok) {
-        let msg = "Gagal memperbarui karyawan";
-        try {
-          const raw = await response.text();
-          if (raw) {
-            const err = JSON.parse(raw);
-            msg = Array.isArray(err.error) ? err.error.join(", ") : (err.error || msg);
-          }
-        } catch (e) {
-          console.error(e);
-        }
-        alert(msg);
-        throw new Error(msg);
-      }
-      
-      const updatedEmployee = await response.json();
-      
-      // Update employees array with the updated employee data
-      setEmployees(
-        employees.map((emp) => 
-          emp.id === id 
-            ? {
-                ...updatedEmployee,
-                name: data.name,
-                email: data.email
-              }
-            : emp
-        )
-      );
-      // Refresh list to reflect all derived fields properly
-      const refreshed = await fetch("/api/employees");
-      if (refreshed.ok) {
-        const data = await refreshed.json();
-        const formattedEmployees = data.map((employee: any) => ({
-          ...employee,
-          name: employee.user?.name,
-          email: employee.user?.email,
-          profileImageUrl: employee.user?.profileImageUrl,
-        }));
-        setEmployees(formattedEmployees);
-      }
-    } catch (error) {
-      console.error("Error updating employee:", error);
-    }
-  };
-
   // Filter employees based on search term, division, and organization
   const filteredEmployees = employees.filter((employee) => {
     const matchesSearchTerm = searchTerm === "" || (
@@ -373,6 +177,20 @@ export default function EmployeeManagement() {
     );
   };
 
+  const navigateToEmployeeDetail = (employeeId: string) => {
+    router.push(`/dashboard/employees/${employeeId}`);
+  };
+
+  const handleRowKeyDown = (
+    event: KeyboardEvent<HTMLElement>,
+    employeeId: string
+  ) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      navigateToEmployeeDetail(employeeId);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="sm:flex sm:items-center sm:justify-between">
@@ -386,10 +204,10 @@ export default function EmployeeManagement() {
           <button
             type="button"
             onClick={handleAddEmployee}
-            className="block rounded-md bg-indigo-600 px-3 py-2 text-center text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 transition-colors duration-200"
+            className={getEmployeeButtonClass("primary", "w-full sm:w-auto")}
           >
-            <span className="flex items-center">
-              <svg xmlns="http://www.w3.org/2000/svg" className="mr-1.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+            <span className="flex items-center justify-center gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                 <path fillRule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clipRule="evenodd" />
               </svg>
               Tambah Karyawan
@@ -417,7 +235,7 @@ export default function EmployeeManagement() {
         <div className="relative w-full sm:w-48">
           <button
             type="button"
-            className="relative w-full cursor-default rounded-md border border-gray-300 bg-white py-2 pl-3 pr-10 text-left shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 sm:text-sm"
+            className={getEmployeeButtonClass("secondary", "relative w-full justify-between px-3 pr-10 text-left text-slate-700")}
             onClick={() => setIsOrgDropdownOpen(!isOrgDropdownOpen)}
           >
             <span className="block truncate">
@@ -512,7 +330,14 @@ export default function EmployeeManagement() {
               </div>
             ) : (
               filteredEmployees.map((employee) => (
-                <div key={employee.id} className="bg-white shadow rounded-lg p-4 space-y-4">
+                <div
+                  key={employee.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => navigateToEmployeeDetail(employee.id)}
+                  onKeyDown={(event) => handleRowKeyDown(event, employee.id)}
+                  className="cursor-pointer bg-white shadow rounded-lg p-4 space-y-4 transition-colors hover:bg-blue-50/60 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                >
                   <div className="flex items-center space-x-3">
                     <div className="h-12 w-12 overflow-hidden rounded-full bg-gray-100 flex-shrink-0">
                       {employee.user?.profileImageUrl ? (
@@ -560,51 +385,9 @@ export default function EmployeeManagement() {
                       <p className="font-medium">{employee.workScheduleType === "SHIFT" ? "Shift" : "Non-Shift"}</p>
                     </div>
                   </div>
-
-                  <div className="grid grid-cols-2 gap-3 pt-2">
-                    <button
-                      onClick={() => handleEditEmployee(employee)}
-                      className="inline-flex justify-center items-center rounded-md bg-indigo-50 px-3 py-2.5 text-sm font-medium text-indigo-700 hover:bg-indigo-100 touch-manipulation transition-colors"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="-ml-1 mr-2 h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                        <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
-                      </svg>
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => handleDeleteEmployee(employee.id)}
-                      className="inline-flex justify-center items-center rounded-md bg-red-50 px-3 py-2.5 text-sm font-medium text-red-700 hover:bg-red-100 touch-manipulation transition-colors"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="-ml-1 mr-2 h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                      </svg>
-                      Hapus
-                    </button>
-                    <button
-                      onClick={() => handleToggleStatus(employee.id, employee.isActive)}
-                      className={`col-span-2 inline-flex justify-center items-center rounded-md px-3 py-2.5 text-sm font-medium touch-manipulation transition-colors ${
-                        employee.isActive
-                          ? "bg-red-50 text-red-700 hover:bg-red-100"
-                          : "bg-green-50 text-green-700 hover:bg-green-100"
-                      }`}
-                    >
-                      {employee.isActive ? (
-                        <>
-                          <svg xmlns="http://www.w3.org/2000/svg" className="-ml-1 mr-2 h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                          </svg>
-                          Nonaktifkan
-                        </>
-                      ) : (
-                        <>
-                          <svg xmlns="http://www.w3.org/2000/svg" className="-ml-1 mr-2 h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                          </svg>
-                          Aktifkan
-                        </>
-                      )}
-                    </button>
-                  </div>
+                  <p className="pt-2 text-xs font-medium text-blue-600">
+                    Ketuk kartu untuk melihat detail karyawan
+                  </p>
                 </div>
               ))
             )}
@@ -664,17 +447,18 @@ export default function EmployeeManagement() {
                         >
                           Status
                         </th>
-                        <th
-                          scope="col"
-                          className="relative py-3.5 pl-3 pr-4 sm:pr-6"
-                        >
-                          <span className="sr-only">Actions</span>
-                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200 bg-white">
                       {filteredEmployees.map((employee) => (
-                        <tr key={employee.id} className="hover:bg-gray-50">
+                        <tr
+                          key={employee.id}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => navigateToEmployeeDetail(employee.id)}
+                          onKeyDown={(event) => handleRowKeyDown(event, employee.id)}
+                          className="cursor-pointer transition-colors hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500"
+                        >
                           <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6">
                             {employee.employeeId}
                           </td>
@@ -690,7 +474,9 @@ export default function EmployeeManagement() {
                             </div>
                           </td>
                           <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                            <div className="font-medium text-gray-900">{employee.user?.name || employee.name}</div>
+                            <div className="font-medium text-gray-900">
+                              {employee.user?.name || employee.name}
+                            </div>
                             <div className="text-gray-500">{employee.user?.email || employee.email}</div>
                           </td>
                           <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
@@ -719,47 +505,6 @@ export default function EmployeeManagement() {
                               {employee.isActive ? "Aktif" : "Tidak Aktif"}
                             </span>
                           </td>
-                          <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
-                            <div className="flex justify-end space-x-3">
-                              <button
-                                onClick={() => handleEditEmployee(employee)}
-                                className="rounded-md bg-indigo-50 p-1.5 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-900"
-                                title="Edit"
-                              >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                                  <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
-                                </svg>
-                              </button>
-                              <button
-                                onClick={() => handleToggleStatus(employee.id, employee.isActive)}
-                                className={`rounded-md p-1.5 ${
-                                  employee.isActive
-                                    ? "bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-900"
-                                    : "bg-green-50 text-green-600 hover:bg-green-100 hover:text-green-900"
-                                }`}
-                                title={employee.isActive ? "Deactivate" : "Activate"}
-                              >
-                                {employee.isActive ? (
-                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                                  </svg>
-                                ) : (
-                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                                  </svg>
-                                )}
-                              </button>
-                              <button
-                                onClick={() => handleDeleteEmployee(employee.id)}
-                                className="rounded-md bg-red-50 p-1.5 text-red-600 hover:bg-red-100 hover:text-red-900"
-                                title="Delete"
-                              >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                                  <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                                </svg>
-                              </button>
-                            </div>
-                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -776,14 +521,6 @@ export default function EmployeeManagement() {
         isOpen={isAddModalOpen}
         onClose={() => setIsAddModalOpen(false)}
         onSubmit={handleAddEmployeeSubmit}
-      />
-
-      {/* Edit Employee Modal */}
-      <EditEmployeeModal
-        isOpen={isEditModalOpen}
-        onClose={() => setIsEditModalOpen(false)}
-        onSubmit={handleEditEmployeeSubmit}
-        employee={selectedEmployee}
       />
     </div>
   );

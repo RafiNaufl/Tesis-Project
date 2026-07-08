@@ -13,7 +13,7 @@ if (process.env.PRISMA_LOG_ERROR !== "false") {
   prismaLog.push("error");
 }
 
-// Always use DATABASE_URL (connection pooler) for all queries
+// Configure Prisma Client with connection pool settings
 export const prisma =
   globalForPrisma.prisma ||
   new PrismaClient({
@@ -22,6 +22,11 @@ export const prisma =
       db: {
         url: process.env.DATABASE_URL,
       },
+    },
+    // Connection pool configuration
+    transactionOptions: {
+      maxWait: 10000, // max 10 seconds to wait for a connection
+      timeout: 15000, // max 15 seconds for a transaction
     },
   });
 

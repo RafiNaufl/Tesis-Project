@@ -87,9 +87,23 @@ export async function PUT(
 
     if (!result.ok) {
         if (typeof result.error === "string" && (result.error === "Employee not found")) {
-            return NextResponse.json({ error: result.error }, { status: 404 });
+            return NextResponse.json(
+              {
+                error: result.error,
+                fieldErrors: "fieldErrors" in result ? result.fieldErrors : undefined,
+                formError: "formError" in result ? result.formError : undefined,
+              },
+              { status: 404 }
+            );
         }
-        return NextResponse.json({ error: result.error }, { status: 400 });
+        return NextResponse.json(
+          {
+            error: result.error,
+            fieldErrors: "fieldErrors" in result ? result.fieldErrors : undefined,
+            formError: "formError" in result ? result.formError : undefined,
+          },
+          { status: 400 }
+        );
     }
 
     return NextResponse.json(result.data);

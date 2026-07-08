@@ -236,6 +236,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             {/* Toggle Button */}
             <button 
               onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+              aria-label={isSidebarCollapsed ? "Buka sidebar desktop" : "Tutup sidebar desktop"}
               className={`p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors ${isSidebarCollapsed ? "mx-auto" : ""}`}
             >
               {isSidebarCollapsed ? (

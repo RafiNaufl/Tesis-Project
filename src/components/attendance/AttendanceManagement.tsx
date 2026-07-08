@@ -189,8 +189,35 @@ export default function AttendanceManagement() {
     }
   }, [isAdmin]);
 
-  // Load filters from localStorage
+  // Load filters from localStorage and clean up old attendance data
   useEffect(() => {
+    // Clean up outdated todayAttendance data
+    try {
+      const savedAttendance = localStorage.getItem('todayAttendance');
+      if (savedAttendance) {
+        const parsed = JSON.parse(savedAttendance);
+        const today = new Date();
+        const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+        
+        // If the saved data is not from today, remove it
+        if (parsed.date) {
+          const savedDate = new Date(parsed.date);
+          const savedDateStr = `${savedDate.getFullYear()}-${String(savedDate.getMonth() + 1).padStart(2, '0')}-${String(savedDate.getDate()).padStart(2, '0')}`;
+          
+          if (savedDateStr !== todayStr) {
+            console.log("Removing outdated attendance data from localStorage");
+            localStorage.removeItem('todayAttendance');
+          }
+        } else {
+          // If date is missing, remove it
+          localStorage.removeItem('todayAttendance');
+        }
+      }
+    } catch (e) {
+      console.error("Error cleaning up localStorage:", e);
+    }
+
+    // Load admin filters
     if (isAdmin) {
       const saved = localStorage.getItem("adminAttendanceFilters");
       if (saved) {
@@ -406,17 +433,32 @@ export default function AttendanceManagement() {
       setError(errorMessage);
       toast.error(errorMessage);
       
-      // Fallback logic
+      // Fallback logic (with strict date validation)
       const savedAttendance = localStorage.getItem('todayAttendance');
       if (savedAttendance) {
         try {
           const parsed = JSON.parse(savedAttendance);
           const today = new Date();
           const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-          if (parsed.date && parsed.date.startsWith(todayStr)) {
-            setTodayRecord(parsed);
+          
+          let isValidDate = false;
+          if (parsed.date) {
+            const savedDate = new Date(parsed.date);
+            const savedDateStr = `${savedDate.getFullYear()}-${String(savedDate.getMonth() + 1).padStart(2, '0')}-${String(savedDate.getDate()).padStart(2, '0')}`;
+            isValidDate = savedDateStr === todayStr;
           }
-        } catch (e) {}
+          
+          if (isValidDate) {
+            console.log("Using saved attendance data from localStorage");
+            setTodayRecord(parsed);
+          } else {
+            console.log("Saved attendance data is outdated, ignoring");
+            localStorage.removeItem('todayAttendance');
+          }
+        } catch (e) {
+          console.error("Error using saved attendance data:", e);
+          localStorage.removeItem('todayAttendance');
+        }
       }
     } finally {
       setIsLoading(false);

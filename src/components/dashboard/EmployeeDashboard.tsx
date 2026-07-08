@@ -97,6 +97,31 @@ export default function EmployeeDashboard() {
     const timer = setInterval(() => {
       setCurrentTime(new Date());
     }, 1000);
+    
+    // Clean up outdated attendance data on component mount
+    try {
+      const savedAttendance = localStorage.getItem('todayAttendance');
+      if (savedAttendance) {
+        const parsed = JSON.parse(savedAttendance);
+        const today = new Date();
+        const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+        
+        if (parsed.date) {
+          const savedDate = new Date(parsed.date);
+          const savedDateStr = `${savedDate.getFullYear()}-${String(savedDate.getMonth() + 1).padStart(2, '0')}-${String(savedDate.getDate()).padStart(2, '0')}`;
+          
+          if (savedDateStr !== todayStr) {
+            console.log("Removing outdated attendance data from localStorage (EmployeeDashboard)");
+            localStorage.removeItem('todayAttendance');
+          }
+        } else {
+          localStorage.removeItem('todayAttendance');
+        }
+      }
+    } catch (e) {
+      console.error("Error cleaning up localStorage in EmployeeDashboard:", e);
+    }
+    
     return () => clearInterval(timer);
   }, []);
 

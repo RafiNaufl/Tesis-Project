@@ -118,7 +118,7 @@ export default function AdminDashboard() {
             'Expires': '0'
           },
           // Tambahkan timeout untuk mencegah permintaan tertunda terlalu lama
-          signal: AbortSignal.timeout(5000) // 5 detik timeout
+          signal: AbortSignal.timeout(30000) // 30 detik timeout
         });
         
         if (!statsResponse.ok) {
@@ -167,7 +167,7 @@ export default function AdminDashboard() {
             'Expires': '0'
           },
           // Tambahkan timeout untuk mencegah permintaan tertunda terlalu lama
-          signal: AbortSignal.timeout(5000) // 5 detik timeout
+          signal: AbortSignal.timeout(30000) // 30 detik timeout
         });
         
         if (!activityResponse.ok) {

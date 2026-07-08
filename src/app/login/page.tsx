@@ -38,7 +38,7 @@ export default async function LoginPage() {
                 <div key={i} className="w-8 h-8 rounded-full border-2 border-indigo-900 bg-indigo-400/50" />
               ))}
             </div>
-            <p>Digunakan oleh ribuan karyawan</p>
+            <p>Digunakan oleh karyawan CV CTU</p>
           </div>
         </div>
 
